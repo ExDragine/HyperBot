@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/exdragine/frontier-model-catalog/provider.schema.json",
-  "title": "Frontier Model Provider Catalog",
+  "title": "HyperBot Model Provider Catalog",
   "type": "object",
   "additionalProperties": false,
   "required": ["provider", "models"],

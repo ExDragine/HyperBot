@@ -1,4 +1,4 @@
-"""Frontier Agent public API with lazy imports for lightweight protocol startup."""
+"""HyperBot Agent public API with lazy imports for lightweight protocol startup."""
 
 from __future__ import annotations
 

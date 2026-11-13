@@ -1,4 +1,4 @@
-"""ACP client lifecycle and Frontier progress adaptation."""
+"""ACP client lifecycle and HyperBot progress adaptation."""
 
 from __future__ import annotations
 
@@ -603,7 +603,7 @@ class AcpAgentService:
                     ),
                     client_info=sdk.schema.Implementation(
                         name="frontier",
-                        title="Frontier QQ Bot",
+                        title="HyperBot QQ Bot",
                         version="0.1.3",
                     ),
                 ),

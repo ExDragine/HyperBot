@@ -47,7 +47,7 @@ async def render_image(report, timeout=30):
 
 
 def render_text(report):
-    lines = [f"Frontier 新闻简报 · {edition_time(report):%Y-%m-%d %H:%M}（北京时间）"]
+    lines = [f"HyperBot 新闻简报 · {edition_time(report):%Y-%m-%d %H:%M}（北京时间）"]
     stories = report["payload"]["top_stories"] + report["payload"]["worth_reading"]
     for index, story in enumerate(stories, 1):
         lines.append(f"{index}. {story['title']}\n{story['summary']}")

@@ -1,6 +1,6 @@
 # Laya 决策 Provider
 
-`utils.decision.LayaDecisionProvider` 是 Laya 与 Frontier 之间的边界。
+`utils.decision.LayaDecisionProvider` 是 Laya 与 HyperBot 之间的边界。
 它支持两种后端：
 
 - **本地 SDK**：不设置 `base_url`，首次调用时惰性导入 `laya.Router`。

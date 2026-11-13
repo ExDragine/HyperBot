@@ -24,7 +24,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from utils import browser_runtime, markdown_media, markdown_render  # noqa: E402
 
 ui = {
-    "title": "Frontier · 方案比较与任务说明",
+    "title": "HyperBot · 方案比较与任务说明",
     "children": [
         {
             "type": "callout",

@@ -1,6 +1,6 @@
 # SQLite 消息搜索维护
 
-Frontier 的聊天原文以 `message` 为唯一事实来源，`message_fts` 使用 SQLite FTS5
+HyperBot 的聊天原文以 `message` 为唯一事实来源，`message_fts` 使用 SQLite FTS5
 external-content 模式建立全文索引。FTS 表不重复保存正文，增删改由三个触发器同步。
 
 ## 搜索接口

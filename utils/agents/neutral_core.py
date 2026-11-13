@@ -1,4 +1,4 @@
-"""Bridge the neutral Agent Core contract to Frontier's legacy runtime.
+"""Bridge the neutral Agent Core contract to HyperBot's legacy runtime.
 
 This module is the migration seam between ``utils.agent_protocol`` and the
 existing ``FrontierAgentRuntime``.  It owns compatibility conversion only:

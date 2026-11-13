@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/exdragine/frontier-model-catalog/catalog.schema.json",
-  "title": "Frontier Model Catalog Manifest",
+  "title": "HyperBot Model Catalog Manifest",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "catalog_version", "updated_at", "providers"],

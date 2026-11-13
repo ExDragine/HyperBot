@@ -46,7 +46,7 @@ const App = {
     setup() {
         const { ref, computed } = Vue;
         const route = router.currentRoute;
-        const botName = ref('Frontier');
+        const botName = ref('HyperBot');
         const botConnected = ref(undefined);
 
         const isLoginPage = computed(() => route.value.path === '/login');

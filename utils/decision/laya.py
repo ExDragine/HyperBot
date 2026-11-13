@@ -1,6 +1,6 @@
 """Laya decision provider.
 
-Laya is intentionally kept behind this adapter.  The rest of Frontier only
+Laya is intentionally kept behind this adapter.  The rest of HyperBot only
 sees ``DecisionResult`` and never imports torch, transformers, or the Laya
 SDK.  Both the in-process SDK and the compatible ``/v1/systemone`` HTTP
 server are supported.

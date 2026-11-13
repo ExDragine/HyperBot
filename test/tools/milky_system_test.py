@@ -20,7 +20,7 @@ def system_bot(load_tool_module, install_milky_bot):
     bot = install_milky_bot(
         system,
         {
-            "get_login_info": types.SimpleNamespace(uin=10000, nickname="Frontier"),
+            "get_login_info": types.SimpleNamespace(uin=10000, nickname="HyperBot"),
             "get_impl_info": types.SimpleNamespace(
                 impl_name="Lagrange",
                 impl_version="1.0",

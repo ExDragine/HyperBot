@@ -10,7 +10,7 @@ The research Agent owns search planning and source selection. It receives only t
 
 Copy `news.toml.example` to `news.toml` when overrides are needed. If `model` and `provider` are empty, the plugin reuses `env.toml`'s `daily_news_model` and `daily_news_model_provider`. Tavily and Exa are discovered from the configured `mcp.json`; if either is unavailable, the Agent proceeds to the next source. DeepSeek Search uses the independent `[search]` configuration and its provider API key.
 
-`workspace_dir` is used for bounded DeepSeek page previews and must point to a writable Frontier workspace. Search and fetch failures are returned as errors and are not treated as an empty evidence set. Results outside the edition window or without a usable date are excluded before the report is archived.
+`workspace_dir` is used for bounded DeepSeek page previews and must point to a writable HyperBot workspace. Search and fetch failures are returned as errors and are not treated as an empty evidence set. Results outside the edition window or without a usable date are excluded before the report is archived.
 
 ## Delivery semantics
 

@@ -81,7 +81,7 @@ async def test_frontier_acp_server_runs_runtime_and_streams_safe_updates(tmp_pat
         "agent_message_chunk",
         "agent_message_chunk",
     ]
-    assert updates[0].content.text == "Frontier 正在处理请求…"
+    assert updates[0].content.text == "HyperBot 正在处理请求…"
     assert "raw thought" not in str(updates)
     assert updates[-2].content.text == "final answer"
     assert base64.b64decode(updates[-1].content.data) == b"image"

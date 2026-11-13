@@ -88,13 +88,13 @@ def test_frontier_load_system_prompt_missing(monkeypatch):
 
 def test_frontier_load_system_prompt_keeps_only_always_on_rules(monkeypatch):
     monkeypatch.setattr(prompts_mod.EnvConfig, "SYSTEM_PROMPT", "You are {name}.")
-    monkeypatch.setattr(prompts_mod.EnvConfig, "BOT_NAME", "Frontier")
+    monkeypatch.setattr(prompts_mod.EnvConfig, "BOT_NAME", "HyperBot")
 
     prompt = prompts_mod.load_system_prompt()
 
-    assert "You are Frontier." in prompt
-    assert "# Frontier Deep Agent 全局操作规范" in prompt
-    assert prompt.index("You are Frontier.") < prompt.index("# Frontier Deep Agent 全局操作规范")
+    assert "You are HyperBot." in prompt
+    assert "# HyperBot Deep Agent 全局操作规范" in prompt
+    assert prompt.index("You are HyperBot.") < prompt.index("# HyperBot Deep Agent 全局操作规范")
     assert "## Workspace SOUL" not in prompt
     assert "【Markdown 渲染规范】" not in prompt
     assert "```chart" not in prompt
@@ -155,7 +155,7 @@ def test_qq_operation_safety_skill_owns_moderation_details():
 
 def test_group_system_prompt_prefers_short_natural_replies(monkeypatch):
     monkeypatch.setattr(prompts_mod.EnvConfig, "SYSTEM_PROMPT", "You are {name}.")
-    monkeypatch.setattr(prompts_mod.EnvConfig, "BOT_NAME", "Frontier")
+    monkeypatch.setattr(prompts_mod.EnvConfig, "BOT_NAME", "HyperBot")
 
     prompt = prompts_mod.load_system_prompt(group_id=123)
 
@@ -184,7 +184,7 @@ def test_group_system_prompt_uses_durable_group_name(monkeypatch):
             return ["群内固定名称"]
 
     monkeypatch.setattr(prompts_mod.EnvConfig, "SYSTEM_PROMPT", "You are {name}.")
-    monkeypatch.setattr(prompts_mod.EnvConfig, "BOT_NAME", "Frontier")
+    monkeypatch.setattr(prompts_mod.EnvConfig, "BOT_NAME", "HyperBot")
     monkeypatch.setattr(database_mod, "GroupSettingsManager", DummySettings)
     monkeypatch.setattr(database_mod, "get_engine", lambda: object())
 

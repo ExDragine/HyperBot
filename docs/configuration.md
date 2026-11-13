@@ -1,6 +1,6 @@
 # 配置参考
 
-Frontier 的配置分为四类文件：NoneBot 启动参数在 `.env`，Frontier 应用配置在 `env.toml`，MCP 外部工具在 `mcp.json`，外部 ACP Agent 在 `acp.json`。可提交的示例文件是配置形状的权威来源：[`.env.example`](../.env.example)、[`env.toml.example`](../env.toml.example)、[`mcp.json.example`](../mcp.json.example)、[`plugins/acp/acp.json.example`](../plugins/acp/acp.json.example)。真实配置文件含密钥，不进入版本库。
+HyperBot 的配置分为四类文件：NoneBot 启动参数在 `.env`，HyperBot 应用配置在 `env.toml`，MCP 外部工具在 `mcp.json`，外部 ACP Agent 在 `acp.json`。可提交的示例文件是配置形状的权威来源：[`.env.example`](../.env.example)、[`env.toml.example`](../env.toml.example)、[`mcp.json.example`](../mcp.json.example)、[`plugins/acp/acp.json.example`](../plugins/acp/acp.json.example)。真实配置文件含密钥，不进入版本库。
 
 本页描述当前实现；字段校验以 `utils/configs.py` 为准，能力与路由以 `utils/llm_factory.py` 和各服务代码为准。
 
@@ -9,7 +9,7 @@ Frontier 的配置分为四类文件：NoneBot 启动参数在 `.env`，Frontier
 | 文件 | 职责 | 生效方式 |
 | --- | --- | --- |
 | `.env` | NoneBot 环境变量：`HOST`、`PORT`、`DRIVER`、`SUPERUSERS`、`NICKNAME` 等 | 进程启动时读取，修改后重启 |
-| `env.toml` | Frontier 应用配置：人设、模型、供应商、密钥、功能开关、策略、限额、存储、Dashboard、内容检查 | 启动时校验；Dashboard 保存后原子重载，后续请求/任务读取新值；手工编辑需重启 |
+| `env.toml` | HyperBot 应用配置：人设、模型、供应商、密钥、功能开关、策略、限额、存储、Dashboard、内容检查 | 启动时校验；Dashboard 保存后原子重载，后续请求/任务读取新值；手工编辑需重启 |
 | `mcp.json` | MCP 外部工具服务器定义 | 修改后重启 |
 | `acp.json` | 外部 ACP Agent 子进程、权限策略与超时 | 每个新连接重新读取；配置指纹变化时下次调用重建连接 |
 
@@ -88,7 +88,7 @@ profile 常用字段：
 - `structured_output_method`：Decision 结构化策略，`auto`、`json_schema`、`function_calling`、`json_mode`、`text_json`，默认 `auto`。
 - `decision_extra_body`：只作用于 decision 请求的 `extra_body`，例如关闭 DeepSeek 思考模式；旧字段 `signal_extra_body` 仍可读取，不能与 `decision_extra_body` 配置不同内容。
 
-DeepSeek 可分别配置为 `deepseek + chat_completions`、`openai + responses`、`anthropic + messages`。使用官方地址和 DeepSeek 模型时，Frontier 会在三种协议中发送不含聊天正文的稳定 scope ID，用于服务端 KV cache、内容安全和调度隔离；兼容代理不会收到该扩展字段。图片和文件输入目前不应交给这些 DeepSeek profile。
+DeepSeek 可分别配置为 `deepseek + chat_completions`、`openai + responses`、`anthropic + messages`。使用官方地址和 DeepSeek 模型时，HyperBot 会在三种协议中发送不含聊天正文的稳定 scope ID，用于服务端 KV cache、内容安全和调度隔离；兼容代理不会收到该扩展字段。图片和文件输入目前不应交给这些 DeepSeek profile。
 
 ### 模型路由
 

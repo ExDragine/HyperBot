@@ -121,7 +121,7 @@ def test_feishu_message_adapter_parses_v2_text_event_without_leaking_payload():
                     "content": '{"text":"hello"}',
                     "create_time": "1700000000000",
                     "parent_id": "om-root",
-                    "mentions": [{"id": {"open_id": "ou-bot"}, "name": "Frontier"}],
+                    "mentions": [{"id": {"open_id": "ou-bot"}, "name": "HyperBot"}],
                 },
             },
         },

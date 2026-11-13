@@ -1,1 +1,1 @@
-"""Frontier test suite."""
+"""HyperBot test suite."""

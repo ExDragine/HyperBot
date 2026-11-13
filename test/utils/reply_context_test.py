@@ -273,7 +273,7 @@ async def test_fetched_private_assistant_quote_separates_scope_and_sender():
                 time=1714521600,
                 segments=[{"type": "text", "data": {"text": "机器人旧回复"}}],
                 group_member=None,
-                friend=types.SimpleNamespace(nickname="Frontier"),
+                friend=types.SimpleNamespace(nickname="HyperBot"),
             )
 
     event = types.SimpleNamespace(

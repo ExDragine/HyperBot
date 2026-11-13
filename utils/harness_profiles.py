@@ -1,4 +1,4 @@
-"""Frontier-specific Deep Agents harness behavior."""
+"""HyperBot-specific Deep Agents harness behavior."""
 
 from deepagents import (
     GeneralPurposeSubagentProfile,

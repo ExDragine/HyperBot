@@ -9,9 +9,9 @@ ACP 专属实现、配置示例和协议文档集中在本目录。
 | `lifecycle.py` | 子进程关闭与每日 ACP 缓存清理任务 |
 | `service.py` | 配置解析、v1 客户端、进程与会话生命周期、权限和超时 |
 | `client_v2.py` | v2 客户端及会话更新适配 |
-| `agent.py` | 将外部 Agent 结果转换为 Frontier 返回格式 |
+| `agent.py` | 将外部 Agent 结果转换为 HyperBot 返回格式 |
 | `subagent.py` | Deep Agents 子代理桥接与工件保存 |
-| `server.py` / `server_v2.py` | Frontier 内置 Agent 的 v1 / v2 stdio 服务端 |
+| `server.py` / `server_v2.py` | HyperBot 内置 Agent 的 v1 / v2 stdio 服务端 |
 | `__main__.py` | 独立 stdio CLI |
 | `acp.json.example` | 外部 ACP Agent 配置示例 |
 | `docs/` | [v1 接入规范](docs/acp-v1.md)与 [v2 接入规范](docs/acp-v2.md) |

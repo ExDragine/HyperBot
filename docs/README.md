@@ -1,6 +1,6 @@
 # 文档索引
 
-本页是 Frontier 全部项目文档的导航入口。项目入口和快速开始见 [README](../README.md)；配置字段以 `env.toml.example` 和 `utils/configs.py` 为准，行为以代码和测试为准。新增 `docs/*.md` 时请同时在此登记。
+本页是 HyperBot 全部项目文档的导航入口。项目入口和快速开始见 [README](../README.md)；配置字段以 `env.toml.example` 和 `utils/configs.py` 为准，行为以代码和测试为准。新增 `docs/*.md` 时请同时在此登记。
 
 ## 入门
 
@@ -36,11 +36,11 @@
 
 | 文档 | 说明 |
 | --- | --- |
-| [ACP 接入](acp.md) | `acp.json` 客户端配置、`/acp` 命令、子代理桥接、Frontier 内置 v1/v2 stdio server、DSH 接入与安全边界。 |
+| [ACP 接入](acp.md) | `acp.json` 客户端配置、`/acp` 命令、子代理桥接、HyperBot 内置 v1/v2 stdio server、DSH 接入与安全边界。 |
 | [ACP 插件说明](../plugins/acp/README.md) | ACP 插件的文件职责、CLI 启动命令和测试入口。 |
-| [ACP v1 接入规范](../plugins/acp/docs/acp-v1.md) | v1 客户端生命周期、媒体能力、权限默认值和 Frontier 作为 Agent 的支持范围。 |
+| [ACP v1 接入规范](../plugins/acp/docs/acp-v1.md) | v1 客户端生命周期、媒体能力、权限默认值和 HyperBot 作为 Agent 的支持范围。 |
 | [ACP v2 Draft 接入规范](../plugins/acp/docs/acp-v2.md) | v2 与 v1 的字段差异、`state_update` 生命周期、会话恢复/回放和草案限制。 |
-| [Milky 1.3 适配](milky-1.3.md) | Milky 1.3 协议变更对应的 Frontier 行为与兼容性边界。 |
+| [Milky 1.3 适配](milky-1.3.md) | Milky 1.3 协议变更对应的 HyperBot 行为与兼容性边界。 |
 | [Milky 申请事件](platform-events.md) | 四类申请事件的 `ignore/record/rule/shadow/decision` 模式、`/events` 管理和执行恢复。 |
 | [新闻插件运维](news-plugin.md) | 新闻管线的配置、投递语义、恢复与保留策略、运维命令和回滚方式（英文）。 |
 | [Dashboard 前端资源](../plugins/dashboard/web/vendor/README.md) | Dashboard 第三方脚本的本地 pinned 副本与 CDN 回退说明。 |

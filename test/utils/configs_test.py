@@ -530,4 +530,4 @@ def test_nickname_rejects_non_string_array_items():
     from utils.configs import load_nicknames
 
     with pytest.raises(ValueError, match="每一项"):
-        load_nicknames('["Frontier", 1]')
+        load_nicknames('["HyperBot", 1]')

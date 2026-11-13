@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/exdragine/frontier-model-catalog/lobehub_names.schema.json",
-  "title": "Frontier LobeHub Display Name Overlay",
+  "title": "HyperBot LobeHub Display Name Overlay",
   "type": "object",
   "additionalProperties": false,
   "required": [

@@ -1,4 +1,4 @@
-"""Frontier ACP v2 Draft server with ACK/state turns and in-process replay."""
+"""HyperBot ACP v2 Draft server with ACK/state turns and in-process replay."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ class _Session:
 
 
 class _ProgressSink:
-    """Reuse Frontier's sanitized progress bridge with v2 update shapes."""
+    """Reuse HyperBot's sanitized progress bridge with v2 update shapes."""
 
     def __init__(self, server: FrontierAcpV2Server, session: _Session) -> None:
         self.server = server
@@ -60,7 +60,7 @@ class _ProgressSink:
 
 
 class FrontierAcpV2Server:
-    """The v2 session surface; cwd remains metadata for Frontier's sandbox."""
+    """The v2 session surface; cwd remains metadata for HyperBot's sandbox."""
 
     def __init__(self, runtime: AgentRuntime | None = None) -> None:
         self._runtime = runtime or FrontierAgentRuntime()
@@ -75,7 +75,7 @@ class FrontierAcpV2Server:
             raise RequestError.invalid_params({"reason": "This entry point requires ACP v2"})
         return schema.InitializeResponse(
             protocol_version=2,
-            info=schema.Implementation(name="frontier", title="Frontier Deep Agent", version="0.1.3"),
+            info=schema.Implementation(name="frontier", title="HyperBot Deep Agent", version="0.1.3"),
             capabilities=schema.AgentCapabilities(session=schema.SessionCapabilities(
                 prompt=schema.PromptCapabilities(
                     image=schema.PromptImageCapabilities(), audio=schema.PromptAudioCapabilities(),
@@ -108,7 +108,7 @@ class FrontierAcpV2Server:
             raise RequestError.invalid_params({"reason": "No pagination cursor was issued"})
         return schema.ListSessionsResponse(sessions=[
             schema.SessionInfo(
-                session_id=session.session_id, cwd=session.cwd, title="Frontier ACP session",
+                session_id=session.session_id, cwd=session.cwd, title="HyperBot ACP session",
                 updated_at=session.updated_at.isoformat().replace("+00:00", "Z"),
             )
             for session in sorted(self._sessions.values(), key=lambda item: item.updated_at, reverse=True)
@@ -173,7 +173,7 @@ class FrontierAcpV2Server:
                 replace(runtime_request, messages=tuple(session.messages)), progress_reporter=bridge,
             )
             if result.error:
-                raise RuntimeError("Frontier runtime failed")
+                raise RuntimeError("HyperBot runtime failed")
             blocks: list[Any] = []
             if result.text:
                 blocks.append(schema.TextContentBlock(text=result.text))
@@ -182,17 +182,17 @@ class FrontierAcpV2Server:
                 blocks.append(block_class(data=base64.b64encode(artifact.data).decode("ascii"),
                                           mime_type=artifact.mime_type))
             if not blocks:
-                blocks.append(schema.TextContentBlock(text="Frontier 已完成，但没有生成响应。"))
+                blocks.append(schema.TextContentBlock(text="HyperBot 已完成，但没有生成响应。"))
             await self._send(session, schema.AgentMessageUpdate(message_id=str(uuid.uuid4()), content=blocks))
             session.messages.append({"role": "assistant", "content": result.text or "[已生成媒体]"})
         except asyncio.CancelledError:
             stop_reason = "cancelled"
         except Exception as exc:
-            logger.warning("Frontier ACP v2 session failed: {}", type(exc).__name__)
+            logger.warning("HyperBot ACP v2 session failed: {}", type(exc).__name__)
             stop_reason = "refusal"
             with suppress(Exception):
                 await self._send(session, schema.AgentMessageUpdate(
-                    message_id=str(uuid.uuid4()), content=[schema.TextContentBlock(text="Frontier 执行失败，请稍后重试。")],
+                    message_id=str(uuid.uuid4()), content=[schema.TextContentBlock(text="HyperBot 执行失败，请稍后重试。")],
                 ))
         finally:
             try:

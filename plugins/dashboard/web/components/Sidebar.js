@@ -2,7 +2,7 @@ const SidebarComponent = {
     template: `
         <div class="w-full md:w-64 shrink-0 bg-white shadow-lg md:h-screen flex flex-col">
             <div class="hidden md:block p-6 border-b">
-                <h1 class="text-2xl font-bold text-primary">Frontier</h1>
+                <h1 class="text-2xl font-bold text-primary">HyperBot</h1>
                 <p class="text-sm text-gray-500 mt-1">Dashboard</p>
             </div>
             <nav class="flex-1 grid grid-cols-4 md:block p-2 md:p-4 md:space-y-2">

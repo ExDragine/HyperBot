@@ -1,5 +1,5 @@
 # ruff: noqa: S101
-"""Exercise Frontier client/server through the official SDK and real stdio."""
+"""Exercise HyperBot client/server through the official SDK and real stdio."""
 
 import asyncio
 import json

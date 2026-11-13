@@ -92,7 +92,7 @@ async def summarize_update_commits(commits: list[CommitInfo]) -> str | None:
     if not commits:
         return None
     system_prompt = (
-        "你是 Frontier QQ Bot 的更新日志编辑。"
+        "你是 HyperBot QQ Bot 的更新日志编辑。"
         "只根据用户提供的 Git 提交记录，写一份发到群里的简短中文更新日志。"
         "输出 3-6 条短 bullet，语气轻量自然，不要编造提交记录外的信息，"
         "不要暴露密钥、配置值或内部敏感细节。"

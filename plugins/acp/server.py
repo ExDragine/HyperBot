@@ -1,4 +1,4 @@
-"""ACP v1 stdio server exposing Frontier's built-in Deep Agent."""
+"""ACP v1 stdio server exposing HyperBot's built-in Deep Agent."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ class _ServerSession:
 
 
 class _AcpProgressBridge:
-    """Map sanitized Frontier progress events to ACP session updates."""
+    """Map sanitized HyperBot progress events to ACP session updates."""
 
     def __init__(self, connection: Any, session_id: str) -> None:
         self._connection = connection
@@ -65,7 +65,7 @@ class _AcpProgressBridge:
             await self._send(acp.schema.AgentMessageChunk(content=acp.schema.TextContentBlock(text=event.message.strip())))
             return
         if event.type == "thinking":
-            await self._send(acp.schema.AgentThoughtChunk(content=acp.schema.TextContentBlock(text="Frontier 正在处理请求…")))
+            await self._send(acp.schema.AgentThoughtChunk(content=acp.schema.TextContentBlock(text="HyperBot 正在处理请求…")))
             return
         if event.type in {"tool_call", "subagent_start"}:
             key = str(detail.get("tool_name") or detail.get("name") or event.message)
@@ -94,7 +94,7 @@ class _AcpProgressBridge:
 
 
 class FrontierAcpServer:
-    """ACP Agent implementation backed by a restricted Frontier runtime."""
+    """ACP Agent implementation backed by a restricted HyperBot runtime."""
 
     def __init__(self, runtime: AgentRuntime | None = None) -> None:
         self._runtime = runtime or FrontierAgentRuntime()
@@ -129,7 +129,7 @@ class FrontierAcpServer:
             auth_methods=[],
             agent_info=acp.schema.Implementation(
                 name="frontier",
-                title="Frontier Deep Agent",
+                title="HyperBot Deep Agent",
                 version="0.1.3",
             ),
         )
@@ -148,7 +148,7 @@ class FrontierAcpServer:
         del kwargs
         if additional_directories or mcp_servers:
             raise acp.RequestError.invalid_params(
-                {"reason": "Frontier ACP server does not accept additional directories or MCP servers"}
+                {"reason": "HyperBot ACP server does not accept additional directories or MCP servers"}
             )
         if not Path(cwd).is_absolute():
             raise acp.RequestError.invalid_params({"reason": "cwd must be an absolute path"})
@@ -171,7 +171,7 @@ class FrontierAcpServer:
                     session_id=session.session_id,
                     cwd=session.cwd,
                     additional_directories=[],
-                    title="Frontier ACP session",
+                    title="HyperBot ACP session",
                     updated_at=session.updated_at.isoformat().replace("+00:00", "Z"),
                 )
                 for session in sessions
@@ -272,7 +272,7 @@ class FrontierAcpServer:
                     await self._connection.session_update(
                         session_id=session_id,
                         update=acp.schema.AgentMessageChunk(
-                            content=acp.schema.TextContentBlock(text="Frontier 已完成，但没有生成响应。"),
+                            content=acp.schema.TextContentBlock(text="HyperBot 已完成，但没有生成响应。"),
                         ),
                     )
                 return acp.PromptResponse(stop_reason="end_turn")
@@ -281,7 +281,7 @@ class FrontierAcpServer:
             except acp.RequestError:
                 raise
             except Exception as exc:
-                logger.exception("Frontier ACP session failed: {}", type(exc).__name__)
+                logger.exception("HyperBot ACP session failed: {}", type(exc).__name__)
                 raise acp.RequestError.internal_error({"type": type(exc).__name__}) from exc
             finally:
                 session.active_task = None

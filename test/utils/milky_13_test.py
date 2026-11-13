@@ -54,16 +54,16 @@ async def test_markdown_wake_word_works_when_adapter_plaintext_is_empty(monkeypa
         return True
 
     monkeypatch.setattr(gateway_module, "_message_gateway_blocked_by_access_policy", lambda *_: False)
-    monkeypatch.setattr(gateway_module, "_get_wake_words", lambda *_: ["Frontier"])
+    monkeypatch.setattr(gateway_module, "_get_wake_words", lambda *_: ["HyperBot"])
     monkeypatch.setattr(gateway_module, "_active_trigger_should_reply", active_check)
     event = SimpleNamespace(
         data=SimpleNamespace(group=SimpleNamespace(group_id=123), segments=[
-            {"type": "markdown", "data": {"content": "Frontier 请解释这张表"}},
+            {"type": "markdown", "data": {"content": "HyperBot 请解释这张表"}},
         ]),
         get_user_id=lambda: "456", get_plaintext=lambda: "", is_tome=lambda: False, to_me=False,
     )
     assert await gateway_module.message_gateway(event, [])
-    assert seen == ["Frontier 请解释这张表"]
+    assert seen == ["HyperBot 请解释这张表"]
 
 
 @pytest.mark.asyncio

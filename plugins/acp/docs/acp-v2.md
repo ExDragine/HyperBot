@@ -1,4 +1,4 @@
-# Frontier ACP v2 Draft 接入规范
+# HyperBot ACP v2 Draft 接入规范
 
 对应 [官方 v2 迁移规范](https://agentclientprotocol.com/protocol/v2/migration)，基于
 Python SDK `1.0.0rc1` 的 `acp.experimental.v2` 与 `schema-v2.0.0-alpha.3`。
@@ -32,7 +32,7 @@ v2 仍处于 Draft，需显式启用；[v1](acp-v1.md) 保持默认。参考
 `protocol_version` 只接受整数 `1` 或 `2`。修改版本会在下次请求重建连接；不匹配时拒绝
 执行，不把同一任务自动重发到另一版协议。
 
-Frontier 服务端使用独立的 v2 入口选择：
+HyperBot 服务端使用独立的 v2 入口选择：
 
 ```bash
 uv sync --locked
@@ -57,7 +57,7 @@ uv run --locked python -m plugins.acp --protocol-version 2
 
 ## v2 生命周期
 
-Frontier 服务端先验证会话和输入，再确认 prompt，后台依次发送：
+HyperBot 服务端先验证会话和输入，再确认 prompt，后台依次发送：
 
 ```json
 {"sessionUpdate":"user_message","messageId":"user-opaque-id","content":[{"type":"text","text":"任务"}]}
@@ -81,7 +81,7 @@ Frontier 服务端先验证会话和输入，再确认 prompt，后台依次发�
 
 ## 会话及支持范围
 
-Frontier 声明 `capabilities.session`，实现新建、列出、恢复、关闭、prompt、取消和更新。
+HyperBot 声明 `capabilities.session`，实现新建、列出、恢复、关闭、prompt、取消和更新。
 `session/resume` 要求匹配原会话 cwd。省略 `replayFrom` 时不回放；传
 `{"type":"start"}` 会在返回前按顺序回放已记录的通知，保留消息 ID。
 关闭会话取消任务并禁止直接 prompt；恢复后可继续，历史对话会进入运行时上下文。
@@ -100,6 +100,6 @@ stdio 会话与媒体能力，未实现 HTTP／WebSocket 服务。
 uv run --locked pytest test/plugins/acp/ test/integration/acp_protocols_test.py -q
 ```
 
-单元测试核对覆盖更新、取消、回放、权限与参数边界；真实 stdio 测试连接两版 Frontier
+单元测试核对覆盖更新、取消、回放、权限与参数边界；真实 stdio 测试连接两版 HyperBot
 测试服务端，核对序列化、媒体、ACK 与完成的区别、协议切换、错误版本以及超时清理。
 测试服务端使用确定性运行时，不发起模型 API 请求。

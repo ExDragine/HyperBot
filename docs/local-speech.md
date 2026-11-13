@@ -1,6 +1,6 @@
 # 本地语音识别
 
-Frontier 支持通过官方 FunASR C++ 运行器在 CPU 上运行 SenseVoiceSmall Q8。
+HyperBot 支持通过官方 FunASR C++ 运行器在 CPU 上运行 SenseVoiceSmall Q8。
 识别按需启动子进程，结束后释放模型；没有额外的常驻 Python 推理服务。
 该模型负责语音识别，不负责语音合成。
 

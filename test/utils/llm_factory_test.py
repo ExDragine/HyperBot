@@ -591,7 +591,7 @@ def test_anthropic_provider_metadata_reaches_payload_without_tracing_collision()
     env.update(
         {
             "FRONTIER_CONFIG": str(project_root / "env.toml.example"),
-            "NICKNAME": '["Frontier"]',
+            "NICKNAME": '["HyperBot"]',
         }
     )
     script = """
@@ -654,7 +654,7 @@ def test_deepseek_routes_avoid_forced_tool_choice_in_signal_payload():
     env.update(
         {
             "FRONTIER_CONFIG": str(project_root / "env.toml.example"),
-            "NICKNAME": '["Frontier"]',
+            "NICKNAME": '["HyperBot"]',
         }
     )
     script = """

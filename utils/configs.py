@@ -307,7 +307,7 @@ def load_nicknames(raw: str | None = None) -> tuple[str, ...]:
     value = os.getenv("NICKNAME", "") if raw is None else raw
     value = value.strip()
     if not value:
-        raise ValueError('必须在 .env 中配置至少一个非空 NICKNAME，例如 ["Frontier"]')
+        raise ValueError('必须在 .env 中配置至少一个非空 NICKNAME，例如 ["HyperBot"]')
 
     try:
         parsed = json.loads(value)
@@ -319,7 +319,7 @@ def load_nicknames(raw: str | None = None) -> tuple[str, ...]:
     elif isinstance(parsed, list):
         candidates = parsed
     else:
-        raise ValueError('NICKNAME 必须是字符串或 JSON 字符串数组，例如 ["Frontier"]')
+        raise ValueError('NICKNAME 必须是字符串或 JSON 字符串数组，例如 ["HyperBot"]')
 
     nicknames: list[str] = []
     for item in candidates:
@@ -329,7 +329,7 @@ def load_nicknames(raw: str | None = None) -> tuple[str, ...]:
         if nickname and nickname not in nicknames:
             nicknames.append(nickname)
     if not nicknames:
-        raise ValueError('必须在 .env 中配置至少一个非空 NICKNAME，例如 ["Frontier"]')
+        raise ValueError('必须在 .env 中配置至少一个非空 NICKNAME，例如 ["HyperBot"]')
     return tuple(nicknames)
 
 

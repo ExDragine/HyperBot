@@ -1,6 +1,6 @@
 # 消息媒体与 Clash Fake-IP
 
-图片、地图瓦片和网页快照只允许访问公开 HTTP(S) 地址。运行 Frontier 的主机必须能连接素材来源；QQ 客户端的网络不参与素材加载。
+图片、地图瓦片和网页快照只允许访问公开 HTTP(S) 地址。运行 HyperBot 的主机必须能连接素材来源；QQ 客户端的网络不参与素材加载。
 
 默认开启 `[agent].message_media_fake_ip_fallback = true`。当系统 DNS 为域名只返回 `198.18.0.0/15`（IPv4）或 `2001:2::/48`（IPv6）范围的 Fake-IP 时，媒体加载器会通过 Cloudflare 的 HTTPS DNS JSON API 查询真实 IPv4 地址；兼容仅 IPv4、仅 IPv6 和二者混合的结果。解析服务使用固定公网 IP `1.1.1.1` 连接，保留 `cloudflare-dns.com` 的 TLS 校验和 Host，避免解析服务自身再次落入 Fake-IP。
 

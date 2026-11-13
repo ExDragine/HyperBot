@@ -1,6 +1,6 @@
 # 模型目录
 
-`models` 是 Frontier 内置的模型元数据模块。它只描述已核验的官方模型，不参与模型路由，也不把目录外模型判定为“不支持”。
+`models` 是 HyperBot 内置的模型元数据模块。它只描述已核验的官方模型，不参与模型路由，也不把目录外模型判定为“不支持”。
 
 友好名称按“已核验的本地模型卡 → OpenRouter → LobeHub → 原始 ID”解析，
 只读取本地文件，运行时不访问外部模型列表。名称层不会改变模型路由、能力、
@@ -17,7 +17,7 @@
 
 `data/lobehub_names.json` 是补充名称层，来自 LobeHub 发布的
 [`model-bank`](https://www.npmjs.com/package/model-bank) NPM 包。它只参与界面名称展示，
-不会覆盖 Frontier 核验的能力、上下文窗口、生命周期或 API 协议。快照保留上游版本、
+不会覆盖 HyperBot 核验的能力、上下文窗口、生命周期或 API 协议。快照保留上游版本、
 完整性哈希、Git commit 和许可证链接；上游数据遵循
 [LobeHub Community License](https://github.com/lobehub/lobehub/blob/canary/LICENSE)。
 

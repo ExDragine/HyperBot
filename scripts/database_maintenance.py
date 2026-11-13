@@ -23,7 +23,7 @@ def _retention_cutoff(days: int | None) -> int | None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Inspect and maintain the Frontier SQLite database.")
+    parser = argparse.ArgumentParser(description="Inspect and maintain the HyperBot SQLite database.")
     parser.add_argument("--database-url", default=None, help="SQLAlchemy database URL, defaults to frontier.db.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 

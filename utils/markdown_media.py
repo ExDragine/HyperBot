@@ -25,7 +25,7 @@ from utils.http_client import AsyncClient
 
 MAX_MEDIA = 6
 MAX_BYTES = 20_000_000
-USER_AGENT = "Frontier-message-media/1.0 (+https://github.com/ExDragine/frontier)"
+USER_AGENT = "HyperBot-message-media/1.0 (+https://github.com/ExDragine/HyperBot)"
 FAKE_IP_NETWORK = ipaddress.ip_network("198.18.0.0/15")
 FAKE_IP_V6_NETWORK = ipaddress.ip_network("2001:2::/48")
 logger = logging.getLogger(__name__)

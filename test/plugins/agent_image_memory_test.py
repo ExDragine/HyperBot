@@ -154,7 +154,7 @@ def test_direct_bot_mention_requires_explicit_matching_mention_segment():
         "1",
     )
     assert not segments_directly_mention_user(
-        [{"type": "text", "data": {"text": "Frontier 你好"}}],
+        [{"type": "text", "data": {"text": "HyperBot 你好"}}],
         "1",
     )
 

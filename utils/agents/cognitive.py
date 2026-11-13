@@ -1,4 +1,4 @@
-"""Main Frontier Deep Agent composition and execution."""
+"""Main HyperBot Deep Agent composition and execution."""
 
 import asyncio
 import hashlib

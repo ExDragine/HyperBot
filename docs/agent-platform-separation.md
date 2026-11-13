@@ -12,7 +12,7 @@
 
 目标：在保留 QQ/Milky 现有行为的前提下，把 Agent 执行和平台接入拆开，使飞书等新平台可以复用同一套 Agent、工具编排、workspace、memory、session 和执行控制。
 
-本文是 Frontier 的目标架构和迁移约束。它不要求一次性重写现有 `plugins/agent`、`utils/database.py` 或工具注册器。
+本文是 HyperBot 的目标架构和迁移约束。它不要求一次性重写现有 `plugins/agent`、`utils/database.py` 或工具注册器。
 
 ## 0. 渐进式执行流程
 
@@ -60,7 +60,7 @@ QQ 入口 [`plugins/agent/handlers.py`](../plugins/agent/handlers.py) 同时负�
 - [LangGraph Runtime Context](https://github.com/langchain-ai/docs/blob/main/src/oss/langgraph/graph-api.mdx)：把本次执行的身份、能力和依赖放入运行时 context；
 - [DeepAgents 架构](https://github.com/langchain-ai/deepagents/blob/main/libs/ARCHITECTURE.md)：区分 Agent 构建阶段和执行阶段。
 
-Frontier 不直接复制这些项目的全部结构，而是采用其中共同的原则：**平台负责转换，应用层负责编排，Agent Core 负责推理，基础设施通过端口注入。**
+HyperBot 不直接复制这些项目的全部结构，而是采用其中共同的原则：**平台负责转换，应用层负责编排，Agent Core 负责推理，基础设施通过端口注入。**
 
 ## 3. 目标架构
 
@@ -375,7 +375,7 @@ normalize
   capability 快照重复注册；
 - 只有实际送达的结果才进入 assistant 历史。
 
-这保留 Frontier 当前的“先门控、后下载媒体”和“送达后落库”语义。
+这保留 HyperBot 当前的“先门控、后下载媒体”和“送达后落库”语义。
 
 ## 7. Agent Core 和 Runtime Context
 

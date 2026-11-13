@@ -1,4 +1,4 @@
-"""Frontier system prompt loading and composition."""
+"""HyperBot system prompt loading and composition."""
 
 import logging
 

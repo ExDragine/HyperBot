@@ -1,4 +1,4 @@
-"""News research and editing through Frontier's Agent runtime."""
+"""News research and editing through HyperBot's Agent runtime."""
 
 import hashlib
 import json
@@ -16,7 +16,7 @@ from .sources import publication_time
 
 logger = logging.getLogger(__name__)
 
-AGENT_PROMPT = """你是 Frontier 的每日新闻研究编辑。联网检索必须严格按以下优先级进行：
+AGENT_PROMPT = """你是 HyperBot 的每日新闻研究编辑。联网检索必须严格按以下优先级进行：
 1. 先使用 Tavily 搜索工具（tavily_search），必要时用 tavily_extract 获取重点网页正文；
 2. Tavily 不可用、结果不足或需要交叉核验时，再使用 Exa 搜索工具（web_search_advanced_exa 或 web_search_exa），必要时用 web_fetch_exa；
 3. 只有 Tavily 和 Exa 都不可用、结果不足或需要进一步交叉核验时，最后才使用 DeepSeek Search（deepseek_web_search），必要时用 deepseek_web_fetch。

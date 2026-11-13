@@ -1,6 +1,6 @@
-# Contributing to Frontier
+# Contributing to HyperBot
 
-Frontier is a NoneBot2/Milky bot with a large integration surface. Keep
+HyperBot is a NoneBot2/Milky bot with a large integration surface. Keep
 changes small and preserve the platform-neutral boundary in
 `utils/agent_protocol/`.
 

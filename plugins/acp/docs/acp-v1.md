@@ -1,4 +1,4 @@
-# Frontier ACP v1 接入规范
+# HyperBot ACP v1 接入规范
 
 对应 [ACP 官方 v1 规范](https://agentclientprotocol.com/protocol/v1/overview)，使用
 `agent-client-protocol==1.0.0rc1` 的标准 `acp` API。SDK 版本与协议版本是两个概念；
@@ -42,7 +42,7 @@
 权限默认拒绝；`allow_once`／`allow_always` 仅匹配对端提供的对应选项。
 客户端不声明宿主文件系统或终端执行能力。超时或异常后关闭进程，下次请求新建连接。
 
-## Frontier 作为 Agent
+## HyperBot 作为 Agent
 
 ```bash
 uv sync --locked
@@ -53,13 +53,13 @@ uv run --locked python -m plugins.acp --protocol-version 1
 未实现的认证、加载、恢复、分叉、模式与配置变更方法不会被宣称为可用能力。
 服务端 stdout 只用于协议，日志发往 stderr。
 
-每个会话复用 Frontier 的受限运行时身份和 sandbox。`cwd` 只作为元数据；这是 Frontier
+每个会话复用 HyperBot 的受限运行时身份和 sandbox。`cwd` 只作为元数据；这是 HyperBot
 与通用编码 Agent 工作目录语义的差异，传入路径不授予宿主文件访问权。额外目录和客户端
 MCP servers 会被拒绝。QQ 平台工具、QQ 聊天记忆与 ACP 子代理不会暴露给入站会话。
 
 ## 兼容与验证
 
 旧 `acp.json` 和现有 `/acp` 命令保持兼容。SDK 1.0 移除了旧消息构造 helper，
-Frontier 已改用官方 schema 类型，线上 JSON-RPC 字段仍按 v1 发送。
+HyperBot 已改用官方 schema 类型，线上 JSON-RPC 字段仍按 v1 发送。
 测试覆盖真实 stdio 的初始化、媒体输出、多轮会话复用与取消，以及 QQ 投递路径。
 示例配置中的路径需要替换为实际 Agent 程序；测试不调用真实模型服务。

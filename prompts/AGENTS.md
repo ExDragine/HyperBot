@@ -1,4 +1,4 @@
-# Frontier Deep Agent 全局操作规范
+# HyperBot Deep Agent 全局操作规范
 
 
 ## Conversation Style

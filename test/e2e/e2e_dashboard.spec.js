@@ -9,7 +9,7 @@ test.describe('Dashboard E2E', () => {
   });
 
   test('shows login page', async ({ page }) => {
-    await expect(page.getByText('Frontier Dashboard')).toBeVisible();
+    await expect(page.getByText('HyperBot Dashboard')).toBeVisible();
     await expect(page.getByLabel('密码')).toBeVisible();
   });
 

@@ -1,9 +1,9 @@
 # ACP 接入
 
-[Agent Client Protocol (ACP)](https://agentclientprotocol.com/) 是 Frontier 的内置能力，包含两个方向：
+[Agent Client Protocol (ACP)](https://agentclientprotocol.com/) 是 HyperBot 的内置能力，包含两个方向：
 
-- **Frontier 作为客户端**：在 QQ 中通过 `/acp` 命令调用一个或多个外部本地 ACP Agent；也可把指定 Agent 注册为 Deep Agents 子代理。
-- **Frontier 作为服务端**：通过 stdio 暴露 Frontier 内置 Deep Agent，供其他 ACP 客户端启动和驱动。
+- **HyperBot 作为客户端**：在 QQ 中通过 `/acp` 命令调用一个或多个外部本地 ACP Agent；也可把指定 Agent 注册为 Deep Agents 子代理。
+- **HyperBot 作为服务端**：通过 stdio 暴露 HyperBot 内置 Deep Agent，供其他 ACP 客户端启动和驱动。
 
 协议实现、配置示例和字段差异集中在本仓库的 [ACP 插件](../plugins/acp/README.md)；两版协议规范见 [ACP v1 接入规范](../plugins/acp/docs/acp-v1.md) 与 [ACP v2 Draft 接入规范](../plugins/acp/docs/acp-v2.md)。
 
@@ -68,7 +68,7 @@ cp plugins/acp/acp.json.example acp.json
 
 ## 子代理桥接
 
-把某个 Agent 的 `expose_as_subagent` 设为 `true` 后，它会以 `acp-<名称>` 注册为 DeepAgents 子代理，主 Agent 可以按 `description` 将任务委托给它。子代理返回的媒体会保存到当前 Frontier workspace 的 `/acp-artifacts/`，不会把大段 base64 直接塞回模型上下文。该开关默认关闭，避免仅用于 `/acp` 的进程被模型意外调用。
+把某个 Agent 的 `expose_as_subagent` 设为 `true` 后，它会以 `acp-<名称>` 注册为 DeepAgents 子代理，主 Agent 可以按 `description` 将任务委托给它。子代理返回的媒体会保存到当前 HyperBot workspace 的 `/acp-artifacts/`，不会把大段 base64 直接塞回模型上下文。该开关默认关闭，避免仅用于 `/acp` 的进程被模型意外调用。
 
 ## 协议版本
 
@@ -76,7 +76,7 @@ cp plugins/acp/acp.json.example acp.json
 - 可以同时配置两版 Agent，通过 `--agent` 选择。版本不匹配时明确报错，不自动降级，也不会把同一任务自动重发到另一版协议。
 - SDK 锁定为 `agent-client-protocol==1.0.0rc1`：v1 使用标准 `acp` API，v2 使用官方 `acp.experimental.v2`（schema v2.0.0-alpha.3）。SDK 是预发布版，v2 是草案协议。
 
-## 作为服务端：Frontier 内置 ACP server
+## 作为服务端：HyperBot 内置 ACP server
 
 ```bash
 uv run python -m plugins.acp
@@ -96,21 +96,21 @@ uv run python -m plugins.acp --protocol-version 2
 
 ## DeepSeek Harness (DSH) 接入
 
-DeepSeek Harness 不再使用 Frontier 内置的 SDK/JSON-RPC 适配层，而是作为普通 ACP Agent 接入。官方仓库提供 `pnpm run demo:acp` 的 JSON-RPC stdio server；`plugins/acp/acp.json.example` 已包含对应配置。
+DeepSeek Harness 不再使用 HyperBot 内置的 SDK/JSON-RPC 适配层，而是作为普通 ACP Agent 接入。官方仓库提供 `pnpm run demo:acp` 的 JSON-RPC stdio server；`plugins/acp/acp.json.example` 已包含对应配置。
 
 使用步骤：
 
 1. 克隆并构建 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)。
 2. 把 `acp.json.example` 中 `args` 的绝对路径替换为本机 checkout。
-3. 在 Frontier 进程环境中设置 `DEEPSEEK_API_KEY`（示例通过 `inherit_env` 显式继承）。
+3. 在 HyperBot 进程环境中设置 `DEEPSEEK_API_KEY`（示例通过 `inherit_env` 显式继承）。
 4. 使用 `/acp --agent dsh <任务>`。
 
-DSH 仍处于 developer preview，建议将 checkout 固定到经过验证的 commit。DSH 当前的官方 ACP 自动化接口只发送已提交的 assistant 文本/图片，不公开推理、工具活动、计划等实时进度；因此 Frontier 能收到最终结果和权限请求，但不会复现原 `/dsh` 的专用进度事件。DSH 的模型、供应商、会话和工具配置均由 DSH 自己管理，不再读取 `env.toml` 的专用 `[dsh]` 段。
+DSH 仍处于 developer preview，建议将 checkout 固定到经过验证的 commit。DSH 当前的官方 ACP 自动化接口只发送已提交的 assistant 文本/图片，不公开推理、工具活动、计划等实时进度；因此 HyperBot 能收到最终结果和权限请求，但不会复现原 `/dsh` 的专用进度事件。DSH 的模型、供应商、会话和工具配置均由 DSH 自己管理，不再读取 `env.toml` 的专用 `[dsh]` 段。
 
 ## 安全边界
 
-- ACP Agent 是本地子进程，工作区不是操作系统 sandbox；它仍可能访问 Frontier 进程有权限读取的其他路径。不要把它当作不可信代码的隔离手段。
-- `permission_policy` 默认为 `deny`，只有明确改为 `allow_once` 或 `allow_always` 时，Frontier 才会自动批准 Agent 的工具权限请求。
+- ACP Agent 是本地子进程，工作区不是操作系统 sandbox；它仍可能访问 HyperBot 进程有权限读取的其他路径。不要把它当作不可信代码的隔离手段。
+- `permission_policy` 默认为 `deny`，只有明确改为 `allow_once` 或 `allow_always` 时，HyperBot 才会自动批准 Agent 的工具权限请求。
 - `inherit_env` 是显式白名单，只会把列出的宿主变量传给对应子进程；缺少任何一项都会拒绝启动，避免无意泄露全部环境变量。
 - 客户端不声明宿主文件系统或终端执行能力；未实现的认证、加载、恢复、分叉、模式与配置变更方法不会被宣称为可用能力。
 - 服务端不要求认证，也不提供 HTTP／WebSocket 服务；面向远程或不可信客户端前需要额外的传输与鉴权层。

@@ -1,4 +1,4 @@
-"""Run Frontier's ACP stdio server: python -m plugins.acp."""
+"""Run HyperBot's ACP stdio server: python -m plugins.acp."""
 
 import argparse
 import asyncio
@@ -10,7 +10,7 @@ from loguru import logger
 def main() -> None:
     logger.remove()
     logger.add(sys.stderr, colorize=False)
-    parser = argparse.ArgumentParser(description="Frontier ACP stdio server")
+    parser = argparse.ArgumentParser(description="HyperBot ACP stdio server")
     parser.add_argument("--protocol-version", type=int, choices=(1, 2), default=1)
     args = parser.parse_args()
 

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Frontier 是一个基于 NoneBot2 + Milky 适配器的 AI QQ 聊天机器人。核心路径是：Milky 消息事件进入 NoneBot 插件，经过消息归一化、存储、门控和内容安全检查后，由 `deepagents.create_deep_agent()` 驱动对话、工具调用、文件系统后端和媒体工件回复。
+HyperBot 是一个基于 NoneBot2 + Milky 适配器的 AI QQ 聊天机器人。核心路径是：Milky 消息事件进入 NoneBot 插件，经过消息归一化、存储、门控和内容安全检查后，由 `deepagents.create_deep_agent()` 驱动对话、工具调用、文件系统后端和媒体工件回复。
 
 **技术栈**: Python 3.14+、NoneBot2/FastAPI、nonebot-adapter-milky、nonebot_plugin_alconna、LangChain/LangGraph/deepagents、SQLModel/SQLite FTS、APScheduler、Playwright、Pillow。
 
@@ -148,7 +148,7 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 - 根据模型自身的 `capabilities` 判断是否保留视觉输入；不支持 vision 时会移除图片并追加“图片已省略”提示。
 - 主 Agent 默认接收当前消息以及 `[storage].query_message_numbers` 控制的最近历史，并直接持有当前会话的最近对话、聊天搜索和平台历史工具；超出窗口的前文按需调用工具获取。所有本地/API 只读查询工具、Exa / Tavily 联网搜索、网页读取、多来源核验、媒体工件与平台写操作都由主 Agent 直接调用（原 PTC 执行通道已随 quickjs 解释器移除），共享主图调用预算；`document-agent` 继承当前 backend 并仅读分析 workspace / memory 文件。
 - 文档子代理定义位于 `utils/agents/subagents/`，以声明式配置继承当前 backend，只读访问 workspace / memory 文件；不反向依赖工具注册器。
-- Frontier 为四类模型 provider 注册统一 Harness Profile，关闭 Deep Agents 自动添加且工具面重复的 `general-purpose` subagent。
+- HyperBot 为四类模型 provider 注册统一 Harness Profile，关闭 Deep Agents 自动添加且工具面重复的 `general-purpose` subagent。
 - 模型目录会转换为 LangChain `ModelProfile` 注入模型实例，为 Deep Agents 提供上下文窗口、输出上限和能力元数据；目录外模型继续按未知模型降级。
 - 请求身份、群权限和 workspace 使用冻结的 `FrontierRuntimeContext`；媒体等会话数据保留在继承 `DeepAgentState` 的图状态中。
 - 构建 `CompositeBackend`：

@@ -1,4 +1,4 @@
-# Frontier 运行与维护边界
+# HyperBot 运行与维护边界
 
 Agent 与平台解耦的目标架构、统一消息协议、端口和迁移阶段见
 [Agent 与平台解耦设计](agent-platform-separation.md)。本文描述当前运行边界；解耦设计文档描述未来实施边界。

@@ -1,4 +1,4 @@
-"""Validate Frontier's provider-neutral answer contract (not an API wire format)."""
+"""Validate HyperBot's provider-neutral answer contract (not an API wire format)."""
 
 from collections.abc import Mapping
 from math import isfinite

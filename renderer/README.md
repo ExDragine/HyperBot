@@ -1,6 +1,6 @@
 # Message renderer
 
-Frontier renders validated message documents with React 19, TypeScript, Tailwind
+HyperBot renders validated message documents with React 19, TypeScript, Tailwind
 CSS 4 and shadcn/ui source components. Vite bundles the browser code and CSS into
 `templates/markdown_assets/`. Production remains Python + Playwright; Node.js 24
 is only needed when developing or rebuilding these checked-in assets.

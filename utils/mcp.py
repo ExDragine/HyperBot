@@ -1,4 +1,4 @@
-"""Build native LangChain MCP adapters from Frontier server entries."""
+"""Build native LangChain MCP adapters from HyperBot server entries."""
 
 from fastmcp import Client
 from fastmcp.client.elicitation import ElicitResult
@@ -7,7 +7,7 @@ from langchain.mcp import MCPAdapter
 
 
 async def decline_elicitation(*_args) -> ElicitResult:
-    """Frontier has no MCP question/resume UI; never suspend an Agent turn."""
+    """HyperBot has no MCP question/resume UI; never suspend an Agent turn."""
     return ElicitResult(action="decline")
 
 

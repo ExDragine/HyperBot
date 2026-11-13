@@ -1,4 +1,4 @@
-"""Protocol-neutral entry point for running Frontier's built-in Deep Agent."""
+"""Protocol-neutral entry point for running HyperBot's built-in Deep Agent."""
 
 from __future__ import annotations
 

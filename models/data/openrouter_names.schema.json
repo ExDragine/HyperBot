@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/exdragine/frontier-model-catalog/openrouter_names.schema.json",
-  "title": "Frontier OpenRouter Display Name Overlay",
+  "title": "HyperBot OpenRouter Display Name Overlay",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "source", "model_count", "models"],

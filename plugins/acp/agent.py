@@ -1,4 +1,4 @@
-"""Frontier-shaped result adapter for ACP agents."""
+"""HyperBot-shaped result adapter for ACP agents."""
 
 from __future__ import annotations
 

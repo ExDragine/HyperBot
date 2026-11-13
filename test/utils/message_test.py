@@ -737,8 +737,8 @@ async def test_message_gateway_auto_reply_policy_does_not_block_active_trigger(m
         DummyTestGroupEvent("帮我看看这个报错", is_tome=False, to_me=True),
         [],
     )
-    monkeypatch.setattr(gateway_module, "_get_wake_words", lambda _group_id: ["Frontier"])
-    wake_word = await _message_gateway(DummyTestGroupEvent("Frontier 帮我看看这个报错"), [])
+    monkeypatch.setattr(gateway_module, "_get_wake_words", lambda _group_id: ["HyperBot"])
+    wake_word = await _message_gateway(DummyTestGroupEvent("HyperBot 帮我看看这个报错"), [])
 
     assert mentioned is True
     assert marked_to_me is True
@@ -782,10 +782,10 @@ async def test_message_gateway_group_wake_word_only_is_treated_as_a_call(monkeyp
     monkeypatch.setattr(gateway_module.EnvConfig, "AGENT_WHITELIST_MODE", False)
     monkeypatch.setattr(gateway_module.EnvConfig, "AGENT_BLACKLIST_GROUP_LIST", [])
     monkeypatch.setattr(gateway_module.EnvConfig, "AGENT_BLACKLIST_PERSON_LIST", [])
-    monkeypatch.setattr(gateway_module, "_get_wake_words", lambda _group_id: ["Frontier"])
+    monkeypatch.setattr(gateway_module, "_get_wake_words", lambda _group_id: ["HyperBot"])
     monkeypatch.setattr(gateway_module.LLMDecisionProvider, "decide", fail_if_called)
 
-    result = await _message_gateway(DummyTestGroupEvent("Frontier"), [])
+    result = await _message_gateway(DummyTestGroupEvent("HyperBot"), [])
 
     assert result is True
 
@@ -855,10 +855,10 @@ async def test_message_gateway_group_active_trigger_allows_non_low_info_without_
     monkeypatch.setattr(gateway_module.EnvConfig, "AGENT_WHITELIST_MODE", False)
     monkeypatch.setattr(gateway_module.EnvConfig, "AGENT_BLACKLIST_GROUP_LIST", [])
     monkeypatch.setattr(gateway_module.EnvConfig, "AGENT_BLACKLIST_PERSON_LIST", [])
-    monkeypatch.setattr(gateway_module, "_get_wake_words", lambda _group_id: ["Frontier"])
+    monkeypatch.setattr(gateway_module, "_get_wake_words", lambda _group_id: ["HyperBot"])
     monkeypatch.setattr(gateway_module.LLMDecisionProvider, "decide", fake_signal_structured)
 
-    result = await _message_gateway(DummyTestGroupEvent("Frontier 那个"), [])
+    result = await _message_gateway(DummyTestGroupEvent("HyperBot 那个"), [])
 
     assert result is True
     assert calls == 0
@@ -872,10 +872,10 @@ async def test_message_gateway_group_active_trigger_blocks_stop_intent(monkeypat
     monkeypatch.setattr(gateway_module.EnvConfig, "AGENT_WHITELIST_MODE", False)
     monkeypatch.setattr(gateway_module.EnvConfig, "AGENT_BLACKLIST_GROUP_LIST", [])
     monkeypatch.setattr(gateway_module.EnvConfig, "AGENT_BLACKLIST_PERSON_LIST", [])
-    monkeypatch.setattr(gateway_module, "_get_wake_words", lambda _group_id: ["Frontier"])
+    monkeypatch.setattr(gateway_module, "_get_wake_words", lambda _group_id: ["HyperBot"])
     monkeypatch.setattr(gateway_module.LLMDecisionProvider, "decide", fail_if_called)
 
-    result = await _message_gateway(DummyTestGroupEvent("Frontier 别回了"), [])
+    result = await _message_gateway(DummyTestGroupEvent("HyperBot 别回了"), [])
 
     assert result is False
 
@@ -925,7 +925,7 @@ async def test_message_gateway_test_group_reply_check_strips_image_data(monkeypa
     monkeypatch.setattr(gateway_module.EnvConfig, "AGENT_WHITELIST_MODE", False)
     monkeypatch.setattr(gateway_module.EnvConfig, "AGENT_BLACKLIST_GROUP_LIST", [])
     monkeypatch.setattr(gateway_module.EnvConfig, "AGENT_BLACKLIST_PERSON_LIST", [])
-    monkeypatch.setattr(gateway_module.EnvConfig, "BOT_NAME", "Frontier")
+    monkeypatch.setattr(gateway_module.EnvConfig, "BOT_NAME", "HyperBot")
     monkeypatch.setattr(gateway_module.LLMDecisionProvider, "decide", fake_signal_structured)
     patch_reply_check_prompt(monkeypatch, "bot={name}")
     messages = [
@@ -941,7 +941,7 @@ async def test_message_gateway_test_group_reply_check_strips_image_data(monkeypa
     result = await _message_gateway(DummyTestGroupEvent("这个报错怎么解决？"), messages)
 
     assert result is False
-    assert captured["system_prompt"] == "bot=Frontier"
+    assert captured["system_prompt"] == "bot=HyperBot"
     assert "history text" in captured["user_prompt"]
     assert "这个报错怎么解决？" in captured["user_prompt"]
     assert "data:image" not in captured["user_prompt"]

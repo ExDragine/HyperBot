@@ -30,7 +30,7 @@ async def test_plain_text_preserves_long_markdown_without_rendering(
     bot = install_milky_bot(message, {method: types.SimpleNamespace(message_seq=7, time=123)})
     bot.self_id = "999"
     monkeypatch.setattr(message.EnvConfig, "TOOL_LONG_TEXT_FORWARD_THRESHOLD", 500)
-    monkeypatch.setattr(message.EnvConfig, "BOT_NAME", "Frontier")
+    monkeypatch.setattr(message.EnvConfig, "BOT_NAME", "HyperBot")
     text = "  ```python\nprint('hello')\n```\nhttps://example.com\n" + "长文本\n" * 1000
 
     result = await message.send_plain_text(text, config=_config(group_id=group_id))
@@ -47,7 +47,7 @@ async def test_plain_text_preserves_long_markdown_without_rendering(
     assert forward.data["summary"] == "查看完整内容"
     node, = forward.data["messages"]
     assert node.user_id == 999
-    assert node.sender_name == "Frontier"
+    assert node.sender_name == "HyperBot"
     assert len(node.segments) == 1
     assert node.segments[0].type == "text"
     assert node.segments[0].data == {"text": text}

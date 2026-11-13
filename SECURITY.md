@@ -8,7 +8,7 @@ through the repository owner's security contact with:
 - impact and any suggested mitigation.
 
 Remove API keys, cookies, QQ identifiers, message contents, database files, and
-other private data before sharing logs. Frontier can call external APIs and
+other private data before sharing logs. HyperBot can call external APIs and
 operate on platform resources, so reports involving credential exposure,
 authorization bypasses, unintended message delivery, or workspace escapes are
 especially useful.
