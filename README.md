@@ -2,7 +2,7 @@
 
 HyperBot 是一个基于 [NoneBot2](https://nonebot.dev/) 与 Milky 适配器的 AI QQ 聊天机器人。QQ 消息经归一化、存储、回复门控和内容安全检查后，交给 LangGraph/deepagents 驱动的 Deep Agent 执行，支持多模型路由、工具调用、文件系统工作区、图片/视频生成、聊天记录检索、定时任务、ACP 子代理和 Web 管理面板。
 
-> 项目当前名称为 HyperBot。为兼容已有部署，代码中仍保留部分历史前缀的类名、环境变量、数据库文件名和 ACP 兼容入口；这些标识不影响项目当前名称。
+> 项目当前名称为 HyperBot。为兼容已有部署，代码中仍保留部分历史前缀的类名、环境变量、数据库文件名和 ACP 兼容入口（例如 `Frontier*`、`FRONTIER_CONFIG`、`frontier.db`、`frontier_cache`）；这些标识不影响项目当前名称。
 
 维护入口：[贡献指南](CONTRIBUTING.md) · [安全策略](SECURITY.md) · [变更记录](CHANGELOG.md) · [文档索引](docs/README.md)。设计文档描述当前边界或历史决策；具体行为以代码和测试为准。
 
