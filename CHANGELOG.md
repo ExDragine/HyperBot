@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Renamed the project branding from Frontier to HyperBot. Existing Frontier-prefixed runtime identifiers, configuration names, database filenames, and ACP compatibility entry points remain unchanged for upgrade compatibility.
+
 - Reorganized the documentation: `README.md` is now a concise project entry
   point, `docs/README.md` indexes every document by audience, and the detailed
   configuration and ACP material moved to `docs/configuration.md` and
