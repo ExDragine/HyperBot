@@ -230,6 +230,24 @@ def provider_uses_responses_api(model: str, provider: str | None = None) -> bool
     return api_mode == ApiMode.RESPONSES.value
 
 
+def normalize_reasoning_effort(
+    model: str,
+    provider: str | None,
+    effort: str | None,
+) -> str | None:
+    """Map Frontier's generic effort names to provider-native values.
+
+    DeepSeek V4's Responses API accepts ``low``, ``high`` and ``max``. The
+    generic Frontier settings retain ``medium`` and ``xhigh`` for other
+    providers, so translate those aliases only on an official DeepSeek route.
+    """
+    if effort is None:
+        return None
+    if provider_official_deepseek_api_mode(model, provider) == ApiMode.RESPONSES.value:
+        return {"medium": "high", "xhigh": "max"}.get(effort, effort)
+    return effort
+
+
 def _targets_https_api(
     profile: dict,
     hostname: str,
@@ -343,19 +361,20 @@ def native_web_search_support(
     enabled automatically. Compatible Responses providers must opt in explicitly
     with ``native_web_search = true`` after their upstream capability is verified.
 
-    DeepSeek's hosted tool is model-specific (Pro supports it, Flash ignores
-    it). It requires explicit opt-in; the standalone search tools work across
+    DeepSeek's hosted chatbot tools are model and protocol specific. They
+    require explicit opt-in, while the standalone search tools work across
     main-model routes and take precedence in the Agent when configured.
     """
     _, profile = _provider_profile(model, provider)
     provider_type, api_mode = _provider_protocol(model, profile)
+    deepseek_mode = provider_official_deepseek_api_mode(model, provider)
+    if deepseek_mode is not None:
+        if profile.get("native_web_search") is True:
+            return True, f"official DeepSeek {deepseek_mode} chatbot tools explicitly opted in"
+        return False, "DeepSeek hosted search requires explicit opt-in; prefer standalone deepseek_web_search"
+
     if api_mode != ApiMode.RESPONSES.value:
         return False, f"api_mode={api_mode or 'unknown'} is not Responses"
-
-    if provider_official_deepseek_api_mode(model, provider) == ApiMode.RESPONSES.value:
-        if profile.get("native_web_search") is True:
-            return True, "official DeepSeek Responses explicitly opted in; requires a supported model"
-        return False, "DeepSeek hosted search requires model-specific opt-in; prefer standalone deepseek_web_search"
 
     if provider_is_official_openai(model, provider):
         return True, "official OpenAI Responses web_search"

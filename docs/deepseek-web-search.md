@@ -22,7 +22,7 @@ max_content_chars = 24000
 
 开启且端点、密钥配置可用时，两个工具加入主 Agent 和每日新闻研究 Agent 的工具集，原生 `web_search` 优先提示及自动挂载让位于独立搜索。关闭或未配置密钥时，普通主 Agent 才考虑原生搜索或其他后端；每日新闻应直接报告搜索不可用，不把失败伪装成空结果。默认策略不依赖主模型名称，配置热更新后下一轮重新装配。
 
-DeepSeek Responses 内置 `web_search` 的支持取决于模型，Flash 会忽略它。确认模型支持时可在其供应商 profile 设置 `native_web_search = true`；独立搜索可用时仍优先使用独立工具。
+官方 DeepSeek Chatbot 路由可在供应商 profile 设置 `native_web_search = true`，Frontier 会注入 `deepseek_web_search` 与 `deepseek_read_url` 服务端工具。独立 Search/Fetch 可用时仍优先使用本地工具，兼容代理不会因为使用 Responses 协议而自动获得 DeepSeek 服务端工具。
 
 ## 工具契约
 

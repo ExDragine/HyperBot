@@ -8,7 +8,12 @@ from langchain.agents import create_agent
 from pydantic import ValidationError
 
 from utils.configs import EnvConfig
-from utils.llm_factory import create_llm, model_supports, provider_uses_responses_api
+from utils.llm_factory import (
+    create_llm,
+    model_supports,
+    normalize_reasoning_effort,
+    provider_uses_responses_api,
+)
 from utils.message import extract_message_text
 
 from .inputs import build_user_content
@@ -111,7 +116,13 @@ async def assistant_agent(  # noqa: C901
         **route,
     }
     if reasoning_effort is not None and provider_uses_responses_api(use_model, route.get("provider")):
-        llm_kwargs["reasoning_effort"] = reasoning_effort
+        normalized_effort = normalize_reasoning_effort(
+            use_model,
+            route.get("provider"),
+            reasoning_effort,
+        )
+        if normalized_effort is not None:
+            llm_kwargs["reasoning_effort"] = normalized_effort
     if temperature is not None:
         llm_kwargs["temperature"] = temperature
     if model_kwargs is not None:

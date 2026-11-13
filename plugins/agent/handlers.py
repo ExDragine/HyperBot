@@ -41,7 +41,7 @@ from utils.database import MessageDatabase
 from utils.media import resolve_media
 from utils.message import (
     download_media,
-    message_check,
+    message_check,  # noqa: F401  # deprecated compatibility export; provider-side safety is authoritative
     message_extract,
     outgoing_message_content,  # noqa: F401  # re-exported: tests and callers read it from this module
     sanitize_outgoing_text,
@@ -58,6 +58,7 @@ from .adapters import (
     QqToolProvider,
 )
 from .attachments import cleanup_staged_message_files, extract_message_files, stage_message_files
+from .document_parsing import parse_staged_files
 from .gateway import message_gateway
 from .message_normalizer import NORMALIZED_VERSION, normalize_segments
 from .reply_context import (
@@ -516,29 +517,6 @@ async def _run_agent_turn(
         except Exception as exc:
             logger.warning("消息上下文定稿失败（不影响回复）: {}: {}", type(exc).__name__, exc)
 
-    quoted_content = str((fetched_reply_payload or {}).get("content", ""))
-    risk_check = (
-        await message_check(
-            f"{context.text}\n{quoted_content}".strip(),
-            context.quoted_images + context.recent_images + context.images,
-        )
-        if EnvConfig.CONTENT_CHECK_ENABLED
-        else "Safe"
-    )
-    reaction = {"Safe": "32", "Controversial": "212", "Unsafe": "26"}.get(risk_check)
-    reaction_added = False
-    if context.group_id is not None and reaction is not None:
-        try:
-            await bot.send_group_message_reaction(
-                group_id=context.group_id,
-                message_seq=context.event_id,
-                reaction=reaction,
-                is_add=True,
-            )
-            reaction_added = True
-        except Exception as exc:
-            logger.warning("发送群消息处理反应失败: {}: {}", type(exc).__name__, exc)
-
     from utils.ens_gate import _ens_prefix
 
     cleaned = original_text.strip().lstrip("/")
@@ -549,24 +527,8 @@ async def _run_agent_turn(
     else:
         _ens_prefix.set("")
 
-    try:
-        await _process_queued_agent_request(context, history_messages)
-    finally:
-        if context.group_id is not None and reaction_added:
-            try:
-                await bot.send_group_message_reaction(
-                    group_id=context.group_id,
-                    message_seq=context.event_id,
-                    reaction=reaction,
-                    is_add=False,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "移除群消息处理反应失败 用户{} 群{}: {}",
-                    context.user_id,
-                    context.group_id,
-                    exc,
-                )
+    await _process_queued_agent_request(context, history_messages)
+
 
 
 @driver.on_shutdown
@@ -833,6 +795,31 @@ async def handle_common(event: MessageEvent):  # noqa: C901
     ]
 
     try:
+        ocr_text, parsed_documents = await parse_staged_files(
+            staged_files,
+            EnvConfig.DOCUMENT_PARSING,
+        )
+        if ocr_text:
+            agent_text = f"{agent_text}\n\n{ocr_text}".strip()
+            update_normalization = getattr(messages_db, "update_message_normalization", None)
+            if message_id is not None and callable(update_normalization):
+                try:
+                    await update_normalization(
+                        time=msg_time,
+                        message_id=message_id,
+                        content=f"{current_text}\n\n{ocr_text}".strip(),
+                        raw_segments_json=None,
+                        normalized_version=normalized_message.normalized_version,
+                        normalized_status=normalized_message.status,
+                    )
+                except Exception as exc:
+                    logger.warning("OCR 结果历史保存失败（本轮仍可使用）: {}: {}", type(exc).__name__, exc)
+            logger.info(
+                "DeepSeek OCR 完成 files={} pages={} chars={}",
+                len(parsed_documents),
+                sum(document.page_count for document in parsed_documents),
+                sum(len(document.text) for document in parsed_documents),
+            )
         current_attachment_refs = [
             dict(
                 build_agent_attachment_payload(

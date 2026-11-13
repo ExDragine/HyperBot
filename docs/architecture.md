@@ -18,7 +18,7 @@ Agent 与平台解耦的目标架构、统一消息协议、端口和迁移阶�
 | `plugins/playground` | `/paint`、`/video` 命令和戳一戳响应，直接调用共享图片/视频服务 |
 | `plugins/toolbox` | `settings.py` 管理模型展示和群唤醒词；`update.py` 管理更新、重启与启动通知；`menu.py` 加载插件内 `templates/vep_menu.*` |
 | `plugins/wolfx` | Wolfx CENC 地震预警 WebSocket 客户端、事件去重、渲染与推送 |
-| `utils` | Agent 执行引擎、DB、模型路由、媒体服务、消息提取、内容检查、渲染和发送 |
+| `utils` | Agent 执行引擎、DB、模型路由、媒体服务、消息提取、渲染和发送 |
 
 `agent`、`acp`、`toolbox` 和 `news` 的包入口只在 NoneBot 插件加载上下文中注册命令和生命周期钩子。
 普通导入 `plugins.agent.chat_context` 等组件不会注册 QQ 事件；NoneBot 应通过插件加载器加载

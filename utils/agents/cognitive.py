@@ -43,6 +43,7 @@ from utils.llm_factory import (
     create_llm,
     model_supports_native_web_search,
     native_web_search_support,
+    normalize_reasoning_effort,
     provider_is_official_anthropic,
     provider_is_official_openai,
     provider_official_deepseek_api_mode,
@@ -337,16 +338,29 @@ def _provider_request_overrides(
     """Return request fields supported by the route's first-party API only."""
     deepseek_mode = provider_official_deepseek_api_mode(model, provider)
     if deepseek_mode is not None:
+        profile = EnvConfig.LLM_PROVIDERS.get(provider or "")
+        configured_features: dict[str, dict[str, Any]] = {}
+        if isinstance(profile, dict):
+            for key in ("safety_check", "title"):
+                value = profile.get(key)
+                if isinstance(value, dict) and value:
+                    configured_features[key] = value
         pseudonymous_user_id = _provider_user_id(
             workspace_key=workspace_key,
             access_profile=access_profile,
         )
         if deepseek_mode == "responses":
-            return {"model_kwargs": {"user": pseudonymous_user_id}}
+            payload = {"user": pseudonymous_user_id, **configured_features}
+            return {"model_kwargs": payload}
         if deepseek_mode == "chat_completions":
-            return {"extra_body": {"user_id": pseudonymous_user_id}}
+            payload = {"user_id": pseudonymous_user_id, **configured_features}
+            return {"extra_body": payload}
         if deepseek_mode == "messages":
-            return {"model_kwargs": {"metadata": {"user_id": pseudonymous_user_id}}}
+            payload = {
+                "metadata": {"user_id": pseudonymous_user_id},
+                **configured_features,
+            }
+            return {"model_kwargs": payload}
 
     if provider_is_official_openai(model, provider):
         return {
@@ -371,11 +385,18 @@ class NativeWebSearchMiddleware(AgentMiddleware):
     on a dict.
     """
 
-    @staticmethod
-    def _request_with_web_search(request):
-        if any(isinstance(tool, dict) and tool.get("type") == "web_search" for tool in request.tools):
+    def __init__(self, tool_types: tuple[str, ...] = ("web_search",)):
+        self.tool_types = tool_types
+
+    def _request_with_web_search(self, request):
+        if any(
+            isinstance(tool, dict) and tool.get("type") in self.tool_types
+            for tool in request.tools
+        ):
             return request
-        return request.override(tools=[*request.tools, {"type": "web_search"}])
+        return request.override(
+            tools=[*request.tools, *({"type": tool_type} for tool_type in self.tool_types)]
+        )
 
     def wrap_model_call(self, request, handler):
         return handler(self._request_with_web_search(request))
@@ -557,7 +578,13 @@ class FrontierCognitive:
             "tags": ["frontier:main"],
         }
         if uses_responses_api:
-            model_kwargs["reasoning_effort"] = capability
+            reasoning_effort = normalize_reasoning_effort(
+                EnvConfig.ADVAN_MODEL,
+                EnvConfig.ADVAN_MODEL_PROVIDER,
+                capability,
+            )
+            if reasoning_effort is not None:
+                model_kwargs["reasoning_effort"] = reasoning_effort
             model_kwargs["verbosity"] = "low"
         model_kwargs.update(
             _provider_request_overrides(
@@ -699,7 +726,17 @@ class FrontierCognitive:
                 )
             )
         if native_web_search:
-            middleware.append(NativeWebSearchMiddleware())
+            deepseek_native = provider_official_deepseek_api_mode(
+                EnvConfig.ADVAN_MODEL,
+                EnvConfig.ADVAN_MODEL_PROVIDER,
+            ) is not None
+            middleware.append(
+                NativeWebSearchMiddleware(
+                    ("deepseek_web_search", "deepseek_read_url")
+                    if deepseek_native
+                    else ("web_search",)
+                )
+            )
         if session_turn is not None:
             middleware.append(SessionHistoryMiddleware(session_turn, model.profile))
         middleware.append(MediaInputMiddleware(

@@ -127,7 +127,6 @@ const SettingsPage = {
             { key: 'storage', label: '存储' },
             { key: 'debug', label: '调试' },
             { key: 'dashboard', label: 'Dashboard' },
-            { key: 'content_check', label: '内容检查' },
         ];
         const visibleTabs = Vue.computed(() => tabs.filter(tab => configData[tab.key]));
 

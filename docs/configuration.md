@@ -9,7 +9,7 @@ HyperBot 的配置分为四类文件：NoneBot 启动参数在 `.env`，HyperBot
 | 文件 | 职责 | 生效方式 |
 | --- | --- | --- |
 | `.env` | NoneBot 环境变量：`HOST`、`PORT`、`DRIVER`、`SUPERUSERS`、`NICKNAME` 等 | 进程启动时读取，修改后重启 |
-| `env.toml` | HyperBot 应用配置：人设、模型、供应商、密钥、功能开关、策略、限额、存储、Dashboard、内容检查 | 启动时校验；Dashboard 保存后原子重载，后续请求/任务读取新值；手工编辑需重启 |
+| `env.toml` | HyperBot 应用配置：人设、模型、供应商、密钥、功能开关、策略、限额、存储和 Dashboard | 启动时校验；Dashboard 保存后原子重载，后续请求/任务读取新值；手工编辑需重启 |
 | `mcp.json` | MCP 外部工具服务器定义 | 修改后重启 |
 | `acp.json` | 外部 ACP Agent 子进程、权限策略与超时 | 每个新连接重新读取；配置指纹变化时下次调用重建连接 |
 
@@ -33,12 +33,13 @@ HyperBot 的配置分为四类文件：NoneBot 启动参数在 `.env`，HyperBot
 | `[bot]` | 主 system prompt；`{name}` 会替换为当前唤醒词 | 本页 |
 | `[models]` / `[providers.*]` | 模型角色、供应商 profile、密钥和协议 | 本页 |
 | `[search]` | 独立 DeepSeek 网页搜索与正文读取 | [DeepSeek 网页搜索](deepseek-web-search.md) |
+| `[document_parsing]` | DeepSeek 文件 OCR 解析 | [DeepSeek 媒体能力](deepseek-media.md) |
 | `[key]` | NASA、GitHub 等非模型服务密钥 | 本页 |
 | `[features]` | 功能开关与可选 Laya 候选预筛 | 本页 |
 | `[platforms.feishu]` | 飞书接入的非敏感配置（生产入口默认关闭） | 本页 |
 | `[agent]` | 推理等级、长文转图阈值、消息工具长文本转合并转发阈值、Fake-IP 媒体回退 | [消息媒体网络](message-media-network.md) |
-| `[speech_recognition]` | 本地 SenseVoice 语音识别 | [本地语音识别](local-speech.md) |
-| `[speech_synthesis]` | 本地 MOSS-TTS-Nano 语音合成 | [本地语音合成](local-tts.md) |
+| `[speech_recognition]` | DeepSeek 云端语音识别 | [DeepSeek 媒体能力](deepseek-media.md) |
+| `[speech_synthesis]` | DeepSeek 云端语音合成 | [DeepSeek 媒体能力](deepseek-media.md) |
 | `[agent_policy]` / `[auto_reply_policy]` / `[paint_policy]` | 访问名单与主动回复、绘画权限 | 本页 |
 | `[limits]` | 调用预算、超时、限流 | [Agent 执行控制](agent-execution-controls.md) |
 | `[sessions]` | QQ 跨轮会话缓存 | [QQ 会话缓存](agent-sessions.md) |
@@ -47,7 +48,6 @@ HyperBot 的配置分为四类文件：NoneBot 启动参数在 `.env`，HyperBot
 | `[storage]` | 历史查询窗口、图片与媒体 TTL | 本页 |
 | `[debug]` | Agent 调试开关 | 本页 |
 | `[dashboard]` | 管理面板密码与 JWT | 本页 |
-| `[content_check]` | 文本/图片内容安全检查 | 本页 |
 
 ## 模型与供应商
 
@@ -84,9 +84,11 @@ HyperBot 的配置分为四类文件：NoneBot 启动参数在 `.env`，HyperBot
 profile 常用字段：
 
 - `base_url`、`api_key`：地址与密钥；模型 API key 不再放在 `[key]`。
-- `native_web_search`：确认上游实现内置 `web_search` 后设为 `true`；官方 OpenAI Responses 会自动启用，DeepSeek Flash 会忽略该工具。
+- `native_web_search`：确认上游实现服务端搜索工具后设为 `true`。官方 OpenAI Responses 使用 `web_search`；官方 DeepSeek 路由使用 `deepseek_web_search` 与 `deepseek_read_url`。独立 DeepSeek Search/Fetch 可用时仍优先使用独立工具。
 - `structured_output_method`：Decision 结构化策略，`auto`、`json_schema`、`function_calling`、`json_mode`、`text_json`，默认 `auto`。
 - `decision_extra_body`：只作用于 decision 请求的 `extra_body`，例如关闭 DeepSeek 思考模式；旧字段 `signal_extra_body` 仍可读取，不能与 `decision_extra_body` 配置不同内容。
+- `safety_check`：可选的 DeepSeek Chatbot API 安全审核参数，例如 `{ level = "high" }`。官方 DeepSeek profile 默认使用高强度审核。
+- `title`：可选的会话标题参数，例如 `{ enabled = true }`。只会发送到官方 DeepSeek 路由。
 
 DeepSeek 可分别配置为 `deepseek + chat_completions`、`openai + responses`、`anthropic + messages`。使用官方地址和 DeepSeek 模型时，HyperBot 会在三种协议中发送不含聊天正文的稳定 scope ID，用于服务端 KV cache、内容安全和调度隔离；兼容代理不会收到该扩展字段。图片和文件输入目前不应交给这些 DeepSeek profile。
 
@@ -118,21 +120,21 @@ DeepSeek 可分别配置为 `deepseek + chat_completions`、`openai + responses`
 
 ### `[agent]`
 
-`reasoning_effort`（`low` / `medium` / `high` / `xhigh`）在供应商 profile 的 `api_mode = "responses"` 时传给主模型；`message_image_text_threshold` 控制普通文字转长图的字符阈值（默认 500）；`message_media_fake_ip_fallback` 控制 Clash TUN Fake-IP DNS 回退，详见 [消息媒体网络](message-media-network.md)。
+`reasoning_effort`（`low` / `medium` / `high` / `xhigh`）在供应商 profile 的 `api_mode = "responses"` 时传给主模型。官方 DeepSeek Responses 会把 `medium` / `xhigh` 映射为 API 支持的 `high` / `max`。`message_image_text_threshold` 控制普通文字转长图的字符阈值（默认 500）；`message_media_fake_ip_fallback` 控制 Clash TUN Fake-IP DNS 回退，详见 [消息媒体网络](message-media-network.md)。
 
 ### `[speech_recognition]`
 
-默认关闭，依赖包含在默认 `uv sync` 中。启用后首次使用自动安装默认 Windows x64 运行器、Q8 权重和 VAD；可通过 `auto_download = false` 关闭自动下载，资源准备单独受 `download_timeout_seconds`（默认 600）约束。路径是本机运维配置，不作为工具输入；自定义路径由运维管理。安装、复测与消息行为见 [本地语音识别](local-speech.md)。
+默认关闭。启用后网关通过才调用 DeepSeek `/v1/tools/asr`，API key 从 `[providers.<provider>]` 读取。QQ SILK 会在本地转换为 DeepSeek 支持的 WAV，原始音频仍保存为附件，转写文本进入历史。`max_audio_seconds`、`max_audio_bytes`、`max_audio_per_message` 和 `max_transcript_chars` 继续限制单条消息。
 
 ### `[speech_synthesis]`
 
-默认关闭，依赖包含在默认 `uv sync` 中。使用原生 PyTorch MOSS-TTS-Nano，首次使用自动安装固定修订并校验的本地模型；`auto_download = false` 用于预装资源离线运行，资源准备单独受 `download_timeout_seconds`（默认 600）约束。默认 4 个逻辑 CPU、单次 300 字、60 秒音频、180 秒推理总超时；与本地识别共用推理锁。`get_speech` 返回自动发送的 SILK 语音工件，共用 `[paint_policy]` 权限，另有本节的独立用户频率限制。两套资源可通过 `uv run --locked python scripts/setup_speech.py` 统一预下载。安装、试听与参数见 [本地语音合成](local-tts.md)。
+默认关闭。启用后调用 DeepSeek `/v1/tools/tts`，`voice_id` 可选 `stella` 或 `tide`。服务端返回 WAV，系统转换为 QQ 所需的 SILK 语音工件。默认单次 300 字、60 秒音频、180 秒请求超时；`get_speech` 共用 `[paint_policy]` 权限和独立用户频率限制。
 
 ### 访问策略
 
 - `[agent_policy]`：决定是否响应 QQ 消息（`/acp` 也会二次校验）。`whitelist_mode = true` 时，非零群必须在 `whitelist_group_list` 中，且用户必须在 `whitelist_person_list` 中；个人和群黑名单优先，且黑名单在白名单模式关闭时仍然生效。
 - `[auto_reply_policy]`：控制群聊中未被 @/唤醒时是否走主动回复判断；`whitelist_mode = true` 时仅 `whitelist_group_list` 中的群参与，`blacklist_group_list` 优先。
-- `[paint_policy]`：绘画、视频和本地语音合成共用，覆盖 `/paint`、`/video` 命令和聊天 Agent 的媒体生成工具。黑名单优先；`whitelist_mode = true` 时用户号在 `whitelist_person_list` 中或群号在 `whitelist_group_list` 中即可使用，两份名单均为空时全部拒绝。可在 Dashboard 的“绘画与视频权限”中修改，保存后对后续调用生效。
+- `[paint_policy]`：绘画和视频共用，覆盖 `/paint`、`/video` 命令和聊天 Agent 的媒体生成工具。黑名单优先；`whitelist_mode = true` 时用户号在 `whitelist_person_list` 中或群号在 `whitelist_group_list` 中即可使用，两份名单均为空时全部拒绝。可在 Dashboard 的“绘画与视频权限”中修改，保存后对后续调用生效。
 
 ### `[limits]`
 
@@ -153,10 +155,6 @@ DeepSeek 可分别配置为 `deepseek + chat_completions`、`openai + responses`
 ### `[dashboard]`
 
 `password`、`jwt_secret`、`jwt_expire_hours`。默认密码和默认 JWT secret 会在启动时打印安全警告；未配置 JWT secret 时会生成仅保存在 `cache/.runtime_jwt_secret` 的运行时密钥。首次部署必须修改默认密码并设置随机 JWT secret。
-
-### `[content_check]`
-
-`enabled` 打开文本/图片内容安全检查。依赖随项目默认安装；首次检查会下载并加载对应 Hugging Face 模型和 tokenizer。
 
 ## Dashboard 保存与重载
 

@@ -111,6 +111,9 @@ class ProviderProfile(BaseModel):
     structured_output_method: Literal["auto", "json_schema", "function_calling", "json_mode", "text_json"] = "auto"
     decision_extra_body: dict[str, Any] = Field(default_factory=dict)
     signal_extra_body: dict[str, Any] = Field(default_factory=dict)
+    # DeepSeek Chatbot API features. These are passed only when configured.
+    safety_check: dict[str, Any] = Field(default_factory=dict)
+    title: dict[str, Any] = Field(default_factory=dict)
 
 
 class KeyConfig(_FrozenConfig):
@@ -139,7 +142,7 @@ class FeishuConfig(_FrozenConfig):
     environment variables through :class:`EnvConfig` instead.
     """
 
-    enabled: bool = False
+    enabled: bool = True
     app_id: str = ""
     bot_open_id: str = ""
     path: str = "/feishu/events"
@@ -165,16 +168,23 @@ class SearchConfig(_FrozenConfig):
     max_content_chars: int = Field(default=24000, ge=256, le=100000)
 
 
+class DocumentParsingConfig(_FrozenConfig):
+    """DeepSeek OCR settings for incoming workspace files."""
+
+    enabled: bool = True
+    provider: str = "deepseek"
+    purpose: Literal["text_recognition", "rich_layout_recognition"] = "text_recognition"
+    max_files_per_message: int = Field(default=3, ge=1, le=10)
+    max_file_bytes: int = Field(default=100 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024)
+    max_text_chars: int = Field(default=30000, ge=256, le=200000)
+    timeout_seconds: float = Field(default=180, gt=0, le=600)
+
+
 class SpeechRecognitionConfig(_FrozenConfig):
-    """Local SenseVoice runtime; paths are operator configuration, never tool input."""
+    """DeepSeek hosted speech recognition settings."""
 
     enabled: bool = False
-    auto_download: bool = True
-    download_timeout_seconds: float = Field(default=600, gt=0, le=1800)
-    executable: str = "cache/speech/sensevoice/runtime/llama-funasr-sensevoice.exe"
-    model_path: str = "cache/speech/sensevoice/sensevoice-small-q8.gguf"
-    vad_model_path: str = "cache/speech/sensevoice/fsmn-vad.gguf"
-    max_cpu_cores: int = Field(default=4, ge=1, le=64)
+    provider: str = "deepseek"
     timeout_seconds: float = Field(default=120, gt=0, le=600)
     max_audio_seconds: int = Field(default=120, ge=1, le=600)
     max_audio_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, le=50 * 1024 * 1024)
@@ -183,12 +193,11 @@ class SpeechRecognitionConfig(_FrozenConfig):
 
 
 class SpeechSynthesisConfig(_FrozenConfig):
+    """DeepSeek hosted speech synthesis settings."""
+
     enabled: bool = False
-    auto_download: bool = True
-    download_timeout_seconds: float = Field(default=600, gt=0, le=1800)
-    model_dir: str = "cache/speech/moss-tts"
-    voice: Literal["Junhao"] = "Junhao"
-    max_cpu_cores: int = Field(default=4, ge=1, le=64)
+    provider: str = "deepseek"
+    voice_id: Literal["stella", "tide"] = "stella"
     timeout_seconds: float = Field(default=180, gt=0, le=600)
     max_text_chars: int = Field(default=300, ge=1, le=2000)
     max_audio_seconds: int = Field(default=60, ge=1, le=120)
@@ -267,6 +276,8 @@ class DashboardConfig(_FrozenConfig):
 
 
 class ContentCheckConfig(_FrozenConfig):
+    """Deprecated compatibility section; provider-side safety owns review."""
+
     enabled: bool = False
 
 
@@ -280,6 +291,7 @@ class FrontierSettings(_FrozenConfig):
     platforms: PlatformsConfig = Field(default_factory=PlatformsConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
+    document_parsing: DocumentParsingConfig = Field(default_factory=DocumentParsingConfig)
     speech_recognition: SpeechRecognitionConfig = Field(default_factory=SpeechRecognitionConfig)
     speech_synthesis: SpeechSynthesisConfig = Field(default_factory=SpeechSynthesisConfig)
     agent_policy: AccessPolicy = Field(default_factory=AccessPolicy)
@@ -435,16 +447,21 @@ def _normalize_provider_profiles(providers: Mapping[str, Any]) -> dict[str, dict
         "openai": {"type": "openai", "api_mode": _API_MODE_RESPONSES},
         "google": {"type": "google", "api_mode": _API_MODE_GENERATE_CONTENT},
         "anthropic": {"type": "anthropic", "api_mode": _API_MODE_MESSAGES},
-        "deepseek": {"type": "deepseek", "api_mode": _API_MODE_CHAT_COMPLETIONS},
+        "deepseek": {
+            "type": "deepseek", "api_mode": _API_MODE_CHAT_COMPLETIONS,
+            "safety_check": {"level": "high"},
+        },
         "deepseek_responses": {
             "type": "openai",
             "api_mode": _API_MODE_RESPONSES,
             "base_url": _DEEPSEEK_RESPONSES_BASE_URL,
+            "safety_check": {"level": "high"},
         },
         "deepseek_anthropic": {
             "type": "anthropic",
             "api_mode": _API_MODE_MESSAGES,
             "base_url": _DEEPSEEK_ANTHROPIC_BASE_URL,
+            "safety_check": {"level": "high"},
         },
     }
     for name, raw_profile in providers.items():
@@ -633,6 +650,7 @@ class EnvConfig:
     AGENT_TOOL_CALL_LIMIT: ClassVar[int]
     SESSIONS: ClassVar[SessionConfig]
     SEARCH: ClassVar[SearchConfig]
+    DOCUMENT_PARSING: ClassVar[DocumentParsingConfig]
 
     TEST_GROUP_ID: ClassVar[list[int | str]]
     ANNOUNCE_GROUP_ID: ClassVar[list[int | str]]
@@ -675,6 +693,7 @@ class EnvConfig:
         values: dict[str, Any] = {
             "SESSIONS": settings.sessions,
             "SEARCH": settings.search,
+            "DOCUMENT_PARSING": settings.document_parsing,
             "BOT_NAME": nicknames[0],
             "BOT_NICKNAMES": list(nicknames),
             "SYSTEM_PROMPT": settings.bot.system_prompt,
@@ -752,7 +771,7 @@ class EnvConfig:
             "DASHBOARD_PASSWORD": settings.dashboard.password,
             "DASHBOARD_JWT_SECRET": _runtime_dashboard_secret(settings.dashboard.jwt_secret),
             "DASHBOARD_JWT_EXPIRE_HOURS": settings.dashboard.jwt_expire_hours,
-            "CONTENT_CHECK_ENABLED": settings.content_check.enabled,
+            "CONTENT_CHECK_ENABLED": False,
             "FEISHU_ENABLED": settings.platforms.feishu.enabled,
             "FEISHU_APP_ID": settings.platforms.feishu.app_id,
             "FEISHU_BOT_OPEN_ID": settings.platforms.feishu.bot_open_id,

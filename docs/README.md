@@ -23,10 +23,9 @@
 | [Agent 执行控制](agent-execution-controls.md) | 主图模型/工具调用预算、用量统计口径、工具错误分类和 Decision 结构化输出策略。 |
 | [QQ 会话缓存](agent-sessions.md) | 有界 checkpoint 会话缓存的开关、参数、容量与媒体语义、投递结算和观测指标。 |
 | [DeepSeek 网页搜索](deepseek-web-search.md) | 独立 Search/Fetch 工具的配置、调用契约、正文预算、工作区落盘、重试与限速。 |
+| [DeepSeek 媒体能力](deepseek-media.md) | 托管 OCR、语音识别与语音合成的配置、限制和 QQ 媒体适配。 |
 | [Laya 决策 Provider](laya-decision-provider.md) | 可选 Laya 候选预筛的本地 SDK/HTTP 后端、DecisionProvider 契约与门控边界。 |
 | [消息媒体网络](message-media-network.md) | 媒体加载的公开地址校验，以及 Clash TUN / Fake-IP 环境下的 DNS 回退规则。 |
-| [本地语音识别](local-speech.md) | SenseVoiceSmall Q8 的 Windows 安装、子进程识别行为、消息语义与资源复测。 |
-| [本地语音合成](local-tts.md) | MOSS-TTS-Nano 原生 PyTorch 安装、中文试听、SILK 工件和资源限制。 |
 | [模型目录](../models/README.md) | `models/` 模型元数据：模型卡字段、能力与生命周期、LobeHub 名称同步、更新流程。 |
 | [渲染器开发说明](../renderer/README.md) | Markdown 渲染器的 React/TypeScript 组件、构建、类型生成与截图验证。 |
 | [富文本排版技能](../skills/rich-markdown/SKILL.md) | QQ 回复的 Markdown 与轻量组件语法；详细字段契约位于其 `references/` 目录。 |
@@ -53,7 +52,6 @@
 | [SQLite 消息搜索维护](database-search.md) | FTS5 external-content 索引的搜索接口、一致性检查与维护脚本用法。 |
 | [消息身份与历史迁移退役](database-identity-migration.md) | `Message.id` 与时间的语义、当前数据库结构要求、旧备份恢复和验证命令。 |
 | [数据库维护脚本](../scripts/database_maintenance.py) | `diagnose` 检查 FTS/schema，`maintain` 执行 optimize、重建与可选 WAL checkpoint。 |
-| [运行资源报告](reports/) | 本地资源复测快照：SenseVoice Q8 的 HTML 报告与 JSON 原始数据，不随代码更新。 |
 | [代码健康审计](reports/code-health-audit-2026-10-18.md) | 2026-10-18 的代码健康盘点：可清理的死代码、可维护性热点、兼容层判定、测试缺口与建议处理顺序（一次性快照）。 |
 
 ## 历史归档

@@ -290,6 +290,11 @@ async def test_module_tools_groups_tools_by_domain(monkeypatch):
         "get_available_china_radar_areas",
         "get_static_china_radar",
     }
+    assert {tool.name for tool in groups["deepseek"]} == {
+        "get_deepseek_api_balance",
+        "deepseek_web_search",
+        "deepseek_web_fetch",
+    }
     direct_names = {tool.name for tool in module.agent_tools.direct_tools}
     assert direct_names == {
         "get_message",

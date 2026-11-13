@@ -1138,6 +1138,44 @@ def test_provider_request_overrides_keeps_anthropic_cache_control_off_proxies(mo
     ) == {"model_kwargs": {"cache_control": {"type": "ephemeral"}}}
 
 
+@pytest.mark.parametrize(
+    ("api_mode", "expected_key"),
+    [("responses", "model_kwargs"), ("chat_completions", "extra_body"), ("messages", "model_kwargs")],
+)
+def test_provider_request_overrides_adds_deepseek_chatbot_features(
+    monkeypatch,
+    api_mode,
+    expected_key,
+):
+    monkeypatch.setattr(
+        cognitive_mod,
+        "provider_official_deepseek_api_mode",
+        lambda *_args: api_mode,
+    )
+    monkeypatch.setattr(
+        cognitive_mod.EnvConfig,
+        "LLM_PROVIDERS",
+        {
+            "deepseek_route": {
+                "safety_check": {"level": "high"},
+                "title": {"enabled": True},
+            }
+        },
+    )
+
+    overrides = cognitive_mod._provider_request_overrides(
+        model="deepseek-flash",
+        provider="deepseek_route",
+        workspace_key="group-1",
+        access_profile="frontier",
+    )
+
+    payload = overrides[expected_key]
+    assert payload["safety_check"] == {"level": "high"}
+    assert payload["title"] == {"enabled": True}
+    assert set(payload) >= {"safety_check", "title"}
+
+
 @pytest.mark.asyncio
 async def test_chat_agent_stabilizes_tool_order_and_keeps_gated_tools_at_tail(monkeypatch, tmp_path):
     captured: dict[str, Any] = {}
@@ -1399,6 +1437,25 @@ def test_native_web_search_middleware_injects_provider_tool_at_model_boundary():
     assert result == "ok"
     assert captured["tools"][0].name == "local_tool"
     assert captured["tools"][1] == {"type": "web_search"}
+
+
+def test_native_web_search_middleware_injects_deepseek_chatbot_tools():
+    request = types.SimpleNamespace(tools=[])
+
+    def override(**changes):
+        return types.SimpleNamespace(**{**request.__dict__, **changes})
+
+    request.override = override
+    captured = {}
+
+    cognitive_mod.NativeWebSearchMiddleware(
+        ("deepseek_web_search", "deepseek_read_url")
+    ).wrap_model_call(request, lambda updated: captured.setdefault("tools", updated.tools))
+
+    assert captured["tools"] == [
+        {"type": "deepseek_web_search"},
+        {"type": "deepseek_read_url"},
+    ]
 
 
 def test_skip_reply_updates_state_and_closes_model_loop():

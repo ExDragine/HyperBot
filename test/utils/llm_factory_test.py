@@ -232,6 +232,27 @@ def test_deepseek_responses_routes_through_chat_openai(monkeypatch):
     )
 
 
+def test_deepseek_reasoning_effort_uses_v4_values(monkeypatch):
+    monkeypatch.setattr(
+        factory.EnvConfig,
+        "LLM_PROVIDERS",
+        {
+            "deepseek_responses": {
+                "type": "openai",
+                "api_mode": "responses",
+                "base_url": "https://api.deepseek.com",
+            }
+        },
+    )
+
+    assert factory.normalize_reasoning_effort(
+        "deepseek-v4-pro", "deepseek_responses", "medium"
+    ) == "high"
+    assert factory.normalize_reasoning_effort(
+        "deepseek-v4-pro", "deepseek_responses", "xhigh"
+    ) == "max"
+
+
 @pytest.mark.parametrize(
     "base_url",
     ["", "https://api.openai.com", "https://api.openai.com/v1/", "https://API.OPENAI.COM:443/v1"],
@@ -382,7 +403,7 @@ def test_deepseek_responses_does_not_advertise_native_web_search(monkeypatch):
     )
 
     assert supported is False
-    assert "model-specific opt-in" in reason
+    assert "explicit opt-in" in reason
     assert factory.model_supports_native_web_search(
         "deepseek-future-model",
         "official_deepseek",
@@ -417,6 +438,29 @@ def test_deepseek_hosted_search_can_explicitly_opt_in_for_supported_model(monkey
     }})
     supported, reason = factory.native_web_search_support("deepseek-v4-pro", "deepseek_pro")
     assert supported and "explicitly opted in" in reason
+
+
+@pytest.mark.parametrize("api_mode", ["chat_completions", "messages"])
+def test_deepseek_chatbot_tools_can_be_enabled_on_all_official_protocols(monkeypatch, api_mode):
+    monkeypatch.setattr(
+        factory.EnvConfig,
+        "LLM_PROVIDERS",
+        {
+            "deepseek_route": {
+                "type": "deepseek" if api_mode == "chat_completions" else "anthropic",
+                "api_mode": api_mode,
+                "base_url": "https://api.deepseek.com"
+                if api_mode == "chat_completions"
+                else "https://api.deepseek.com/anthropic",
+                "native_web_search": True,
+            }
+        },
+    )
+
+    supported, reason = factory.native_web_search_support("deepseek-flash", "deepseek_route")
+
+    assert supported
+    assert api_mode in reason
 
 
 @pytest.mark.parametrize(

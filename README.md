@@ -1,6 +1,6 @@
 # HyperBot
 
-HyperBot 是一个基于 [NoneBot2](https://nonebot.dev/) 与 Milky 适配器的 AI QQ 聊天机器人。QQ 消息经归一化、存储、回复门控和内容安全检查后，交给 LangGraph/deepagents 驱动的 Deep Agent 执行，支持多模型路由、工具调用、文件系统工作区、图片/视频生成、聊天记录检索、定时任务、ACP 子代理和 Web 管理面板。
+HyperBot 是一个基于 [NoneBot2](https://nonebot.dev/) 与 Milky 适配器的 AI QQ 聊天机器人。QQ 消息经归一化、存储和回复门控后，交给 LangGraph/deepagents 驱动的 Deep Agent 执行，支持多模型路由、工具调用、文件系统工作区、图片/视频生成、聊天记录检索、定时任务、ACP 子代理和 Web 管理面板。
 
 > 项目当前名称为 HyperBot。为兼容已有部署，代码中仍保留部分历史前缀的类名、环境变量、数据库文件名和 ACP 兼容入口（例如 `Frontier*`、`FRONTIER_CONFIG`、`frontier.db`、`frontier_cache`）；这些标识不影响项目当前名称。
 
@@ -42,7 +42,7 @@ plugins/agent on_message(priority=10)
   ↓
 message_gateway 门控（黑白名单 / @ / 唤醒词 / Decision LLM）
   ↓
-媒体下载 + 内容安全检查
+媒体下载 + 服务端安全审核
   ↓
 ConversationOrchestrator（平台中性编排）
   ↓
@@ -111,12 +111,11 @@ uv run playwright install
 ```
 
 语音识别和语音合成的 Python 依赖已包含在默认 `uv sync` 安装中，无需安装 extras。
-启用 `[speech_recognition]` / `[speech_synthesis]` 后，首次使用会自动下载并校验对应模型；
-Windows x64 的 SenseVoice 运行器也会自动准备。下载按需进行，未启用的功能不下载模型。
-需要提前准备或离线部署时，可运行 `uv run --locked python scripts/setup_speech.py` 一次安装两套资源。
-配置与平台限制见 [本地语音识别](docs/local-speech.md) 和 [本地语音合成](docs/local-tts.md)。
+启用 `[speech_recognition]` / `[speech_synthesis]` 后，网关会按需调用 DeepSeek 的 ASR/TTS API；
+QQ SILK 只在本地做格式转换，不再下载或加载语音模型。
+配置与平台限制见 [DeepSeek 媒体能力](docs/deepseek-media.md)。
 
-项目已将腾讯云 PyPI 镜像设为 uv 默认源；CPU 版 PyTorch 使用上海交通大学的 wheel 镜像，`.env.example` 和启动脚本默认把 `HF_ENDPOINT` 设为 `https://hf-mirror.com`。内容检查模型依赖随项目默认安装，启用 `[content_check]` 后首次检查会按配置下载模型和 tokenizer。
+项目已将腾讯云 PyPI 镜像设为 uv 默认源；CPU 版 PyTorch 使用上海交通大学的 wheel 镜像，`.env.example` 和启动脚本默认把 `HF_ENDPOINT` 设为 `https://hf-mirror.com`。模型输入输出安全审核由 DeepSeek 服务端完成。
 
 ### 配置
 
@@ -148,20 +147,20 @@ Windows 使用 `.\run.ps1`。两个脚本都会设置默认 `HF_ENDPOINT`，然�
 docker compose up -d
 ```
 
-镜像默认包含 Torch 和内容检查模型依赖，容器把 Hugging Face 与 Torch 缓存写入 `frontier_cache` volume。首次部署前准备 `.env`、`env.toml`、`mcp.json` 和 `frontier.db`；`.dockerignore` 排除这些运行时文件，compose 通过 `env_file` 或 volume 在运行时提供它们，因此不会进入镜像层。启用 ACP 时还需准备 `acp.json`：compose 未挂载该文件，需要在构建前放入仓库根目录（会随镜像复制），或自行在 compose 中增加只读挂载。compose 默认把容器 `8080` 映射到宿主 `3000`，Dashboard 位于 `http://localhost:3000/dashboard`。
+镜像包含运行所需的 Python 依赖。首次部署前准备 `.env`、`env.toml`、`mcp.json` 和 `frontier.db`；`.dockerignore` 排除这些运行时文件，compose 通过 `env_file` 或 volume 在运行时提供它们，因此不会进入镜像层。启用 ACP 时还需准备 `acp.json`：compose 未挂载该文件，需要在构建前放入仓库根目录（会随镜像复制），或自行在 compose 中增加只读挂载。compose 默认把容器 `8080` 映射到宿主 `3000`，Dashboard 位于 `http://localhost:3000/dashboard`。
 
 ## 配置概览
 
 | 文件 | 用途 |
 | --- | --- |
 | `.env` | NoneBot 环境变量；`NICKNAME` 管理机器人全局名称和别名 |
-| `env.toml` | HyperBot 应用配置：system prompt、模型与供应商、功能开关、策略、限额、Dashboard、内容检查 |
+| `env.toml` | HyperBot 应用配置：system prompt、模型与供应商、功能开关、策略、限额和 Dashboard |
 | `mcp.json` | MCP 外部工具服务器定义 |
 | `acp.json` | ACP Agent 子进程、权限策略和超时 |
 
 `env.toml` 的要点：
 
-- `[bot]`、`[models]`、`[providers.*]`、`[search]`、`[key]`、`[features]`、`[agent]`、`[limits]`、`[storage]`、`[dashboard]`、`[content_check]` 等配置段覆盖人设、模型角色、供应商协议、搜索、开关与限额。
+- `[bot]`、`[models]`、`[providers.*]`、`[search]`、`[document_parsing]`、`[key]`、`[features]`、`[agent]`、`[limits]`、`[storage]`、`[dashboard]` 等配置段覆盖人设、模型角色、供应商协议、搜索、文件解析、开关与限额。
 - `*_model_provider` 填写 `[providers.<name>]` 的名称而不是 URL；`type` 选择 LangChain 适配器，`api_mode` 选择接口协议，密钥和 base URL 保存在 profile。
 - 绘画和视频 provider 的 `type` 必须为 `openai`；绘画协议跟随 `api_mode`，视频使用 Videos API。
 - `[agent_policy]` / `[auto_reply_policy]` / `[paint_policy]` 控制响应名单、主动回复和媒体生成权限。

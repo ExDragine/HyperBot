@@ -11,12 +11,12 @@ from .mcp_client import mcp_get_tools_async
 
 _EXCLUDED_MODULES = {"__init__", "mcp_client"}
 
-_DOMAIN_GROUPS = ("astro", "earth", "memory", "divination", "external")
+_DOMAIN_GROUPS = ("astro", "earth", "deepseek", "memory", "divination", "external")
 _RESTRICTED_GROUPS = ("restricted",)
 _ALL_TOOL_GROUPS = ("main", *_DOMAIN_GROUPS, *_RESTRICTED_GROUPS)
 
 _READ_ONLY_MODULES = {
-    "comet", "deepseek_balance", "deepseek_search", "earthquake", "iching", "radar",
+    "comet", "deepseek_balance", "deepseek_ocr", "deepseek_search", "earthquake", "iching", "radar",
     "rocket", "space_weather", "tarot", "weather",
 }
 _READ_ONLY_PREFIXES = {
@@ -45,8 +45,9 @@ _TOOL_MODULE_GROUPS = {
     "milky_group": "main",
     "milky_message": "main",
     "milky_system": "main",
-    "deepseek_balance": "main",
-    "deepseek_search": "main",
+    "deepseek_balance": "deepseek",
+    "deepseek_ocr": "deepseek",
+    "deepseek_search": "deepseek",
     "reminder": "main",
     "scheduled_task": "main",
     "aurora": "astro",
@@ -111,7 +112,7 @@ class ModuleTools:
             self.tool_metadata,
         ) = _discover_tools()
 
-        for group in ("astro", "earth", "memory", "divination"):
+        for group in ("astro", "earth", "deepseek", "memory", "divination"):
             self.subagent_tools["main"].extend(self.subagent_tools[group])
 
     @property

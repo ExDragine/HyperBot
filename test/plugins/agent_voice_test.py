@@ -86,11 +86,6 @@ async def test_voice_gate_precedes_download_and_asr_then_checks_and_persists_tex
             raise speech.SpeechRecognitionError("timeout")
         return speech.Transcription("明天北京的天气怎么样", 1, 0.1)
 
-    async def check(text, _images):
-        calls.append("check")
-        captured["checked"] = text
-        return "Safe"
-
     async def process(context, _history):
         calls.append("agent")
         captured["context"] = context
@@ -99,13 +94,11 @@ async def test_voice_gate_precedes_download_and_asr_then_checks_and_persists_tex
     monkeypatch.setattr(agent, "get_bot", lambda: object())
     monkeypatch.setattr(agent, "message_extract", extract)
     monkeypatch.setattr(agent, "message_gateway", gate)
-    monkeypatch.setattr(agent, "message_check", check)
     monkeypatch.setattr(agent, "_process_queued_agent_request", process)
     monkeypatch.setattr(speech, "transcribe_audio", recognize)
     settings = SpeechRecognitionConfig(enabled=True)
     monkeypatch.setattr(agent.EnvConfig, "SPEECH_RECOGNITION", settings)
     monkeypatch.setattr(speech.EnvConfig, "SPEECH_RECOGNITION", settings)
-    monkeypatch.setattr(agent.EnvConfig, "CONTENT_CHECK_ENABLED", True)
 
     async with App().test_matcher() as ctx:
         adapter = ctx.create_adapter()
@@ -116,13 +109,12 @@ async def test_voice_gate_precedes_download_and_asr_then_checks_and_persists_tex
     if not gate_allowed:
         assert calls == ["gate"]
         return
-    assert calls == ["gate", "download", "persist_audio", "asr", "check", "agent"]
+    assert calls == ["gate", "download", "persist_audio", "asr", "agent"]
     assert captured["context"].audio == []
     assert captured["update"]["message_id"] == 101
     assert captured["update"]["raw_segments_json"] is None
     assert "语音" in captured["insert"]["content"]
     if recognition_fails:
-        assert "识别失败" in captured["checked"] and "timeout" in captured["context"].text
+        assert "识别失败" in captured["context"].text
     else:
-        assert "明天北京的天气怎么样" in captured["checked"]
         assert "明天北京的天气怎么样" in captured["update"]["content"]
