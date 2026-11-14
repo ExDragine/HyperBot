@@ -328,6 +328,18 @@ def _provider_user_id(*, workspace_key: str, access_profile: str) -> str:
     return f"{_PROMPT_CACHE_NAMESPACE}_user_{digest}"
 
 
+def _deepseek_responses_overrides(
+    *, user_id: str, configured_features: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    overrides: dict[str, Any] = {"model_kwargs": {"user": user_id}}
+    if configured_features:
+        # DeepSeek-specific fields are not part of the OpenAI Responses SDK
+        # signature. Pass them through the request body extension so the SDK
+        # does not reject them locally.
+        overrides["extra_body"] = configured_features
+    return overrides
+
+
 def _provider_request_overrides(
     *,
     model: str,
@@ -350,8 +362,10 @@ def _provider_request_overrides(
             access_profile=access_profile,
         )
         if deepseek_mode == "responses":
-            payload = {"user": pseudonymous_user_id, **configured_features}
-            return {"model_kwargs": payload}
+            return _deepseek_responses_overrides(
+                user_id=pseudonymous_user_id,
+                configured_features=configured_features,
+            )
         if deepseek_mode == "chat_completions":
             payload = {"user_id": pseudonymous_user_id, **configured_features}
             return {"extra_body": payload}

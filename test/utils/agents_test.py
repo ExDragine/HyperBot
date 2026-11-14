@@ -1140,7 +1140,7 @@ def test_provider_request_overrides_keeps_anthropic_cache_control_off_proxies(mo
 
 @pytest.mark.parametrize(
     ("api_mode", "expected_key"),
-    [("responses", "model_kwargs"), ("chat_completions", "extra_body"), ("messages", "model_kwargs")],
+    [("responses", "extra_body"), ("chat_completions", "extra_body"), ("messages", "model_kwargs")],
 )
 def test_provider_request_overrides_adds_deepseek_chatbot_features(
     monkeypatch,
@@ -1174,6 +1174,8 @@ def test_provider_request_overrides_adds_deepseek_chatbot_features(
     assert payload["safety_check"] == {"level": "high"}
     assert payload["title"] == {"enabled": True}
     assert set(payload) >= {"safety_check", "title"}
+    if api_mode == "responses":
+        assert overrides["model_kwargs"]["user"].startswith("frontier_user_")
 
 
 @pytest.mark.asyncio
