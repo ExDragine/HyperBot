@@ -11,12 +11,8 @@ from pydantic import SecretStr
 
 from models import ApiMode, ModelFeature, ModelInput, ModelOutput, get_model, load_catalog
 from utils.configs import EnvConfig
-
-from utils.providers.deepseek import (
-    DEEPSEEK_VALID_KWARGS,
-    DeepSeekProvider,
-    official_api_mode as deepseek_official_api_mode,
-)
+from utils.providers.deepseek import DEEPSEEK_VALID_KWARGS, DeepSeekProvider
+from utils.providers.deepseek import official_api_mode as deepseek_official_api_mode
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
