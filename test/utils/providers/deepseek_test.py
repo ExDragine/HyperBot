@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 
 from utils.providers.deepseek import DeepSeekProvider, official_api_mode
 
