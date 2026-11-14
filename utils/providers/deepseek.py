@@ -12,7 +12,8 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
-from langchain_core.language_models import BaseChatModel, ModelProfile
+from langchain_core.language_models import ModelProfile
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_deepseek import ChatDeepSeek
 from pydantic import SecretStr
 
