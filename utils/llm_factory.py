@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import ModelProfile
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_deepseek import ChatDeepSeek
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 

@@ -58,13 +58,13 @@ async def transcribe_message_audio(text: str, audio: list[bytes]) -> tuple[str, 
             from nonebot import logger
 
             logger.info(
-                "DeepSeek 语音识别完成 audio_seconds=%.2f elapsed_seconds=%.2f chars=%d",
+                "DeepSeek 语音识别完成 audio_seconds={:.2f} elapsed_seconds={:.2f} chars={}",
                 result.audio_seconds, result.elapsed_seconds, len(result.text),
             )
         except SpeechRecognitionError as exc:
             from nonebot import logger
 
-            logger.warning("DeepSeek 语音识别失败 code=%s", exc.code)
+            logger.warning("DeepSeek 语音识别失败 code={}", exc.code)
             additions.append(f"[用户语音 {index} 识别失败，错误码：{exc.code}；可请用户改发文字]")
     if len(audio) > settings.max_audio_per_message:
         additions.append("[其余语音超出本条消息的识别数量限制，尚未识别]")

@@ -42,12 +42,14 @@ class DeepSeekProvider:
         kwargs: Mapping[str, Any] | None = None,
         *,
         catalog_profile: ModelProfile | None = None,
+        chat_model_cls: type[BaseChatModel] | None = None,
     ) -> BaseChatModel:
         return create_chat_model(
             self.model,
             self.profile,
             kwargs or {},
             catalog_profile=catalog_profile,
+            chat_model_cls=chat_model_cls,
         )
 
     def normalize_reasoning_effort(self, effort: str | None) -> str | None:
@@ -156,6 +158,7 @@ def create_chat_model(
     kwargs: Mapping[str, Any],
     *,
     catalog_profile: ModelProfile | None = None,
+    chat_model_cls: type[BaseChatModel] | None = None,
 ) -> BaseChatModel:
     """Create ChatDeepSeek with supported and normalized parameters."""
 
@@ -172,7 +175,7 @@ def create_chat_model(
         filtered["api_base"] = base_url
 
     api_key = SecretStr(_clean(profile.get("api_key")))
-    return ChatDeepSeek(
+    return (chat_model_cls or ChatDeepSeek)(
         api_key=api_key,
         model=model,
         **filtered,
