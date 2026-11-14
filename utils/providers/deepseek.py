@@ -50,10 +50,14 @@ class DeepSeekProvider:
         )
 
     def official_api_mode(self) -> str | None:
+        provider_type = str(self.profile.get("type") or "deepseek").lower()
+        api_mode = str(self.profile.get("api_mode") or "chat_completions").lower()
+        if provider_type == "deepseek_responses":
+            provider_type, api_mode = "openai", "responses"
         return official_api_mode(
             model=self.model,
-            provider_type=str(self.profile.get("type") or "deepseek").lower(),
-            api_mode=str(self.profile.get("api_mode") or "chat_completions").lower(),
+            provider_type=provider_type,
+            api_mode=api_mode,
             profile=self.profile,
         )
 
