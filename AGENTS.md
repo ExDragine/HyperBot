@@ -89,6 +89,7 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 | 文件 | 职责 |
 |------|------|
 | `agents/` | Agent 包：主 Deep Agent 装配（`cognitive.py`）、中性桥接（`neutral_core.py`）、运行时入口（`runtime_gateway.py`）、消息信封（`message_envelope.py`）、执行与超时（`execution.py`）、用量统计（`usage.py`）、工具错误（`tool_errors.py`）、进度流（`progress.py`）、浏览器意图（`capture.py`）、Prompt、workspace 与 Subagent |
+| `providers/` | Provider 扩展包：在保留 LangChain 默认适配器的基础上，承载供应商专属协议、参数标准化、能力判断和错误边界；当前包含 `deepseek/` |
 | `agent_protocol/` | 平台无关契约：`models.py` 值对象（消息段、参与者、会话、请求/响应、投递回执）、`ports.py` 的 `AgentCore`/`ReplyPolicy`/`HistoryStore`/`DeliveryPort`/`PlatformToolProvider`、`identity.py` 的 workspace key 归一化 |
 | `agent_orchestration.py` | `ConversationOrchestrator`：历史 → 门控 → Agent → 投递的平台中性单轮生命周期；QQ 生产入口已接入 |
 | `decision/` | 平台无关 Decision provider：`llm.py`（LLM 决策）、`laya.py`（Laya 候选预筛，默认关闭）、`reply_gate.py`（回复门控打分）、`models.py`；导入不加载 torch/transformers 权重 |
