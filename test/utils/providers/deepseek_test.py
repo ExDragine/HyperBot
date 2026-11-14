@@ -4,7 +4,7 @@ from utils.providers.deepseek import DeepSeekProvider, official_api_mode
 
 
 def test_official_routes_are_classified_by_protocol():
-    assert official_api_mode(
+    assert official_api_mode(  # noqa: S101
         model="deepseek-chat",
         provider_type="deepseek",
         api_mode="chat_completions",
