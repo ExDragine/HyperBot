@@ -15,6 +15,7 @@ from utils.configs import EnvConfig
 
 from utils.providers.deepseek import (
     DEEPSEEK_VALID_KWARGS,
+    DeepSeekProvider,
     create_chat_model as create_deepseek_chat_model,
     official_api_mode as deepseek_official_api_mode,
 )
@@ -527,9 +528,7 @@ def create_llm(model: str, provider: str | None = None, **kwargs) -> BaseChatMod
     provider_type, api_mode = _provider_protocol(model, profile)
     if provider_type == "deepseek":
         catalog_profile = get_langchain_model_profile(model, _infer_provider(model))
-        return create_deepseek_chat_model(
-            model,
-            profile,
+        return DeepSeekProvider(model, profile).create_chat_model(
             kwargs,
             catalog_profile=catalog_profile,
         )
