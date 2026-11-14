@@ -524,6 +524,7 @@ def create_llm(model: str, provider: str | None = None, **kwargs) -> BaseChatMod
         return DeepSeekProvider(model, profile).create_chat_model(
             kwargs,
             catalog_profile=catalog_profile,
+            chat_model_cls=ChatDeepSeek,
         )
     config = _PROVIDER_CONFIGS[provider_type]
 
