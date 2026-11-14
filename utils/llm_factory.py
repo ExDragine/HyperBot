@@ -13,6 +13,12 @@ from pydantic import SecretStr
 from models import ApiMode, ModelFeature, ModelInput, ModelOutput, get_model, load_catalog
 from utils.configs import EnvConfig
 
+from utils.providers.deepseek import (
+    DEEPSEEK_VALID_KWARGS,
+    create_chat_model as create_deepseek_chat_model,
+    official_api_mode as deepseek_official_api_mode,
+)
+
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
 
@@ -47,15 +53,7 @@ _ANTHROPIC_VALID = {
     "model_kwargs",
     "profile",
 }
-_DEEPSEEK_VALID = {
-    "streaming",
-    "max_retries",
-    "timeout",
-    "temperature",
-    "model_kwargs",
-    "extra_body",
-    "profile",
-}
+_DEEPSEEK_VALID = set(DEEPSEEK_VALID_KWARGS)
 
 _openai_config = ProviderConfig(
     cls_fn=lambda: ChatOpenAI,
@@ -311,43 +309,18 @@ def provider_is_official_anthropic(model: str, provider: str | None = None) -> b
 
 
 def provider_official_deepseek_api_mode(model: str, provider: str | None = None) -> str | None:
-    """Return the protocol for an official DeepSeek route, if any.
-
-    The OpenAI and Anthropic adapters are also used by arbitrary compatible
-    proxies, so an explicit DeepSeek endpoint is required for those routes.
-    ``ChatDeepSeek`` is the exception: its empty base URL resolves to the
-    library's official ``https://api.deepseek.com/v1`` default.
-    """
+    """Return the protocol for an official DeepSeek route, if any."""
     if _infer_provider(model) != "deepseek":
         return None
 
     _, profile = _provider_profile(model, provider)
     provider_type, api_mode = _provider_protocol(model, profile)
-    base_url = _clean_optional(profile.get("base_url"))
-    if provider_type == "deepseek" and api_mode == ApiMode.CHAT_COMPLETIONS.value:
-        official = _targets_https_api(
-            profile,
-            "api.deepseek.com",
-            paths=frozenset({"", "/v1"}),
-            allow_default=True,
-        )
-    elif provider_type == "openai" and api_mode == ApiMode.RESPONSES.value:
-        official = bool(base_url) and _targets_https_api(
-            profile,
-            "api.deepseek.com",
-            paths=frozenset({"", "/v1"}),
-            allow_default=False,
-        )
-    elif provider_type == "anthropic" and api_mode == ApiMode.MESSAGES.value:
-        official = bool(base_url) and _targets_https_api(
-            profile,
-            "api.deepseek.com",
-            paths=frozenset({"/anthropic"}),
-            allow_default=False,
-        )
-    else:
-        official = False
-    return api_mode if official else None
+    return deepseek_official_api_mode(
+        model=model,
+        provider_type=provider_type,
+        api_mode=api_mode,
+        profile=profile,
+    )
 
 
 def native_web_search_support(
@@ -552,6 +525,14 @@ def create_llm(model: str, provider: str | None = None, **kwargs) -> BaseChatMod
         raise TypeError("create_llm() 不再接受 use_responses_api，请在供应商 profile 中配置 api_mode")
     _, profile = _provider_profile(model, provider)
     provider_type, api_mode = _provider_protocol(model, profile)
+    if provider_type == "deepseek":
+        catalog_profile = get_langchain_model_profile(model, _infer_provider(model))
+        return create_deepseek_chat_model(
+            model,
+            profile,
+            kwargs,
+            catalog_profile=catalog_profile,
+        )
     config = _PROVIDER_CONFIGS[provider_type]
 
     cls = config.cls_fn()
