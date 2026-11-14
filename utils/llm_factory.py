@@ -16,7 +16,6 @@ from utils.configs import EnvConfig
 from utils.providers.deepseek import (
     DEEPSEEK_VALID_KWARGS,
     DeepSeekProvider,
-    create_chat_model as create_deepseek_chat_model,
     official_api_mode as deepseek_official_api_mode,
 )
 
