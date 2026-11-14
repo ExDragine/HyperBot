@@ -12,3 +12,5 @@ __all__ = [
     "create_chat_model",
     "official_api_mode",
 ]
+
+from utils.providers.deepseek_media import DeepSeekMediaError, ocr_file, synthesize_speech, transcribe_audio

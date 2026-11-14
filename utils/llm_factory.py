@@ -5,7 +5,6 @@ from urllib.parse import urlsplit
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import ModelProfile
-from langchain_deepseek import ChatDeepSeek
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
@@ -79,7 +78,7 @@ _anthropic_config = ProviderConfig(
 )
 
 _deepseek_config = ProviderConfig(
-    cls_fn=lambda: ChatDeepSeek,
+    cls_fn=lambda: DeepSeekProvider,
     api_key_field="api_key",
     valid_kwargs=_DEEPSEEK_VALID,
     base_url_field="api_base",
@@ -242,7 +241,7 @@ def normalize_reasoning_effort(
     if effort is None:
         return None
     if provider_official_deepseek_api_mode(model, provider) == ApiMode.RESPONSES.value:
-        return {"medium": "high", "xhigh": "max"}.get(effort, effort)
+        return DeepSeekProvider(model, _provider_profile(model, provider)[1]).normalize_reasoning_effort(effort)
     return effort
 
 
@@ -445,9 +444,7 @@ def _needs_prompt_schema(model: str, provider: str | None, provider_type: str) -
     共用同一限制。模型别名（例如 ``deepseek-flash``）可能没有能力卡片，因此按
     路由判断而不是按模型卡判断。
     """
-    if provider_type == "deepseek":
-        return True
-    return provider_official_deepseek_api_mode(model, provider) is not None
+    return DeepSeekProvider(model, _provider_profile(model, provider)[1]).needs_prompt_schema(provider_type)
 
 
 def structured_output_options(

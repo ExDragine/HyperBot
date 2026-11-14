@@ -49,6 +49,16 @@ class DeepSeekProvider:
             catalog_profile=catalog_profile,
         )
 
+    def normalize_reasoning_effort(self, effort: str | None) -> str | None:
+        """Map generic reasoning effort aliases to DeepSeek Responses values."""
+        if effort is None:
+            return None
+        return {"medium": "high", "xhigh": "max"}.get(effort, effort)
+
+    def needs_prompt_schema(self, provider_type: str) -> bool:
+        """DeepSeek routes use prompt JSON when forced tool choice is unsafe."""
+        return provider_type == "deepseek" or self.official_api_mode() is not None
+
     def official_api_mode(self) -> str | None:
         provider_type = str(self.profile.get("type") or "deepseek").lower()
         api_mode = str(self.profile.get("api_mode") or "chat_completions").lower()
