@@ -13,6 +13,7 @@ import dotenv
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from utils.event_policy import EventConfig
+from utils.providers import default_profiles, validate_profile_fields
 from utils.providers.base import ADAPTER_API_MODES, DEFAULT_API_MODES
 
 dotenv.load_dotenv()
@@ -21,17 +22,7 @@ CONFIG_VERSION = 2
 CONFIG_PATH = Path(os.getenv("FRONTIER_CONFIG", "env.toml"))
 _DEFAULT_DASHBOARD_JWT_SECRET = "frontier-dashboard-default-secret"  # noqa: S105
 _DEEPSEEK_RESPONSES_BASE_URL = "https://api.deepseek.com"
-_DEEPSEEK_ANTHROPIC_BASE_URL = "https://api.deepseek.com/anthropic"
-_API_MODE_CHAT_COMPLETIONS = "chat_completions"
-_API_MODE_RESPONSES = "responses"
-_API_MODE_MESSAGES = "messages"
-_API_MODE_GENERATE_CONTENT = "generate_content"
-_VALID_API_MODES = {
-    _API_MODE_CHAT_COMPLETIONS,
-    _API_MODE_RESPONSES,
-    _API_MODE_MESSAGES,
-    _API_MODE_GENERATE_CONTENT,
-}
+_VALID_API_MODES = frozenset().union(*ADAPTER_API_MODES.values())
 
 
 class _FrozenConfig(BaseModel):
@@ -106,9 +97,6 @@ class ProviderProfile(BaseModel):
     structured_output_method: Literal["auto", "json_schema", "function_calling", "json_mode", "text_json"] = "auto"
     decision_extra_body: dict[str, Any] = Field(default_factory=dict)
     signal_extra_body: dict[str, Any] = Field(default_factory=dict)
-    # DeepSeek Chatbot API features. These are passed only when configured.
-    safety_check: dict[str, Any] = Field(default_factory=dict)
-    title: dict[str, Any] = Field(default_factory=dict)
 
 
 class KeyConfig(_FrozenConfig):
@@ -127,24 +115,6 @@ class FeatureConfig(_FrozenConfig):
     laya_candidate_base_url: str = ""
     laya_candidate_threshold: float = Field(default=0.5, ge=0, le=1)
     laya_candidate_timeout_seconds: float = Field(default=5.0, gt=0)
-
-
-class FeishuConfig(_FrozenConfig):
-    """Non-secret Feishu connector settings.
-
-    Credentials and webhook verification material deliberately do not belong
-    in the TOML model.  The connector reads the corresponding ``FEISHU_*``
-    environment variables through :class:`EnvConfig` instead.
-    """
-
-    enabled: bool = False
-    app_id: str = ""
-    bot_open_id: str = ""
-    path: str = "/feishu/events"
-
-
-class PlatformsConfig(_FrozenConfig):
-    feishu: FeishuConfig = Field(default_factory=FeishuConfig)
 
 
 class AgentConfig(_FrozenConfig):
@@ -167,7 +137,7 @@ class DocumentParsingConfig(_FrozenConfig):
     """DeepSeek OCR settings for incoming workspace files."""
 
     enabled: bool = True
-    provider: str = "deepseek"
+    credentials_profile: str = "deepseek"
     purpose: Literal["text_recognition", "rich_layout_recognition"] = "text_recognition"
     max_files_per_message: int = Field(default=3, ge=1, le=10)
     max_file_bytes: int = Field(default=100 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024)
@@ -179,7 +149,7 @@ class SpeechRecognitionConfig(_FrozenConfig):
     """DeepSeek hosted speech recognition settings."""
 
     enabled: bool = False
-    provider: str = "deepseek"
+    credentials_profile: str = "deepseek"
     timeout_seconds: float = Field(default=120, gt=0, le=600)
     max_audio_seconds: int = Field(default=120, ge=1, le=600)
     max_audio_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, le=50 * 1024 * 1024)
@@ -191,7 +161,7 @@ class SpeechSynthesisConfig(_FrozenConfig):
     """DeepSeek hosted speech synthesis settings."""
 
     enabled: bool = False
-    provider: str = "deepseek"
+    credentials_profile: str = "deepseek"
     voice_id: Literal["stella", "tide"] = "stella"
     timeout_seconds: float = Field(default=180, gt=0, le=600)
     max_text_chars: int = Field(default=300, ge=1, le=2000)
@@ -270,12 +240,6 @@ class DashboardConfig(_FrozenConfig):
     jwt_expire_hours: int = Field(default=24, ge=1)
 
 
-class ContentCheckConfig(_FrozenConfig):
-    """Deprecated compatibility section; provider-side safety owns review."""
-
-    enabled: bool = False
-
-
 class FrontierSettings(_FrozenConfig):
     config_version: int = Field(default=CONFIG_VERSION, ge=CONFIG_VERSION, le=CONFIG_VERSION)
     bot: BotConfig = Field(default_factory=BotConfig)
@@ -283,7 +247,6 @@ class FrontierSettings(_FrozenConfig):
     providers: dict[str, ProviderProfile] = Field(default_factory=dict)
     keys: KeyConfig = Field(default_factory=KeyConfig)
     features: FeatureConfig = Field(default_factory=FeatureConfig)
-    platforms: PlatformsConfig = Field(default_factory=PlatformsConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     document_parsing: DocumentParsingConfig = Field(default_factory=DocumentParsingConfig)
@@ -299,7 +262,6 @@ class FrontierSettings(_FrozenConfig):
     storage: StorageConfig = Field(default_factory=StorageConfig)
     debug: DebugConfig = Field(default_factory=DebugConfig)
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
-    content_check: ContentCheckConfig = Field(default_factory=ContentCheckConfig)
 
 
 def _section(config: Mapping[str, Any], name: str) -> dict[str, Any]:
@@ -433,30 +395,12 @@ def _normalize_provider_profile(
 
 
 def _normalize_provider_profiles(providers: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
-    profiles: dict[str, dict[str, Any]] = {
-        "openai": {"type": "openai", "api_mode": _API_MODE_RESPONSES},
-        "google": {"type": "google", "api_mode": _API_MODE_GENERATE_CONTENT},
-        "anthropic": {"type": "anthropic", "api_mode": _API_MODE_MESSAGES},
-        "deepseek": {
-            "type": "deepseek", "api_mode": _API_MODE_CHAT_COMPLETIONS,
-            "safety_check": {"level": "high"},
-        },
-        "deepseek_responses": {
-            "type": "openai",
-            "api_mode": _API_MODE_RESPONSES,
-            "base_url": _DEEPSEEK_RESPONSES_BASE_URL,
-            "safety_check": {"level": "high"},
-        },
-        "deepseek_anthropic": {
-            "type": "anthropic",
-            "api_mode": _API_MODE_MESSAGES,
-            "base_url": _DEEPSEEK_ANTHROPIC_BASE_URL,
-            "safety_check": {"level": "high"},
-        },
-    }
+    profiles = default_profiles()
     for name, raw_profile in providers.items():
         profiles[name] = _normalize_provider_profile(raw_profile, profiles.get(name, {}))
     _validate_normalized_provider_protocols(profiles)
+    for name, profile in profiles.items():
+        validate_profile_fields(name, profile)
     return profiles
 
 
@@ -661,15 +605,7 @@ class EnvConfig:
     DASHBOARD_PASSWORD: ClassVar[str]
     DASHBOARD_JWT_SECRET: ClassVar[str]
     DASHBOARD_JWT_EXPIRE_HOURS: ClassVar[int]
-    CONTENT_CHECK_ENABLED: ClassVar[bool]
 
-    FEISHU_ENABLED: ClassVar[bool]
-    FEISHU_APP_ID: ClassVar[str]
-    FEISHU_BOT_OPEN_ID: ClassVar[str]
-    FEISHU_PATH: ClassVar[str]
-    FEISHU_APP_SECRET: ClassVar[SecretStr]
-    FEISHU_VERIFICATION_TOKEN: ClassVar[SecretStr]
-    FEISHU_ENCRYPT_KEY: ClassVar[SecretStr]
 
     REVISION: ClassVar[int] = 0
 
@@ -761,14 +697,6 @@ class EnvConfig:
             "DASHBOARD_PASSWORD": settings.dashboard.password,
             "DASHBOARD_JWT_SECRET": _runtime_dashboard_secret(settings.dashboard.jwt_secret),
             "DASHBOARD_JWT_EXPIRE_HOURS": settings.dashboard.jwt_expire_hours,
-            "CONTENT_CHECK_ENABLED": False,
-            "FEISHU_ENABLED": settings.platforms.feishu.enabled,
-            "FEISHU_APP_ID": settings.platforms.feishu.app_id,
-            "FEISHU_BOT_OPEN_ID": settings.platforms.feishu.bot_open_id,
-            "FEISHU_PATH": settings.platforms.feishu.path,
-            "FEISHU_APP_SECRET": SecretStr(os.getenv("FEISHU_APP_SECRET", "")),
-            "FEISHU_VERIFICATION_TOKEN": SecretStr(os.getenv("FEISHU_VERIFICATION_TOKEN", "")),
-            "FEISHU_ENCRYPT_KEY": SecretStr(os.getenv("FEISHU_ENCRYPT_KEY", "")),
         }
         for field in LimitConfig.model_fields:
             values[field.upper()] = getattr(settings.limits, field)

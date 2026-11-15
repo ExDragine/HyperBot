@@ -12,6 +12,7 @@ from .base import RESPONSES, BaseChatAdapter, BaseVendor, Route, targets_https_a
 
 class OpenAIAdapter(BaseChatAdapter):
     type = "openai"
+    default_profiles = {"openai": {"type": "openai", "api_mode": RESPONSES}}
     valid_kwargs = frozenset(
         {
             "streaming",

@@ -8,7 +8,7 @@
 - P1 已落地：`AgentRuntimeRequest`、`FrontierRuntimeContext` 和 `FrontierCognitive` 接受中性会话、参与者、能力和 workspace key；旧 QQ/ACP 调用保持兼容。
 - P2 已落地：`ConversationOrchestrator` 定义中立的历史→门控→Agent→投递生命周期；`plugins/agent/adapters/qq.py` 提供可注入的 QQ message、history、reply policy、delivery 和 tool facade，并已接入 QQ 生产入口。
 - P3 已落地：工具注册器为 QQ/Milky 模块声明 capability，`FrontierCognitive` 按显式能力筛选 direct 工具快照（原 direct/PTC 双通道已随 quickjs 解释器一同移除）；QQ 入口声明中性会话、参与者、workspace 和 `platform:qq` 能力。`FrontierAgentCore` 将中性 `AgentRequest` 桥接到现有 runtime；群聊和私聊的文本、已下载媒体、当前已暂存文件、已解析引用、已完成 hydration 的近期媒体和 session 统一进入编排层。旧 `qq_text_canary_enabled` 字段只保留配置兼容性，不再控制路由。
-- 飞书方案已单独文档化：`plugins/agent/adapters/feishu*.py` 保留为无 SDK 的边界参考和契约测试，`plugins.agent` 不会自动注册它，当前不把它作为生产接入主线。后续若重新启动飞书工作，再由独立宿主显式注册 lifecycle，并按本文 P4/P5 补持久化 history、durable queue、加密解码和媒体能力。
+- 飞书参考实现已从主干移除（`plugins/agent/adapters/feishu*.py`、`feishu_http.py`、`feishu_lifecycle.py` 及 `[platforms.feishu]` 配置），需要时可从 git 历史恢复。下文的飞书内容保留为第二平台的设计参考，不代表当前代码。
 
 目标：在保留 QQ/Milky 现有行为的前提下，把 Agent 执行和平台接入拆开，使飞书等新平台可以复用同一套 Agent、工具编排、workspace、memory、session 和执行控制。
 
@@ -500,7 +500,7 @@ job_timeout_seconds = 300
 enabled = false
 ```
 
-当前配置 schema 只为新接入的 Feishu 暴露 `[platforms.feishu]`；QQ 的既有白名单、唤醒词和 Milky 设置仍由现有配置段管理，待第二个平台稳定后再统一命名。
+当前配置 schema 不包含任何 `[platforms.*]` 配置段；接入第二个平台时再引入并统一命名。
 
 平台配置负责：
 
@@ -566,7 +566,7 @@ QQ `handlers.py` 已通过 `AgentRuntimeRequest` 注入中性身份和 `platform
 
 暂不支持飞书图片、文件、复杂引用、会话缓存和平台管理工具。
 
-当前仓库保留 `FeishuMessageAdapter`、`FeishuWebhookConnector`、`FeishuApiClient` 和可选 FastAPI 包装作为边界参考与契约样例；`plugins.agent` 不会自动挂载它们。若重新启动该阶段，应由独立宿主显式注册 lifecycle，并补齐跨重启 durable history/queue、AES 解码器、真实平台验证和媒体能力。API 约定见[tenant access token 文档](https://open.feishu.cn/document/server-docs/authentication-management/access-token/tenant_access_token_internal)和[发送消息文档](https://open.feishu.cn/document/server-docs/im-v1/message/create)。
+此前的 `FeishuMessageAdapter`、`FeishuWebhookConnector`、`FeishuApiClient` 参考实现已移除。若重新启动该阶段，应由独立宿主显式注册 lifecycle，并补齐跨重启 durable history/queue、AES 解码器、真实平台验证和媒体能力。API 约定见[tenant access token 文档](https://open.feishu.cn/document/server-docs/authentication-management/access-token/tenant_access_token_internal)和[发送消息文档](https://open.feishu.cn/document/server-docs/im-v1/message/create)。
 
 Webhook 的 challenge、Verification Token 和事件签名按[飞书事件订阅回调文档](https://feishu.apifox.cn/doc-7518444)实现；加密 payload 的 AES 解码器保持由 host connector 注入，避免把平台 SDK 或密码学依赖带进中性 facade。
 

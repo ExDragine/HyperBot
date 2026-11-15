@@ -13,11 +13,11 @@ api_key = "..."
 
 [speech_recognition]
 enabled = true
-provider = "deepseek"
+credentials_profile = "deepseek"
 
 [speech_synthesis]
 enabled = true
-provider = "deepseek"
+credentials_profile = "deepseek"
 voice_id = "stella"
 ```
 

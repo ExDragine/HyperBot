@@ -22,8 +22,6 @@ async def test_plain_text_preserves_long_markdown_without_rendering(
 
     async def fail_render(*_args, **_kwargs):
         pytest.fail("plain text must never enter Markdown rendering")
-
-    monkeypatch.setattr(delivery.EnvConfig, "CONTENT_CHECK_ENABLED", False)
     monkeypatch.setattr(delivery, "markdown_to_image", fail_render)
     monkeypatch.setattr(delivery, "markdown_to_text", fail_render)
     message = load_tool_module("milky_message")
@@ -60,13 +58,11 @@ async def test_plain_text_preserves_long_markdown_without_rendering(
     ("x" * 1000, 0, False),
 ])
 async def test_plain_text_forward_threshold(load_tool_module, install_milky_bot, monkeypatch, text, threshold, is_forward):
-    from utils import message as delivery
 
     message = load_tool_module("milky_message")
     bot = install_milky_bot(message, {"send_group_message": types.SimpleNamespace(message_seq=7, time=123)})
     bot.self_id = "999"
     monkeypatch.setattr(message.EnvConfig, "TOOL_LONG_TEXT_FORWARD_THRESHOLD", threshold)
-    monkeypatch.setattr(delivery.EnvConfig, "CONTENT_CHECK_ENABLED", False)
 
     await message.send_plain_text(text, config=_config())
     outgoing = bot.calls[0][1]["message"]

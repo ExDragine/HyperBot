@@ -1,6 +1,6 @@
 # Provider 协议
 
-`utils/providers/` 收拢所有供应商专属逻辑。`utils/llm_factory.py` 只负责解析路由并分发；其中仅剩的供应商名称是 `_provider_protocol` 里的遗留别名兼容（`deepseek_responses`、`use_responses_api`）和对外保留的 `provider_official_deepseek_api_mode` 包装函数。
+`utils/providers/` 收拢所有供应商专属逻辑。`utils/llm_factory.py` 只负责解析路由并分发，代码里不含任何供应商名称的分支。
 
 ## 两个角色
 
@@ -30,12 +30,15 @@
 - `native_web_search(route)`：返回 `(是否支持, 原因)`；返回 `None` 表示走通用规则。
 - `structured_output_method(route, capabilities)`：返回 `None` 表示交给适配器决定。
 - `native_search_tools`：启用托管搜索时注入的工具类型。
+- `profile_fields`：只有本厂商 API 理解的 profile 字段（值必须是 table），例如 DeepSeek 的 `safety_check` 和 `title`。
+
+`ChatAdapter.default_profiles` 声明该供应商自带的 `[providers.<name>]` 表。配置加载时由 `default_profiles()` 汇总为内置 profile，再合并用户配置；`utils/configs.py` 不再写任何供应商的默认值。
 
 `BaseChatAdapter` 和 `BaseVendor` 提供默认实现，子类只写与默认不同的部分。
 
 ## 新增供应商
 
-1. 在 `utils/providers/` 新建模块，继承 `BaseChatAdapter`，声明 `type`、`valid_kwargs`、`api_key_field`、`base_url_field` 和 `model_class()`。
+1. 在 `utils/providers/` 新建模块，继承 `BaseChatAdapter`，声明 `type`、`valid_kwargs`、`api_key_field`、`base_url_field`、`default_profiles` 和 `model_class()`。
 2. 在 `base.py` 的 `ADAPTER_API_MODES` 与 `DEFAULT_API_MODES` 登记它支持的协议；配置校验读取同一份表。
 3. 在 `utils/providers/__init__.py` 的 `_ADAPTERS` 登记。`_ADAPTERS` 的顺序就是按模型名推断的顺序。
 4. 只有需要发送官方专属字段时才实现 `Vendor`，并登记到 `_VENDORS`。`serves()` 必须校验主机名，不能只看适配器类型。
@@ -43,6 +46,6 @@
 
 ## 约束
 
-- `utils/providers/__init__.py` 与 `base.py` 不导入任何厂商 SDK；适配器在首次使用时加载。
+- `utils/providers/__init__.py` 与 `base.py` 在导入时不加载任何厂商 SDK；适配器在首次使用时加载（配置加载读取内置 profile 时会触发）。
 - `deepseek/media.py` 和 `deepseek/web.py` 读取应用配置，由调用方显式导入，不经包入口再导出。
-- 托管媒体接口只在 `type = "deepseek"` 时默认使用官方地址；其他 profile 必须显式填写 `base_url`，避免把别家的密钥发到 DeepSeek。
+- 托管媒体接口的 `credentials_profile` 只用于选择密钥；只有 `type = "deepseek"` 的 profile 在 `base_url` 为空时默认使用官方地址，其他 profile 必须显式填写 `base_url`，避免把别家的密钥发到 DeepSeek。

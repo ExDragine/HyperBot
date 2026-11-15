@@ -308,7 +308,6 @@ async def test_agent_image_placeholders_follow_persistence(  # noqa: C901
     monkeypatch.setattr(agent.EnvConfig, "IMAGE_ENABLED", True)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_MODULE_ENABLED", True)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_CAPABILITY", "none")
-    monkeypatch.setattr(agent.EnvConfig, "CONTENT_CHECK_ENABLED", False)
 
     incoming = IncomingMessage(
         message_scene="group",
@@ -422,7 +421,6 @@ async def test_agent_lazily_hydrates_recent_media_followup(monkeypatch):  # noqa
     monkeypatch.setattr("utils.message.send_artifacts", _delivered)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_MODULE_ENABLED", True)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_CAPABILITY", "none")
-    monkeypatch.setattr(agent.EnvConfig, "CONTENT_CHECK_ENABLED", False)
     monkeypatch.setattr(agent.EnvConfig, "QUERY_MESSAGE_NUMBERS", 7)
     incoming = IncomingMessage(
         message_scene="group",
@@ -550,7 +548,6 @@ async def test_agent_injects_staged_file_memory_path_even_if_indexing_fails(  # 
     monkeypatch.setattr(agent.EnvConfig, "IMAGE_ENABLED", True)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_MODULE_ENABLED", True)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_CAPABILITY", "none")
-    monkeypatch.setattr(agent.EnvConfig, "CONTENT_CHECK_ENABLED", False)
 
     incoming = IncomingMessage(
         message_scene="group",
@@ -816,7 +813,6 @@ async def test_agent_stores_expanded_forward_message_and_derived_nodes(monkeypat
     monkeypatch.setattr(agent.EnvConfig, "IMAGE_ENABLED", True)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_MODULE_ENABLED", True)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_CAPABILITY", "none")
-    monkeypatch.setattr(agent.EnvConfig, "CONTENT_CHECK_ENABLED", False)
 
     incoming = IncomingMessage(
         message_scene="group",
@@ -907,7 +903,6 @@ async def test_agent_does_not_duplicate_normalized_video_marker(monkeypatch):  #
     monkeypatch.setattr(agent.EnvConfig, "IMAGE_ENABLED", True)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_MODULE_ENABLED", True)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_CAPABILITY", "none")
-    monkeypatch.setattr(agent.EnvConfig, "CONTENT_CHECK_ENABLED", False)
 
     incoming = IncomingMessage(
         message_scene="group",
@@ -1011,7 +1006,6 @@ async def test_agent_appends_local_quoted_text_to_current_message(monkeypatch): 
     monkeypatch.setattr(agent.EnvConfig, "IMAGE_ENABLED", True)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_MODULE_ENABLED", True)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_CAPABILITY", "none")
-    monkeypatch.setattr(agent.EnvConfig, "CONTENT_CHECK_ENABLED", False)
 
     incoming = IncomingMessage(
         message_scene="group",
@@ -1254,7 +1248,6 @@ async def test_agent_fetches_unindexed_quoted_image_from_milky(monkeypatch):  # 
     monkeypatch.setattr(agent.EnvConfig, "IMAGE_ENABLED", True)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_MODULE_ENABLED", True)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_CAPABILITY", "none")
-    monkeypatch.setattr(agent.EnvConfig, "CONTENT_CHECK_ENABLED", False)
 
     incoming = IncomingMessage(
         message_scene="group",
@@ -1330,7 +1323,6 @@ async def test_process_agent_request_adds_current_chat_metadata(monkeypatch, gro
     monkeypatch.setattr(agent, "send_messages", _delivered)
     monkeypatch.setattr("utils.message.send_artifacts", _delivered)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_CAPABILITY", "none")
-    monkeypatch.setattr(agent.EnvConfig, "CONTENT_CHECK_ENABLED", False)
 
     context = agent.AgentRequestContext(
         event=cast(Any, types.SimpleNamespace)(
@@ -1466,7 +1458,6 @@ async def test_process_agent_request_inlines_recent_history_image(monkeypatch):
     monkeypatch.setattr(agent, "send_messages", _delivered)
     monkeypatch.setattr("utils.message.send_artifacts", _delivered)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_CAPABILITY", "none")
-    monkeypatch.setattr(agent.EnvConfig, "CONTENT_CHECK_ENABLED", False)
     context = agent.AgentRequestContext(
         event=cast(Any, types.SimpleNamespace)(self_id="1", get_plaintext=lambda: "帮我分析一下"),
         user_id="456",
@@ -1664,7 +1655,6 @@ async def test_gateway_approved_message_routes_directly_to_agent(monkeypatch):  
     monkeypatch.setattr(agent.EnvConfig, "IMAGE_ENABLED", True)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_MODULE_ENABLED", True)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_CAPABILITY", "high")
-    monkeypatch.setattr(agent.EnvConfig, "CONTENT_CHECK_ENABLED", False)
 
     event = _gateway_message_event(_incoming_group_message("这个算法怎么优化"))
 
@@ -1797,7 +1787,6 @@ async def test_gateway_queue_routing(case, monkeypatch):  # noqa: C901
     monkeypatch.setattr(agent, "message_gateway", fake_message_gateway)
     monkeypatch.setattr(agent.EnvConfig, "IMAGE_ENABLED", True)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_MODULE_ENABLED", True)
-    monkeypatch.setattr(agent.EnvConfig, "CONTENT_CHECK_ENABLED", False)
     if case.capability is not None:
         monkeypatch.setattr(agent.EnvConfig, "AGENT_CAPABILITY", case.capability)
 

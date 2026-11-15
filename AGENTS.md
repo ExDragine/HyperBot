@@ -76,8 +76,7 @@ Milky MessageEvent → NoneBot on_message(priority=10)
 `plugins/agent` 的 `handlers.py` 负责事件编排；`message_normalizer.py`、`reply_context.py`、
 `chat_context.py`、`gateway.py`、`attachments.py` 分别负责归一化、引用、媒体预算、回复门控和附件暂存。
 Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常见展示字段，提取来源、标题、摘要和 HTTP(S) 链接并标记为未核实用户数据；当前消息、引用、转发和平台历史工具共用此解析，不自动下载封面或链接正文，失败保留未解析提示。
-`plugins/agent/adapters/` 提供 QQ 与飞书适配器；`adapters/__init__.py` 只加载纯 facade，不注册 matcher，
-`plugins/agent/__init__.py` 也明确不挂载飞书 lifecycle（`register_feishu_lifecycle` 目前只有测试引用）。
+`plugins/agent/adapters/` 提供 QQ 适配器；`adapters/__init__.py` 只加载纯 facade，不注册 matcher。
 `plugins/toolbox` 分为 `settings.py`、`update.py`、`menu.py`，专属菜单位于其 `templates/`。
 `plugins/news` 的日报模板位于插件自己的 `templates/`（`daily_news.html` / `daily_news.css`），研究与编辑提示词是 `editor.py` 中的常量。
 `plugins/news` 由 Clockwork 的 `daily_news` 任务驱动：任务不存在时注册，已存在时只把处理器迁移到
@@ -199,7 +198,7 @@ Prompt 加载链：
 
 `env.toml.example` 是配置项参考；仅接受显式 `config_version = 2`，旧配置分区、provider 别名、`use_responses_api` 和绘图尺寸迁移已移除。代码中不要硬编码模型名、provider、base URL 或 API key，使用 `EnvConfig`。
 
-`[speech_recognition]` 与 `[speech_synthesis]` 默认关闭，启用后调用 DeepSeek 托管接口，`provider` 指向提供密钥的
+`[speech_recognition]` 与 `[speech_synthesis]` 默认关闭，启用后调用 DeepSeek 托管接口，`credentials_profile` 指向提供密钥的
 供应商 profile。识别结果标记为用户语音转写后进入 Agent；原始音频保留为附件，避免重复内联给主模型。
 配置与限制见 `docs/deepseek-media.md`。
 

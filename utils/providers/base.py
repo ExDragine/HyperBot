@@ -108,6 +108,7 @@ class ChatAdapter(Protocol):
 
     type: ClassVar[str]
     model_prefixes: ClassVar[tuple[str, ...]]
+    default_profiles: ClassVar[Mapping[str, Mapping[str, Any]]]
 
     def create_chat_model(
         self,
@@ -129,6 +130,7 @@ class Vendor(Protocol):
 
     name: ClassVar[str]
     native_search_tools: ClassVar[tuple[str, ...]]
+    profile_fields: ClassVar[tuple[str, ...]]
 
     def serves(self, route: Route) -> bool:
         """Return whether the route reaches this vendor's official endpoint."""
@@ -156,6 +158,8 @@ class BaseChatAdapter:
 
     type: ClassVar[str]
     model_prefixes: ClassVar[tuple[str, ...]] = ()
+    #: Built-in ``[providers.<name>]`` tables this provider ships with.
+    default_profiles: ClassVar[Mapping[str, Mapping[str, Any]]] = {}
     valid_kwargs: ClassVar[frozenset[str]]
     kwarg_names: ClassVar[Mapping[str, str]] = {}
     api_key_field: ClassVar[str]
@@ -204,6 +208,8 @@ class BaseVendor:
 
     name: ClassVar[str]
     native_search_tools: ClassVar[tuple[str, ...]] = ("web_search",)
+    #: Extra table-valued profile keys only this vendor's API understands.
+    profile_fields: ClassVar[tuple[str, ...]] = ()
 
     def serves(self, route: Route) -> bool:
         raise NotImplementedError

@@ -15,12 +15,28 @@ from langchain_deepseek import ChatDeepSeek
 from ..base import CHAT_COMPLETIONS, MESSAGES, RESPONSES, BaseChatAdapter, BaseVendor, Route, targets_https_api
 
 _HOST = "api.deepseek.com"
-_FEATURE_FIELDS = ("safety_check", "title")
+_SAFETY = {"level": "high"}
 _EFFORT_ALIASES = {"medium": "high", "xhigh": "max"}
 
 
 class DeepSeekAdapter(BaseChatAdapter):
     type = "deepseek"
+    # One profile per protocol DeepSeek serves; the last two reuse other adapters.
+    default_profiles = {
+        "deepseek": {"type": "deepseek", "api_mode": CHAT_COMPLETIONS, "safety_check": _SAFETY},
+        "deepseek_responses": {
+            "type": "openai",
+            "api_mode": RESPONSES,
+            "base_url": f"https://{_HOST}",
+            "safety_check": _SAFETY,
+        },
+        "deepseek_anthropic": {
+            "type": "anthropic",
+            "api_mode": MESSAGES,
+            "base_url": f"https://{_HOST}/anthropic",
+            "safety_check": _SAFETY,
+        },
+    }
     model_prefixes = ("deepseek",)
     valid_kwargs = frozenset(
         {"streaming", "max_retries", "timeout", "temperature", "model_kwargs", "extra_body", "profile"}
@@ -39,6 +55,7 @@ class DeepSeekAdapter(BaseChatAdapter):
 class DeepSeekVendor(BaseVendor):
     name = "deepseek"
     native_search_tools = ("deepseek_web_search", "deepseek_read_url")
+    profile_fields = ("safety_check", "title")
 
     def official_api_mode(self, route: Route) -> str | None:
         """Return the protocol of an official DeepSeek route, if this is one.
@@ -66,7 +83,7 @@ class DeepSeekVendor(BaseVendor):
     def request_overrides(self, route: Route, *, user_id: str, cache_key: str) -> dict[str, Any]:
         features = {
             key: value
-            for key in _FEATURE_FIELDS
+            for key in self.profile_fields
             if isinstance(value := route.profile.get(key), dict) and value
         }
         if route.api_mode == RESPONSES:

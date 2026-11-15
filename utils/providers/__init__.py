@@ -6,8 +6,11 @@ Adapters and vendors load on first use, so importing this package (or its
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from copy import deepcopy
 from functools import cache
 from importlib import import_module
+from typing import Any
 
 from .base import ChatAdapter, Route, Vendor
 
@@ -24,6 +27,7 @@ _VENDORS: dict[str, tuple[str, str]] = {
     "anthropic": ("utils.providers.anthropic", "AnthropicVendor"),
 }
 _FALLBACK_ADAPTER = "openai"
+_PROFILE_ORDER = ("openai", "google", "anthropic", "deepseek")
 
 
 def _load(entry: tuple[str, str]):
@@ -58,6 +62,23 @@ def infer_adapter(model: str) -> str:
     return _FALLBACK_ADAPTER
 
 
+def default_profiles() -> dict[str, dict[str, Any]]:
+    """Return fresh copies of every provider's built-in profiles."""
+    profiles: dict[str, dict[str, Any]] = {}
+    for adapter_type in _PROFILE_ORDER:
+        for name, profile in get_adapter(adapter_type).default_profiles.items():
+            profiles[name] = deepcopy(dict(profile))
+    return profiles
+
+
+def validate_profile_fields(name: str, profile: Mapping[str, Any]) -> None:
+    """Reject vendor-specific profile keys that are not tables."""
+    for vendor_name in _VENDORS:
+        for field in get_vendor(vendor_name).profile_fields:
+            if field in profile and not isinstance(profile[field], Mapping):
+                raise ValueError(f"[providers.{name}].{field} 必须是 table")
+
+
 def vendor_for(route: Route) -> Vendor | None:
     """Return the first-party vendor behind a route, or ``None`` for proxies."""
     for name in _VENDORS:
@@ -67,4 +88,13 @@ def vendor_for(route: Route) -> Vendor | None:
     return None
 
 
-__all__ = ["Route", "adapter_types", "get_adapter", "get_vendor", "infer_adapter", "vendor_for"]
+__all__ = [
+    "Route",
+    "adapter_types",
+    "default_profiles",
+    "get_adapter",
+    "get_vendor",
+    "infer_adapter",
+    "validate_profile_fields",
+    "vendor_for",
+]

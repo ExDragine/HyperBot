@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 class AnthropicAdapter(BaseChatAdapter):
     type = "anthropic"
+    default_profiles = {"anthropic": {"type": "anthropic", "api_mode": MESSAGES}}
     model_prefixes = ("claude-", "anthropic")
     valid_kwargs = frozenset({"streaming", "max_retries", "timeout", "temperature", "model_kwargs", "profile"})
     kwarg_names = {"timeout": "default_request_timeout"}

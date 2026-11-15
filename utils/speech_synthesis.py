@@ -34,7 +34,7 @@ async def synthesize_speech(text: str, *, settings: SpeechSynthesisConfig | None
         async with asyncio.timeout(settings.timeout_seconds):
             wav, silk, duration = await _synthesize_speech(
                 text,
-                provider=settings.provider,
+                provider=settings.credentials_profile,
                 voice_id=settings.voice_id,
                 max_text_chars=settings.max_text_chars,
             )

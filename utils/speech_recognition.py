@@ -34,7 +34,7 @@ async def transcribe_audio(data: bytes, *, settings: SpeechRecognitionConfig | N
     try:
         async with asyncio.timeout(settings.timeout_seconds):
             text, duration = await _transcribe_audio(
-                data, provider=settings.provider, max_seconds=settings.max_audio_seconds,
+                data, provider=settings.credentials_profile, max_seconds=settings.max_audio_seconds,
             )
         if len(text) > settings.max_transcript_chars:
             raise SpeechRecognitionError("transcript_limit")

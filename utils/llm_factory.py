@@ -4,7 +4,7 @@ from langchain_core.language_models import ModelProfile
 
 from models import ApiMode, ModelFeature, ModelInput, ModelOutput, get_model, load_catalog
 from utils.configs import EnvConfig
-from utils.providers import Route, get_adapter, get_vendor, infer_adapter, vendor_for
+from utils.providers import Route, get_adapter, infer_adapter, vendor_for
 from utils.providers.base import ADAPTER_API_MODES, DEFAULT_API_MODES
 
 if TYPE_CHECKING:
@@ -55,8 +55,8 @@ def _model_specific_capabilities(model: str, role: str | None = None) -> set[str
         configured = role_capabilities.get(role)
         if configured is None:
             raise ValueError(f"未知模型角色: {role!r}")
-        configured_model, capabilities = configured
-        return _normalize_capabilities(capabilities) if model == configured_model else set()
+        configured_model, role_capabilities_list = configured
+        return _normalize_capabilities(role_capabilities_list) if model == configured_model else set()
 
     capabilities: set[str] = set()
     configured_roles = list(role_capabilities.values())
@@ -96,15 +96,6 @@ def _provider_protocol(model: str, profile: dict) -> tuple[str, str]:
     provider_type = (_clean_optional(profile.get("type")) or _infer_provider(model)).lower()
     api_mode = _clean_optional(profile.get("api_mode")).lower()
 
-    if provider_type == "deepseek_responses":
-        provider_type = "openai"
-        api_mode = ApiMode.RESPONSES.value
-    elif not api_mode and "use_responses_api" in profile:
-        uses_responses = bool(profile.get("use_responses_api"))
-        api_mode = ApiMode.RESPONSES.value if uses_responses else ApiMode.CHAT_COMPLETIONS.value
-        if provider_type == "deepseek" and uses_responses:
-            provider_type = "openai"
-
     if not api_mode:
         api_mode = DEFAULT_API_MODES.get(provider_type, "")
 
@@ -138,29 +129,6 @@ def normalize_reasoning_effort(
     route = _route(model, provider)
     vendor = vendor_for(route)
     return vendor.normalize_reasoning_effort(route, effort) if vendor else effort
-
-
-def provider_is_official_openai(model: str, provider: str | None = None) -> bool:
-    """Return whether the route targets OpenAI's first-party API.
-
-    An ``openai`` adapter alone is not sufficient: DeepSeek Responses and many
-    compatible proxies use the same LangChain class but do not share OpenAI's
-    request extensions. An empty base URL means the OpenAI SDK default.
-    """
-    return get_vendor("openai").serves(_route(model, provider))
-
-
-def provider_is_official_anthropic(model: str, provider: str | None = None) -> bool:
-    """Return whether the route targets Anthropic's first-party Messages API."""
-    return get_vendor("anthropic").serves(_route(model, provider))
-
-
-def provider_official_deepseek_api_mode(model: str, provider: str | None = None) -> str | None:
-    """Return the protocol for an official DeepSeek route, if any."""
-    if _infer_provider(model) != "deepseek":
-        return None
-    route = _route(model, provider)
-    return route.api_mode if get_vendor("deepseek").serves(route) else None
 
 
 def provider_request_overrides(

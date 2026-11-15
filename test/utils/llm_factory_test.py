@@ -9,6 +9,18 @@ from unittest.mock import MagicMock
 import pytest
 
 import utils.llm_factory as factory
+from utils.providers import vendor_for
+
+
+def _first_party(model, provider):
+    """Name of the vendor whose official endpoint the route reaches, if any."""
+    vendor = vendor_for(factory._route(model, provider))
+    return vendor.name if vendor else None
+
+
+def _deepseek_mode(model, provider):
+    route = factory._route(model, provider)
+    return route.api_mode if _first_party(model, provider) == "deepseek" else None
 
 
 def test_gemini_routes_to_google(monkeypatch):
@@ -182,7 +194,7 @@ def test_deepseek_routes_to_deepseek(monkeypatch):
     assert kw["timeout"] == 30
     assert kw["max_retries"] == 2
     assert (
-        factory.provider_official_deepseek_api_mode("deepseek-v4-flash", "deepseek")
+        _deepseek_mode("deepseek-v4-flash", "deepseek")
         == "chat_completions"
     )
 
@@ -225,9 +237,9 @@ def test_deepseek_responses_routes_through_chat_openai(monkeypatch):
     assert kw["profile"]["max_input_tokens"] == 1_048_576
     assert factory.provider_uses_responses_api("deepseek-v4-pro", "deepseek_responses") is True
     assert factory.model_supports_native_web_search("deepseek-v4-pro", "deepseek_responses") is False
-    assert factory.provider_is_official_openai("deepseek-v4-pro", "deepseek_responses") is False
+    assert _first_party("deepseek-v4-pro", "deepseek_responses") != "openai"
     assert (
-        factory.provider_official_deepseek_api_mode("deepseek-v4-pro", "deepseek_responses")
+        _deepseek_mode("deepseek-v4-pro", "deepseek_responses")
         == "responses"
     )
 
@@ -271,7 +283,7 @@ def test_official_openai_route_detection_accepts_only_first_party_endpoints(monk
         },
     )
 
-    assert factory.provider_is_official_openai("gpt-5.4", "first_party") is True
+    assert _first_party("gpt-5.4", "first_party") == "openai"
     assert factory.model_supports_native_web_search("gpt-5.4", "first_party") is True
 
 
@@ -290,7 +302,7 @@ def test_openai_native_web_search_requires_responses_api(monkeypatch):
         },
     )
 
-    assert factory.provider_is_official_openai("gpt-5.4", "openai_chat_completions") is True
+    assert _first_party("gpt-5.4", "openai_chat_completions") == "openai"
     assert factory.model_supports_native_web_search("gpt-5.4", "openai_chat_completions") is False
 
 
@@ -309,7 +321,7 @@ def test_responses_proxy_can_explicitly_enable_native_web_search(monkeypatch):
         },
     )
 
-    assert factory.provider_is_official_openai("gpt-5.4", "responses_proxy") is False
+    assert _first_party("gpt-5.4", "responses_proxy") != "openai"
     assert factory.model_supports_native_web_search("gpt-5.4", "responses_proxy") is True
 
 
@@ -345,7 +357,7 @@ def test_official_openai_route_detection_rejects_compatible_and_non_openai_route
         },
     )
 
-    assert factory.provider_is_official_openai("model", "candidate") is False
+    assert _first_party("model", "candidate") != "openai"
 
 
 @pytest.mark.parametrize(
@@ -380,7 +392,7 @@ def test_official_deepseek_route_detection_rejects_proxies_and_wrong_models(
         },
     )
 
-    assert factory.provider_official_deepseek_api_mode(model, "candidate") is None
+    assert _deepseek_mode(model, "candidate") is None
 
 
 def test_deepseek_responses_does_not_advertise_native_web_search(monkeypatch):
@@ -516,9 +528,9 @@ def test_deepseek_anthropic_routes_through_chat_anthropic(monkeypatch):
     assert "use_responses_api" not in kw
     assert factory.provider_uses_responses_api("deepseek-v4-pro", "deepseek_anthropic") is False
     assert factory.model_supports_native_web_search("deepseek-v4-pro", "deepseek_anthropic") is False
-    assert factory.provider_is_official_openai("deepseek-v4-pro", "deepseek_anthropic") is False
+    assert _first_party("deepseek-v4-pro", "deepseek_anthropic") != "openai"
     assert (
-        factory.provider_official_deepseek_api_mode("deepseek-v4-pro", "deepseek_anthropic")
+        _deepseek_mode("deepseek-v4-pro", "deepseek_anthropic")
         == "messages"
     )
 
@@ -541,7 +553,7 @@ def test_official_anthropic_route_detection_accepts_first_party_endpoints(monkey
         },
     )
 
-    assert factory.provider_is_official_anthropic("claude-sonnet-4", "first_party") is True
+    assert _first_party("claude-sonnet-4", "first_party") == "anthropic"
 
 
 @pytest.mark.parametrize(
@@ -567,7 +579,7 @@ def test_official_anthropic_route_detection_rejects_other_endpoints(monkeypatch,
         },
     )
 
-    assert factory.provider_is_official_anthropic("claude-sonnet-4", "candidate") is False
+    assert _first_party("claude-sonnet-4", "candidate") != "anthropic"
 
 
 def test_deepseek_provider_profile_overrides_api_key_and_base_url(monkeypatch):

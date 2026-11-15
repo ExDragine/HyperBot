@@ -21,7 +21,7 @@ HyperBot 的配置分为四类文件：NoneBot 启动参数在 `.env`，HyperBot
 
 - 必须显式声明 `config_version = 2`，且只能是整数 `2`；其他值、缺失值或旧版分区会直接报错。
 - 已退役的配置段：`[information]`、`[endpoint]`、`[llm_endpoints]`、`[function]`、`[message]`、`[database]`、`[image_memory]`、`[memory]`。
-- 已移除的字段：`[models]` 下的 `*_model_endpoint`、`*_model_use_responses_api`、`paint_base_url`、`video_base_url`；`[key]` 下的模型 API key；`[providers.*]` 下的 `capabilities`、`provider` 和 `use_responses_api`。模型 endpoint、协议和密钥应配置在对应供应商 profile。
+- 已移除的字段：`[models]` 下的 `*_model_endpoint`、`*_model_use_responses_api`、`paint_base_url`、`video_base_url`；`[key]` 下的模型 API key；`[providers.*]` 下的 `capabilities`、`provider` 和 `use_responses_api`；`[document_parsing]`、`[speech_recognition]`、`[speech_synthesis]` 下的 `provider`（改名为 `credentials_profile`，只用于选择提供密钥的供应商 profile）。模型 endpoint、协议和密钥应配置在对应供应商 profile。`[platforms.feishu]` 与 `[content_check]` 对应的功能已移除，旧配置里残留的这两个配置段会被忽略。
 - 旧配置中的 `signal_model` / `signal_model_provider` / `signal_model_capabilities` 会映射为 `decision_*`，但新配置应直接使用 `decision_*`；同名新旧字段不能同时出现。
 - 模型角色和其余配置段拒绝未知字段；供应商 profile 允许保留额外键。
 - 启动时 `utils/configs.py` 校验成功后才替换运行时快照；校验失败不会用半成品配置继续运行。Dashboard 保存失败时会回滚旧文件并重新加载旧配置。
@@ -36,7 +36,6 @@ HyperBot 的配置分为四类文件：NoneBot 启动参数在 `.env`，HyperBot
 | `[document_parsing]` | DeepSeek 文件 OCR 解析 | [DeepSeek 媒体能力](deepseek-media.md) |
 | `[key]` | NASA、GitHub 等非模型服务密钥 | 本页 |
 | `[features]` | 功能开关与可选 Laya 候选预筛 | 本页 |
-| `[platforms.feishu]` | 飞书接入的非敏感配置（生产入口默认关闭） | 本页 |
 | `[agent]` | 推理等级、长文转图阈值、消息工具长文本转合并转发阈值、Fake-IP 媒体回退 | [消息媒体网络](message-media-network.md) |
 | `[speech_recognition]` | DeepSeek 云端语音识别 | [DeepSeek 媒体能力](deepseek-media.md) |
 | `[speech_synthesis]` | DeepSeek 云端语音合成 | [DeepSeek 媒体能力](deepseek-media.md) |
@@ -112,11 +111,7 @@ DeepSeek 可分别配置为 `deepseek + chat_completions`、`openai + responses`
 
 ### `[key]`
 
-仅保存非模型服务密钥：`nasa_api_key`（默认 `DEMO_KEY`）、`github_pat`。模型密钥放在对应供应商 profile；飞书凭据和 `LAYA_API_KEY` 等连接器密钥只从进程环境读取。
-
-### `[platforms.feishu]`
-
-飞书接入的非敏感字段：`enabled`、`app_id`、`bot_open_id`、`path`。`FEISHU_APP_SECRET`、`FEISHU_VERIFICATION_TOKEN`、`FEISHU_ENCRYPT_KEY` 只从进程环境读取。当前 QQ 插件不会自动注册飞书 lifecycle；飞书方案见 [Agent 与平台解耦设计](agent-platform-separation.md)。
+仅保存非模型服务密钥：`nasa_api_key`（默认 `DEMO_KEY`）、`github_pat`。模型密钥放在对应供应商 profile；`LAYA_API_KEY` 等连接器密钥只从进程环境读取。
 
 ### `[agent]`
 

@@ -55,7 +55,6 @@ async def test_delivered_reply_can_be_quoted_as_original_text(monkeypatch, group
     monkeypatch.setattr(agent, "f_cognitive", Cognitive())
     monkeypatch.setattr(agent, "messages_db", database)
     monkeypatch.setattr(agent, "send_messages", send)
-    monkeypatch.setattr(agent.EnvConfig, "CONTENT_CHECK_ENABLED", False)
     event = SimpleNamespace(self_id="1", data=SimpleNamespace(
         peer_id=2, message_scene="group" if group_id is not None else "friend",
     ))
@@ -99,7 +98,6 @@ async def test_history_only_records_delivered_response_after_send(monkeypatch, d
     monkeypatch.setattr(agent, "f_cognitive", Cognitive())
     monkeypatch.setattr(agent, "messages_db", Database())
     monkeypatch.setattr(agent, "send_messages", send)
-    monkeypatch.setattr(agent.EnvConfig, "CONTENT_CHECK_ENABLED", False)
     context = _context(agent)
 
     assert await agent._process_agent_request(context) is delivered
@@ -138,7 +136,6 @@ async def test_artifact_only_failure_is_not_retried_or_persisted(monkeypatch):
     monkeypatch.setattr(agent, "messages_db", Database())
     monkeypatch.setattr("utils.message.send_artifacts", send_artifacts)
     monkeypatch.setattr(agent, "send_messages", send_messages)
-    monkeypatch.setattr(agent.EnvConfig, "CONTENT_CHECK_ENABLED", False)
 
     assert await agent._process_agent_request(_context(agent)) is False
     assert sent == []
@@ -213,7 +210,6 @@ async def test_same_group_members_share_generation_and_delivery_queue(monkeypatc
             await release.wait()
 
     monkeypatch.setattr(agent, "_process_agent_request", process)
-    monkeypatch.setattr(agent.EnvConfig, "CONTENT_CHECK_ENABLED", False)
 
     async def run(context):
         await agent._run_agent_turn(

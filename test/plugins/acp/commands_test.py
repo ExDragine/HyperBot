@@ -189,7 +189,6 @@ async def test_acp_artifact_failure_is_reported_without_final_text(monkeypatch):
 
     monkeypatch.setattr(acp, "send_artifacts", artifacts)
     monkeypatch.setattr(acp, "send_messages", send)
-    monkeypatch.setattr(acp.EnvConfig, "CONTENT_CHECK_ENABLED", False)
 
     result = await acp._send_result({"uni_messages": ["artifact"]}, group_id=None, message_seq=1)
 
@@ -210,7 +209,6 @@ async def test_acp_delivery_failure_sends_notice_and_keeps_failure_result(monkey
 
     monkeypatch.setattr(acp, "send_messages", send)
     monkeypatch.setattr(acp.UniMessage, "send", notify)
-    monkeypatch.setattr(acp.EnvConfig, "CONTENT_CHECK_ENABLED", False)
 
     result = await acp._send_result({"response": {"messages": ["answer"]}}, group_id=None, message_seq=1)
 

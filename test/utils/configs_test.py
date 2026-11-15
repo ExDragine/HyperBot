@@ -36,8 +36,6 @@ def test_env_config_defaults(monkeypatch):
     from utils.configs import EnvConfig
 
     monkeypatch.setenv("ZENMUX_API_KEY", "unused-old-key")
-    for name in ("FEISHU_APP_SECRET", "FEISHU_VERIFICATION_TOKEN", "FEISHU_ENCRYPT_KEY"):
-        monkeypatch.delenv(name, raising=False)
     EnvConfig.reload({"config_version": 2})
     assert EnvConfig.settings.config_version == 2
     assert EnvConfig.BASIC_MODEL_PROVIDER == ""
@@ -68,19 +66,11 @@ def test_env_config_defaults(monkeypatch):
     assert EnvConfig.MEDIA_TTL_DAYS == EnvConfig.IMAGE_TTL_DAYS == 30
     assert EnvConfig.MAX_INLINE_IMAGES == 4
     assert EnvConfig.MAX_INLINE_MEDIA_BYTES == 20 * 1024 * 1024
-    assert EnvConfig.CONTENT_CHECK_ENABLED is False
     assert EnvConfig.QQ_TEXT_CANARY_ENABLED is False
     assert EnvConfig.LAYA_CANDIDATE_ENABLED is False
     assert EnvConfig.LAYA_CANDIDATE_MODEL == "auto"
     assert EnvConfig.LAYA_CANDIDATE_DEVICE == "cpu"
     assert EnvConfig.LAYA_CANDIDATE_THRESHOLD == 0.5
-    assert EnvConfig.FEISHU_ENABLED is False
-    assert EnvConfig.FEISHU_APP_ID == ""
-    assert EnvConfig.FEISHU_BOT_OPEN_ID == ""
-    assert EnvConfig.FEISHU_PATH == "/feishu/events"
-    assert EnvConfig.FEISHU_APP_SECRET.get_secret_value() == ""
-    assert EnvConfig.FEISHU_VERIFICATION_TOKEN.get_secret_value() == ""
-    assert EnvConfig.FEISHU_ENCRYPT_KEY.get_secret_value() == ""
     assert EnvConfig.AGENT_AUTO_REPLY_WHITELIST_MODE is False
     assert EnvConfig.MESSAGE_IMAGE_TEXT_THRESHOLD == 500
     assert EnvConfig.MESSAGE_MEDIA_FAKE_IP_FALLBACK is True
@@ -128,7 +118,6 @@ def test_env_config_reload_updates_runtime_sections():
             "blacklist_group_list": [1002],
         },
         "storage": {"image_enabled": False, "image_ttl_days": 9, "image_auto_cleanup": False},
-        "content_check": {"enabled": True},
         "features": {
             "qq_text_canary_enabled": True,
             "laya_candidate_enabled": True,
@@ -141,12 +130,10 @@ def test_env_config_reload_updates_runtime_sections():
     assert EnvConfig.IMAGE_ENABLED is False
     assert EnvConfig.MEDIA_TTL_DAYS == EnvConfig.IMAGE_TTL_DAYS == 9
     assert EnvConfig.IMAGE_AUTO_CLEANUP is False
-    assert EnvConfig.CONTENT_CHECK_ENABLED is False
     assert EnvConfig.QQ_TEXT_CANARY_ENABLED is True
     assert EnvConfig.LAYA_CANDIDATE_ENABLED is True
     assert EnvConfig.LAYA_CANDIDATE_MODEL == "multilingual"
     assert EnvConfig.LAYA_CANDIDATE_THRESHOLD == 0.2
-    assert EnvConfig.FEISHU_ENABLED is False
     assert EnvConfig.AGENT_AUTO_REPLY_WHITELIST_MODE is True
     assert EnvConfig.AGENT_AUTO_REPLY_WHITELIST_GROUP_LIST == [1001]
     assert EnvConfig.AGENT_AUTO_REPLY_BLACKLIST_GROUP_LIST == [1002]
@@ -188,45 +175,6 @@ def test_decision_model_fields_are_canonical_and_old_aliases_follow():
     assert EnvConfig.LLM_PROVIDERS["decision-provider"]["decision_extra_body"] == {
         "thinking": {"type": "disabled"}
     }
-
-
-def test_feishu_connector_settings_are_non_secret_and_environment_credentials(monkeypatch):
-    from utils.configs import EnvConfig
-
-    monkeypatch.setenv("FEISHU_APP_SECRET", "app-secret")
-    monkeypatch.setenv("FEISHU_VERIFICATION_TOKEN", "verification-token")
-    monkeypatch.setenv("FEISHU_ENCRYPT_KEY", "encrypt-key")
-    EnvConfig.reload(
-        {
-            "config_version": 2,
-            "platforms": {
-                "feishu": {
-                    "enabled": True,
-                    "app_id": "cli_test",
-                    "bot_open_id": "ou_test",
-                    "path": "/hooks/feishu",
-                }
-            },
-        }
-    )
-
-    assert EnvConfig.FEISHU_ENABLED is True
-    assert EnvConfig.FEISHU_APP_ID == "cli_test"
-    assert EnvConfig.FEISHU_BOT_OPEN_ID == "ou_test"
-    assert EnvConfig.FEISHU_PATH == "/hooks/feishu"
-    assert EnvConfig.FEISHU_APP_SECRET.get_secret_value() == "app-secret"
-    assert EnvConfig.FEISHU_VERIFICATION_TOKEN.get_secret_value() == "verification-token"
-    assert EnvConfig.FEISHU_ENCRYPT_KEY.get_secret_value() == "encrypt-key"
-    assert "app_secret" not in EnvConfig.settings.model_dump().get("platforms", {}).get("feishu", {})
-
-    monkeypatch.delenv("FEISHU_APP_SECRET")
-    monkeypatch.delenv("FEISHU_VERIFICATION_TOKEN")
-    monkeypatch.delenv("FEISHU_ENCRYPT_KEY")
-    EnvConfig.reload({"config_version": 2})
-    assert EnvConfig.FEISHU_ENABLED is False
-    assert EnvConfig.FEISHU_APP_SECRET.get_secret_value() == ""
-    assert EnvConfig.FEISHU_VERIFICATION_TOKEN.get_secret_value() == ""
-    assert EnvConfig.FEISHU_ENCRYPT_KEY.get_secret_value() == ""
 
 
 def test_media_models_use_explicit_profiles():
@@ -431,25 +379,11 @@ def test_env_toml_example_is_valid_v2_config():
     assert settings.providers["deepseek_anthropic"].api_mode == "messages"
     assert settings.models.advanced.provider == "openai"
     assert settings.models.daily_news.model == "deepseek-flash"
-    assert settings.platforms.feishu.enabled is False
-    assert settings.platforms.feishu.path == "/feishu/events"
     assert settings.models.daily_news.provider == "deepseek_responses"
     assert settings.models.paint.provider == "openai"
     assert settings.models.paint.size == "auto"
     assert settings.models.video.provider == "openai"
     assert settings.models.video.model == "sora-2"
-
-
-def test_feishu_credentials_are_rejected_from_toml_schema():
-    from utils.configs import parse_config
-
-    with pytest.raises(ValidationError):
-        parse_config(
-            {
-                "config_version": 2,
-                "platforms": {"feishu": {"app_secret": "must-stay-in-env"}},
-            }
-        )
 
 
 @pytest.mark.parametrize(
@@ -531,3 +465,25 @@ def test_nickname_rejects_non_string_array_items():
 
     with pytest.raises(ValueError, match="每一项"):
         load_nicknames('["HyperBot", 1]')
+
+
+def test_hosted_service_sections_name_a_credentials_profile():
+    from utils.configs import EnvConfig, parse_config
+
+    EnvConfig.reload({"config_version": 2, "speech_recognition": {"credentials_profile": "deepseek_responses"}})
+    assert EnvConfig.SPEECH_RECOGNITION.credentials_profile == "deepseek_responses"
+    assert EnvConfig.SPEECH_SYNTHESIS.credentials_profile == "deepseek"
+    for section in ("document_parsing", "speech_recognition", "speech_synthesis"):
+        with pytest.raises(ValidationError, match="extra_forbidden"):
+            parse_config({"config_version": 2, section: {"provider": "deepseek"}})
+    EnvConfig.reload({"config_version": 2})
+
+
+def test_vendor_profile_fields_must_be_tables():
+    from utils.configs import EnvConfig, parse_config
+
+    EnvConfig.reload({"config_version": 2})
+    assert EnvConfig.LLM_PROVIDERS["deepseek"]["safety_check"] == {"level": "high"}
+    assert "safety_check" not in EnvConfig.LLM_PROVIDERS["openai"]
+    with pytest.raises((ValidationError, ValueError), match="必须是 table"):
+        parse_config({"config_version": 2, "providers": {"deepseek": {"safety_check": "high"}}})

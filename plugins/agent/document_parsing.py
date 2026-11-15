@@ -61,7 +61,7 @@ async def parse_staged_files(staged_files, settings: DocumentParsingConfig) -> t
         try:
             data = await asyncio.to_thread(path.read_bytes)
             result = await asyncio.wait_for(
-                ocr_file(data, staged.file_name, provider=settings.provider, purpose=settings.purpose),
+                ocr_file(data, staged.file_name, provider=settings.credentials_profile, purpose=settings.purpose),
                 timeout=settings.timeout_seconds,
             )
             text = _page_text(result)

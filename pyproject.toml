@@ -22,10 +22,7 @@ dependencies = [
   "playwright",
   "httpx2[http2]",
   "laya>=0.3.20,<0.4",
-  "accelerate",
-  "torch",
-  "torchao",
-  "transformers",
+  "torch", # used only through laya; listed so [tool.uv.sources] can pin the CPU wheel index
   "imageio-ffmpeg",
   "gitpython",
   "sqlmodel",
@@ -37,7 +34,6 @@ dependencies = [
   "python-dotenv",
   "silk-python==0.2.8",
   "psutil>=7.2.2",
-  "sentencepiece==0.2.2",
   "filelock>=4.0.12",
 ]
 
