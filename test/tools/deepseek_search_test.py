@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from utils import deepseek_web as web
 from utils.agent_context import FrontierRuntimeContext
+from utils.providers.deepseek import web
 
 
 @pytest.fixture(autouse=True)

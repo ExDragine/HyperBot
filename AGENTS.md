@@ -89,7 +89,7 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 | 文件 | 职责 |
 |------|------|
 | `agents/` | Agent 包：主 Deep Agent 装配（`cognitive.py`）、中性桥接（`neutral_core.py`）、运行时入口（`runtime_gateway.py`）、消息信封（`message_envelope.py`）、执行与超时（`execution.py`）、用量统计（`usage.py`）、工具错误（`tool_errors.py`）、进度流（`progress.py`）、浏览器意图（`capture.py`）、Prompt、workspace 与 Subagent |
-| `providers/` | Provider 扩展包：在保留 LangChain 默认适配器的基础上，承载供应商专属协议、参数标准化、能力判断和错误边界；当前包含 `deepseek/` |
+| `providers/` | Provider 协议与实现：`base.py` 定义 `Route`、`ChatAdapter`（按 `type` 构造模型）和 `Vendor`（官方端点的请求语义）；`openai.py` / `anthropic.py` / `google.py` / `deepseek/`（`chat.py`、托管 `media.py`、`web.py`）各自实现；详见 `docs/providers.md` |
 | `agent_protocol/` | 平台无关契约：`models.py` 值对象（消息段、参与者、会话、请求/响应、投递回执）、`ports.py` 的 `AgentCore`/`ReplyPolicy`/`HistoryStore`/`DeliveryPort`/`PlatformToolProvider`、`identity.py` 的 workspace key 归一化 |
 | `agent_orchestration.py` | `ConversationOrchestrator`：历史 → 门控 → Agent → 投递的平台中性单轮生命周期；QQ 生产入口已接入 |
 | `decision/` | 平台无关 Decision provider：`llm.py`（LLM 决策）、`laya.py`（Laya 候选预筛，默认关闭）、`reply_gate.py`（回复门控打分）、`models.py`；导入不加载 torch/transformers 权重 |
@@ -99,14 +99,13 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 | `agents/sessions.py` / `agents/checkpoints.py` / `agents/session_context.py` | QQ 进程级有界会话、投递租约、官方 saver 适配与跨轮历史预算，默认关闭 |
 | `message.py` | 共享消息段提取、媒体下载、内容安全、Markdown/图片回复渲染和投递 |
 | `configs.py` | `EnvConfig`：从 `env.toml` 读取模型、端点、密钥、功能开关、Dashboard、内容安全配置 |
-| `llm_factory.py` | OpenAI-compatible / Google / Anthropic / DeepSeek 模型路由，供应商 profile，能力判断 |
+| `llm_factory.py` | 解析供应商 profile 与协议为 `Route`，经 `providers/` 注册表分发模型构造和能力判断；自身不含供应商分支 |
 | `decision_llm.py` / `signal_llm.py` | 轻量结构化 Decision LLM 调用；后者仅保留兼容导出，用于回复门控、浏览器捕获意图等判断 |
 | `markdown_render.py` | Markdown → 图片，使用本地 Mermaid/ECharts/KaTeX/Prism 渲染增强内容，适配 QQ 文本/图片发送 |
 | `browser_capture.py` | Playwright 截图/录屏/页面数据提取，带浏览器重启和超时处理 |
 | `paint_service.py` / `video_service.py` | 共享图片和视频生成服务，供命令和 Agent 工具复用 |
-| `speech_recognition.py` / `speech_decode.py` | 本地 SenseVoiceSmall Q8 识别与隔离 SILK 解码；网关通过后识别当前语音，按需启动、全局串行、超时回收子进程 |
-| `speech_synthesis.py` / `speech_synthesis_worker.py` | 本地原生 MOSS-TTS-Nano 合成和 SILK 编码；按需启动，与识别共用推理锁，`get_speech` 工件自动发送 |
-| `speech_assets.py` / `sensevoice_assets.py` / `moss_tts_assets.py` | 启用后首次使用自动下载固定修订的语音运行器/模型，校验摘要、进程间互斥、原子发布和独立下载超时；`scripts/setup_speech.py` 可统一预下载 |
+| `speech_recognition.py` / `speech_synthesis.py` | DeepSeek 托管语音识别与合成的限额、超时和错误码封装；`get_speech` 工件自动发送 |
+| `speech_decode.py` | 隔离子进程中的 SILK 解码，供托管识别前转换 QQ 语音 |
 | `milky_tools.py` | Milky API 参数解析、路径/URL/base64 输入处理、结果格式化 |
 | `http_client.py` | 命名 httpx2 AsyncClient 注册表，统一关闭生命周期 |
 | `tool_helpers.py` | LangChain tool state/config 解析，提取用户、群、图片/视频输入 |
@@ -200,11 +199,9 @@ Prompt 加载链：
 
 `env.toml.example` 是配置项参考；仅接受显式 `config_version = 2`，旧配置分区、provider 别名、`use_responses_api` 和绘图尺寸迁移已移除。代码中不要硬编码模型名、provider、base URL 或 API key，使用 `EnvConfig`。
 
-`[speech_recognition]` 默认关闭。本地识别使用默认托管路径或运维配置的 C++ 运行器、Q8 权重和 VAD 路径，
-不经过对话模型供应商。语音识别与合成依赖均在 uv 默认安装中，默认开启 `auto_download`，
-只在启用并首次有效使用时自动准备对应资源；下载有独立超时，自定义识别路径不自动覆盖。
-识别结果标记为用户语音转写，先经过内容检查再进入 Agent；
-原始音频保留为附件，避免重复内联给主模型。配置、安装及资源复测见 `docs/local-speech.md`。
+`[speech_recognition]` 与 `[speech_synthesis]` 默认关闭，启用后调用 DeepSeek 托管接口，`provider` 指向提供密钥的
+供应商 profile。识别结果标记为用户语音转写后进入 Agent；原始音频保留为附件，避免重复内联给主模型。
+配置与限制见 `docs/deepseek-media.md`。
 
 模型路由规则：
 - 显式 `*_model_provider` 优先。

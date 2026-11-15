@@ -4,8 +4,8 @@ from pathlib import Path
 
 from langchain_core.tools import BaseTool
 
-from utils.deepseek_web import TOOL_NAMES as DEEPSEEK_SEARCH_TOOLS
-from utils.deepseek_web import deepseek_search_available
+from utils.providers.deepseek.web import TOOL_NAMES as DEEPSEEK_SEARCH_TOOLS
+from utils.providers.deepseek.web import deepseek_search_available
 
 from .mcp_client import mcp_get_tools_async
 

@@ -13,7 +13,7 @@ import utils.llm_factory as factory
 
 def test_gemini_routes_to_google(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatGoogleGenerativeAI", mock_cls)
+    monkeypatch.setattr("utils.providers.google.ChatGoogleGenerativeAI", mock_cls)
 
     factory.create_llm(model="gemini-2.5-flash", max_retries=2, streaming=False)
 
@@ -29,7 +29,7 @@ def test_gemini_routes_to_google(monkeypatch):
 
 def test_unknown_model_does_not_receive_catalog_profile(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatOpenAI", mock_cls)
+    monkeypatch.setattr("utils.providers.openai.ChatOpenAI", mock_cls)
 
     factory.create_llm(model="vendor-private-model")
 
@@ -38,7 +38,7 @@ def test_unknown_model_does_not_receive_catalog_profile(monkeypatch):
 
 def test_explicit_model_profile_overrides_catalog(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatGoogleGenerativeAI", mock_cls)
+    monkeypatch.setattr("utils.providers.google.ChatGoogleGenerativeAI", mock_cls)
     custom_profile = {"max_input_tokens": 1234, "text_inputs": True}
 
     factory.create_llm(model="gemini-2.5-flash", profile=custom_profile)
@@ -48,7 +48,7 @@ def test_explicit_model_profile_overrides_catalog(monkeypatch):
 
 def test_catalog_profile_accepts_proxy_prefixed_model_id(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatOpenAI", mock_cls)
+    monkeypatch.setattr("utils.providers.openai.ChatOpenAI", mock_cls)
 
     factory.create_llm(model="openrouter/google/gemini-2.5-flash", provider="openai")
 
@@ -80,7 +80,7 @@ def test_new_model_profiles_preserve_modalities_limits_and_status(model_id, cont
 
 def test_gpt_routes_to_openai(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatOpenAI", mock_cls)
+    monkeypatch.setattr("utils.providers.openai.ChatOpenAI", mock_cls)
     monkeypatch.setattr(
         factory.EnvConfig,
         "LLM_PROVIDERS",
@@ -107,7 +107,7 @@ def test_gpt_routes_to_openai(monkeypatch):
 
 def test_o3_routes_to_openai(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatOpenAI", mock_cls)
+    monkeypatch.setattr("utils.providers.openai.ChatOpenAI", mock_cls)
 
     factory.create_llm(model="o3", streaming=False)
 
@@ -118,7 +118,7 @@ def test_o3_routes_to_openai(monkeypatch):
 
 def test_o1_routes_to_openai(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatOpenAI", mock_cls)
+    monkeypatch.setattr("utils.providers.openai.ChatOpenAI", mock_cls)
 
     factory.create_llm(model="o1-mini")
 
@@ -129,7 +129,7 @@ def test_o1_routes_to_openai(monkeypatch):
 
 def test_o4_mini_routes_to_openai(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatOpenAI", mock_cls)
+    monkeypatch.setattr("utils.providers.openai.ChatOpenAI", mock_cls)
 
     factory.create_llm(model="o4-mini")
 
@@ -140,7 +140,7 @@ def test_o4_mini_routes_to_openai(monkeypatch):
 
 def test_claude_routes_to_anthropic(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatAnthropic", mock_cls)
+    monkeypatch.setattr("utils.providers.anthropic.ChatAnthropic", mock_cls)
     monkeypatch.setattr(
         factory.EnvConfig,
         "LLM_PROVIDERS",
@@ -165,7 +165,7 @@ def test_claude_routes_to_anthropic(monkeypatch):
 
 def test_deepseek_routes_to_deepseek(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatDeepSeek", mock_cls)
+    monkeypatch.setattr("utils.providers.deepseek.chat.ChatDeepSeek", mock_cls)
     monkeypatch.setattr(
         factory.EnvConfig,
         "LLM_PROVIDERS",
@@ -190,8 +190,8 @@ def test_deepseek_routes_to_deepseek(monkeypatch):
 def test_deepseek_responses_routes_through_chat_openai(monkeypatch):
     openai_cls = MagicMock()
     deepseek_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatOpenAI", openai_cls)
-    monkeypatch.setattr(factory, "ChatDeepSeek", deepseek_cls)
+    monkeypatch.setattr("utils.providers.openai.ChatOpenAI", openai_cls)
+    monkeypatch.setattr("utils.providers.deepseek.chat.ChatDeepSeek", deepseek_cls)
     monkeypatch.setattr(
         factory.EnvConfig,
         "LLM_PROVIDERS",
@@ -492,7 +492,7 @@ def test_native_web_search_rejects_non_official_deepseek_routes(monkeypatch, mod
 
 def test_deepseek_anthropic_routes_through_chat_anthropic(monkeypatch):
     anthropic_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatAnthropic", anthropic_cls)
+    monkeypatch.setattr("utils.providers.anthropic.ChatAnthropic", anthropic_cls)
     monkeypatch.setattr(
         factory.EnvConfig,
         "LLM_PROVIDERS",
@@ -572,7 +572,7 @@ def test_official_anthropic_route_detection_rejects_other_endpoints(monkeypatch,
 
 def test_deepseek_provider_profile_overrides_api_key_and_base_url(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatDeepSeek", mock_cls)
+    monkeypatch.setattr("utils.providers.deepseek.chat.ChatDeepSeek", mock_cls)
     monkeypatch.setattr(
         factory.EnvConfig,
         "LLM_PROVIDERS",
@@ -595,7 +595,7 @@ def test_deepseek_provider_profile_overrides_api_key_and_base_url(monkeypatch):
 
 def test_openai_kwargs_filtered_for_google(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatGoogleGenerativeAI", mock_cls)
+    monkeypatch.setattr("utils.providers.google.ChatGoogleGenerativeAI", mock_cls)
 
     factory.create_llm(
         model="gemini-2.5-flash",
@@ -613,7 +613,7 @@ def test_openai_kwargs_filtered_for_google(monkeypatch):
 
 def test_openai_kwargs_filtered_for_anthropic(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatAnthropic", mock_cls)
+    monkeypatch.setattr("utils.providers.anthropic.ChatAnthropic", mock_cls)
 
     factory.create_llm(
         model="claude-3-5-haiku-20241022",
@@ -674,7 +674,7 @@ assert "user_id" not in (model.metadata or {})
 
 def test_provider_signal_extra_body_stays_out_of_main_agent_requests(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatDeepSeek", mock_cls)
+    monkeypatch.setattr("utils.providers.deepseek.chat.ChatDeepSeek", mock_cls)
     monkeypatch.setattr(factory.EnvConfig, "LLM_PROVIDERS", {
         "configured": {
             "type": "deepseek",
@@ -740,7 +740,7 @@ for model_id in ("deepseek-flash", "deepseek-nonexistent-alias"):
 
 def test_openai_extra_body_forwarded_as_explicit_kwarg(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatOpenAI", mock_cls)
+    monkeypatch.setattr("utils.providers.openai.ChatOpenAI", mock_cls)
 
     factory.create_llm(model="gpt-4o", extra_body={"thinking": {"type": "disabled"}})
 
@@ -751,7 +751,7 @@ def test_openai_extra_body_forwarded_as_explicit_kwarg(monkeypatch):
 
 def test_deepseek_extra_body_forwarded_as_explicit_kwarg(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatDeepSeek", mock_cls)
+    monkeypatch.setattr("utils.providers.deepseek.chat.ChatDeepSeek", mock_cls)
 
     factory.create_llm(model="deepseek-v4-flash", extra_body={"thinking": {"type": "disabled"}})
 
@@ -762,7 +762,7 @@ def test_deepseek_extra_body_forwarded_as_explicit_kwarg(monkeypatch):
 
 def test_unknown_prefix_routes_to_openai_compatible(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatOpenAI", mock_cls)
+    monkeypatch.setattr("utils.providers.openai.ChatOpenAI", mock_cls)
 
     factory.create_llm(model="mistral-7b-instruct")
 
@@ -773,7 +773,7 @@ def test_unknown_prefix_routes_to_openai_compatible(monkeypatch):
 
 def test_explicit_provider_routes_without_model_prefix(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatAnthropic", mock_cls)
+    monkeypatch.setattr("utils.providers.anthropic.ChatAnthropic", mock_cls)
 
     factory.create_llm(model="custom-sonnet", provider="anthropic")
 
@@ -784,7 +784,7 @@ def test_explicit_provider_routes_without_model_prefix(monkeypatch):
 
 def test_provider_profile_can_set_type_base_url_and_api_key(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatAnthropic", mock_cls)
+    monkeypatch.setattr("utils.providers.anthropic.ChatAnthropic", mock_cls)
     monkeypatch.setattr(
         factory.EnvConfig,
         "LLM_PROVIDERS",
@@ -807,7 +807,7 @@ def test_provider_profile_can_set_type_base_url_and_api_key(monkeypatch):
 
 def test_provider_profile_controls_openai_base_url_and_responses_api(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatOpenAI", mock_cls)
+    monkeypatch.setattr("utils.providers.openai.ChatOpenAI", mock_cls)
     monkeypatch.setattr(
         factory.EnvConfig,
         "LLM_PROVIDERS",
@@ -929,7 +929,7 @@ def test_provider_capabilities_do_not_override_model_capabilities(monkeypatch):
 
 def test_openai_base_url_included(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatOpenAI", mock_cls)
+    monkeypatch.setattr("utils.providers.openai.ChatOpenAI", mock_cls)
     monkeypatch.setattr(
         factory.EnvConfig,
         "LLM_PROVIDERS",
@@ -952,7 +952,7 @@ def test_openai_base_url_included(monkeypatch):
 
 def test_google_no_base_url_field(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, "ChatGoogleGenerativeAI", mock_cls)
+    monkeypatch.setattr("utils.providers.google.ChatGoogleGenerativeAI", mock_cls)
 
     factory.create_llm(model="gemini-2.0-flash")
 
@@ -962,19 +962,19 @@ def test_google_no_base_url_field(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("model", "factory_attr"),
+    ("model", "model_class_path"),
     [
-        ("openai/gpt-5.4-nano", "ChatOpenAI"),
-        ("google/gemini-2.5-flash", "ChatGoogleGenerativeAI"),
-        ("anthropic/claude-3-5-sonnet-20241022", "ChatAnthropic"),
-        ("deepseek/deepseek-v4-flash", "ChatDeepSeek"),
+        ("openai/gpt-5.4-nano", "utils.providers.openai.ChatOpenAI"),
+        ("google/gemini-2.5-flash", "utils.providers.google.ChatGoogleGenerativeAI"),
+        ("anthropic/claude-3-5-sonnet-20241022", "utils.providers.anthropic.ChatAnthropic"),
+        ("deepseek/deepseek-v4-flash", "utils.providers.deepseek.chat.ChatDeepSeek"),
     ],
 )
-def test_vendor_prefixed_model_id_is_passed_through_unchanged(monkeypatch, model, factory_attr):
+def test_vendor_prefixed_model_id_is_passed_through_unchanged(monkeypatch, model, model_class_path):
     """Proxy-style ``vendor/model`` ids stay verbatim for every adapter family."""
 
     mock_cls = MagicMock()
-    monkeypatch.setattr(factory, factory_attr, mock_cls)
+    monkeypatch.setattr(model_class_path, mock_cls)
 
     factory.create_llm(model=model)
 

@@ -625,9 +625,7 @@ async def test_chat_agent_drops_reasoning_params_when_chat_completions(monkeypat
     monkeypatch.setattr(cognitive_mod, "create_llm", capturing_create_llm)
     monkeypatch.setattr(cognitive_mod.EnvConfig, "ADVAN_MODEL_PROVIDER", "openrouter")
     monkeypatch.setattr(cognitive_mod, "provider_uses_responses_api", lambda *_args, **_kwargs: False)
-    monkeypatch.setattr(cognitive_mod, "provider_is_official_openai", lambda *_args, **_kwargs: False)
-    monkeypatch.setattr(cognitive_mod, "provider_is_official_anthropic", lambda *_args, **_kwargs: False)
-    monkeypatch.setattr(cognitive_mod, "provider_official_deepseek_api_mode", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cognitive_mod, "provider_request_overrides", lambda *_args, **_kwargs: {})
     monkeypatch.setattr(cognitive_mod, "model_supports_native_web_search", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(
         cognitive_mod, "native_web_search_support", lambda *_args, **_kwargs: (False, "test route")
@@ -1004,8 +1002,11 @@ async def test_chat_agent_includes_reasoning_params_when_responses_api(monkeypat
 
     monkeypatch.setattr(cognitive_mod, "create_llm", capturing_create_llm)
     monkeypatch.setattr(cognitive_mod, "provider_uses_responses_api", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(cognitive_mod, "provider_is_official_openai", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(cognitive_mod, "provider_official_deepseek_api_mode", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        cognitive_mod,
+        "provider_request_overrides",
+        lambda _model, _provider, *, user_id, cache_key: {"model_kwargs": {"prompt_cache_key": cache_key}},
+    )
 
     frontier = cognitive_mod.FrontierCognitive.__new__(cognitive_mod.FrontierCognitive)
     frontier.tools = []
@@ -1056,6 +1057,13 @@ def test_prompt_cache_key_is_stable_and_scoped_without_plaintext_identity():
     assert "123456789" not in first
 
 
+_OFFICIAL_DEEPSEEK_PROFILES = {
+    "responses": {"type": "openai", "api_mode": "responses", "base_url": "https://api.deepseek.com"},
+    "chat_completions": {"type": "deepseek", "api_mode": "chat_completions", "base_url": ""},
+    "messages": {"type": "anthropic", "api_mode": "messages", "base_url": "https://api.deepseek.com/anthropic"},
+}
+
+
 @pytest.mark.parametrize(
     "api_mode",
     ["responses", "chat_completions", "messages"],
@@ -1065,9 +1073,9 @@ def test_provider_request_overrides_isolates_official_deepseek_routes(
     api_mode,
 ):
     monkeypatch.setattr(
-        cognitive_mod,
-        "provider_official_deepseek_api_mode",
-        lambda *_args: api_mode,
+        cognitive_mod.EnvConfig,
+        "LLM_PROVIDERS",
+        {"deepseek_route": _OFFICIAL_DEEPSEEK_PROFILES[api_mode]},
     )
     workspace_key = "group-123456789"
     pseudonym = cognitive_mod._provider_user_id(
@@ -1077,7 +1085,7 @@ def test_provider_request_overrides_isolates_official_deepseek_routes(
 
     overrides = cognitive_mod._provider_request_overrides(
         model="deepseek-v4-pro",
-        provider="deepseek_responses",
+        provider="deepseek_route",
         workspace_key=workspace_key,
         access_profile="frontier",
     )
@@ -1115,12 +1123,13 @@ def test_provider_user_id_is_stable_and_separates_scope_and_access_profile():
 
 def test_provider_request_overrides_keeps_anthropic_cache_control_off_proxies(monkeypatch):
     monkeypatch.setattr(
-        cognitive_mod,
-        "provider_official_deepseek_api_mode",
-        lambda *_args: None,
+        cognitive_mod.EnvConfig,
+        "LLM_PROVIDERS",
+        {
+            "proxy": {"type": "anthropic", "api_mode": "messages", "base_url": "https://proxy.example.com"},
+            "anthropic": {"type": "anthropic", "api_mode": "messages", "base_url": ""},
+        },
     )
-    monkeypatch.setattr(cognitive_mod, "provider_is_official_openai", lambda *_args: False)
-    monkeypatch.setattr(cognitive_mod, "provider_is_official_anthropic", lambda *_args: False)
 
     assert cognitive_mod._provider_request_overrides(
         model="claude-sonnet-4",
@@ -1129,7 +1138,6 @@ def test_provider_request_overrides_keeps_anthropic_cache_control_off_proxies(mo
         access_profile="frontier",
     ) == {}
 
-    monkeypatch.setattr(cognitive_mod, "provider_is_official_anthropic", lambda *_args: True)
     assert cognitive_mod._provider_request_overrides(
         model="claude-sonnet-4",
         provider="anthropic",
@@ -1148,15 +1156,11 @@ def test_provider_request_overrides_adds_deepseek_chatbot_features(
     expected_key,
 ):
     monkeypatch.setattr(
-        cognitive_mod,
-        "provider_official_deepseek_api_mode",
-        lambda *_args: api_mode,
-    )
-    monkeypatch.setattr(
         cognitive_mod.EnvConfig,
         "LLM_PROVIDERS",
         {
             "deepseek_route": {
+                **_OFFICIAL_DEEPSEEK_PROFILES[api_mode],
                 "safety_check": {"level": "high"},
                 "title": {"enabled": True},
             }
@@ -1213,7 +1217,7 @@ async def test_chat_agent_stabilizes_tool_order_and_keeps_gated_tools_at_tail(mo
     )
     monkeypatch.setattr(cognitive_mod, "create_llm", lambda **_kwargs: object())
     monkeypatch.setattr(cognitive_mod, "provider_uses_responses_api", lambda *_args: False)
-    monkeypatch.setattr(cognitive_mod, "provider_is_official_openai", lambda *_args: False)
+    monkeypatch.setattr(cognitive_mod, "provider_request_overrides", lambda *_args, **_kwargs: {})
     monkeypatch.setattr(cognitive_mod, "model_supports_native_web_search", lambda *_args: False)
     monkeypatch.setattr(
         cognitive_mod,

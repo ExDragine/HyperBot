@@ -211,7 +211,7 @@ class DeepSeekSource:
         self.cfg = cfg
 
     async def search(self, query, edition):
-        from utils.deepseek_web import search_web
+        from utils.providers.deepseek.web import search_web
 
         end_date = (edition.scheduled_at + dt.timedelta(days=1)).date().isoformat()
         scoped_query = f"{query} after:{edition.start.date().isoformat()} before:{end_date}"

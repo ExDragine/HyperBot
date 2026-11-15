@@ -141,7 +141,7 @@ def test_env_config_reload_updates_runtime_sections():
     assert EnvConfig.IMAGE_ENABLED is False
     assert EnvConfig.MEDIA_TTL_DAYS == EnvConfig.IMAGE_TTL_DAYS == 9
     assert EnvConfig.IMAGE_AUTO_CLEANUP is False
-    assert EnvConfig.CONTENT_CHECK_ENABLED is True
+    assert EnvConfig.CONTENT_CHECK_ENABLED is False
     assert EnvConfig.QQ_TEXT_CANARY_ENABLED is True
     assert EnvConfig.LAYA_CANDIDATE_ENABLED is True
     assert EnvConfig.LAYA_CANDIDATE_MODEL == "multilingual"

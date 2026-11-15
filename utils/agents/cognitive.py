@@ -37,19 +37,18 @@ from plugins.acp.subagent import build_acp_subagents
 from utils.agent_context import FrontierRuntimeContext
 from utils.agent_protocol import AgentArtifact, ConversationRef, Participant
 from utils.configs import EnvConfig
-from utils.deepseek_web import SEARCH_PROMPT_HINT, deepseek_search_available
 from utils.harness_profiles import register_frontier_harness_profiles
 from utils.llm_factory import (
     create_llm,
     model_supports_native_web_search,
     native_web_search_support,
+    native_web_search_tools,
     normalize_reasoning_effort,
-    provider_is_official_anthropic,
-    provider_is_official_openai,
-    provider_official_deepseek_api_mode,
+    provider_request_overrides,
     provider_uses_responses_api,
 )
 from utils.media import detect_mime_type, inline_media_bytes, media_block_kind
+from utils.providers.deepseek.web import SEARCH_PROMPT_HINT, deepseek_search_available
 
 from .capture import detect_browser_capture_intent
 from .execution import current_run_id, managed_agent_turn
@@ -328,18 +327,6 @@ def _provider_user_id(*, workspace_key: str, access_profile: str) -> str:
     return f"{_PROMPT_CACHE_NAMESPACE}_user_{digest}"
 
 
-def _deepseek_responses_overrides(
-    *, user_id: str, configured_features: dict[str, dict[str, Any]]
-) -> dict[str, Any]:
-    overrides: dict[str, Any] = {"model_kwargs": {"user": user_id}}
-    if configured_features:
-        # DeepSeek-specific fields are not part of the OpenAI Responses SDK
-        # signature. Pass them through the request body extension so the SDK
-        # does not reject them locally.
-        overrides["extra_body"] = configured_features
-    return overrides
-
-
 def _provider_request_overrides(
     *,
     model: str,
@@ -348,47 +335,12 @@ def _provider_request_overrides(
     access_profile: str,
 ) -> dict[str, Any]:
     """Return request fields supported by the route's first-party API only."""
-    deepseek_mode = provider_official_deepseek_api_mode(model, provider)
-    if deepseek_mode is not None:
-        profile = EnvConfig.LLM_PROVIDERS.get(provider or "")
-        configured_features: dict[str, dict[str, Any]] = {}
-        if isinstance(profile, dict):
-            for key in ("safety_check", "title"):
-                value = profile.get(key)
-                if isinstance(value, dict) and value:
-                    configured_features[key] = value
-        pseudonymous_user_id = _provider_user_id(
-            workspace_key=workspace_key,
-            access_profile=access_profile,
-        )
-        if deepseek_mode == "responses":
-            return _deepseek_responses_overrides(
-                user_id=pseudonymous_user_id,
-                configured_features=configured_features,
-            )
-        if deepseek_mode == "chat_completions":
-            payload = {"user_id": pseudonymous_user_id, **configured_features}
-            return {"extra_body": payload}
-        if deepseek_mode == "messages":
-            payload = {
-                "metadata": {"user_id": pseudonymous_user_id},
-                **configured_features,
-            }
-            return {"model_kwargs": payload}
-
-    if provider_is_official_openai(model, provider):
-        return {
-            "model_kwargs": {
-                "prompt_cache_key": _prompt_cache_key(
-                    model=model,
-                    workspace_key=workspace_key,
-                    access_profile=access_profile,
-                )
-            }
-        }
-    if provider_is_official_anthropic(model, provider):
-        return {"model_kwargs": {"cache_control": {"type": "ephemeral"}}}
-    return {}
+    return provider_request_overrides(
+        model,
+        provider,
+        user_id=_provider_user_id(workspace_key=workspace_key, access_profile=access_profile),
+        cache_key=_prompt_cache_key(model=model, workspace_key=workspace_key, access_profile=access_profile),
+    )
 
 
 class NativeWebSearchMiddleware(AgentMiddleware):
@@ -740,15 +692,9 @@ class FrontierCognitive:
                 )
             )
         if native_web_search:
-            deepseek_native = provider_official_deepseek_api_mode(
-                EnvConfig.ADVAN_MODEL,
-                EnvConfig.ADVAN_MODEL_PROVIDER,
-            ) is not None
             middleware.append(
                 NativeWebSearchMiddleware(
-                    ("deepseek_web_search", "deepseek_read_url")
-                    if deepseek_native
-                    else ("web_search",)
+                    native_web_search_tools(EnvConfig.ADVAN_MODEL, EnvConfig.ADVAN_MODEL_PROVIDER)
                 )
             )
         if session_turn is not None:

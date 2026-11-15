@@ -1,99 +1,14 @@
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
-from urllib.parse import urlsplit
+from typing import TYPE_CHECKING, Any
 
-from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import ModelProfile
-from langchain_deepseek import ChatDeepSeek
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_openai import ChatOpenAI
-from pydantic import SecretStr
 
 from models import ApiMode, ModelFeature, ModelInput, ModelOutput, get_model, load_catalog
 from utils.configs import EnvConfig
-from utils.providers.deepseek import DEEPSEEK_VALID_KWARGS, DeepSeekProvider
-from utils.providers.deepseek import official_api_mode as deepseek_official_api_mode
+from utils.providers import Route, get_adapter, get_vendor, infer_adapter, vendor_for
+from utils.providers.base import ADAPTER_API_MODES, DEFAULT_API_MODES
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
-
-
-@dataclass
-class ProviderConfig:
-    cls_fn: Callable[[], type[BaseChatModel]]
-    api_key_field: str
-    valid_kwargs: set[str]
-    kwarg_map: dict[str, str] = field(default_factory=dict)
-    base_url_field: str | None = None
-    static_kwargs: dict = field(default_factory=dict)
-
-
-_OPENAI_VALID = {
-    "streaming",
-    "max_retries",
-    "timeout",
-    "reasoning_effort",
-    "verbosity",
-    "temperature",
-    "model_kwargs",
-    "extra_body",
-    "profile",
-}
-_GOOGLE_VALID = {"streaming", "max_retries", "timeout", "temperature", "profile"}
-_ANTHROPIC_VALID = {
-    "streaming",
-    "max_retries",
-    "timeout",
-    "temperature",
-    "model_kwargs",
-    "profile",
-}
-_DEEPSEEK_VALID = set(DEEPSEEK_VALID_KWARGS)
-
-_openai_config = ProviderConfig(
-    cls_fn=lambda: ChatOpenAI,
-    api_key_field="openai_api_key",
-    valid_kwargs=_OPENAI_VALID,
-    kwarg_map={"timeout": "request_timeout"},
-    base_url_field="openai_api_base",
-)
-
-_google_config = ProviderConfig(
-    cls_fn=lambda: ChatGoogleGenerativeAI,
-    api_key_field="google_api_key",
-    valid_kwargs=_GOOGLE_VALID,
-    base_url_field="base_url",
-)
-
-_anthropic_config = ProviderConfig(
-    cls_fn=lambda: ChatAnthropic,
-    api_key_field="anthropic_api_key",
-    valid_kwargs=_ANTHROPIC_VALID,
-    kwarg_map={"timeout": "default_request_timeout"},
-    base_url_field="anthropic_api_url",
-)
-
-_deepseek_config = ProviderConfig(
-    cls_fn=lambda: DeepSeekProvider,
-    api_key_field="api_key",
-    valid_kwargs=_DEEPSEEK_VALID,
-    base_url_field="api_base",
-)
-
-_PROVIDER_CONFIGS = {
-    "openai": _openai_config,
-    "google": _google_config,
-    "anthropic": _anthropic_config,
-    "deepseek": _deepseek_config,
-}
-
-_PROVIDER_API_MODES = {
-    "openai": {ApiMode.CHAT_COMPLETIONS.value, ApiMode.RESPONSES.value},
-    "google": {ApiMode.GENERATE_CONTENT.value},
-    "anthropic": {ApiMode.MESSAGES.value},
-    "deepseek": {ApiMode.CHAT_COMPLETIONS.value},
-}
 
 
 def _clean_optional(value: object) -> str:
@@ -103,19 +18,7 @@ def _clean_optional(value: object) -> str:
 
 
 def _infer_provider(model: str) -> str:
-    vendor, sep, route_key = model.partition("/")
-    if sep and vendor.lower() in _PROVIDER_CONFIGS:
-        return vendor.lower()
-    route_key = route_key if sep else model
-    match route_key:
-        case k if k.startswith("deepseek"):
-            return "deepseek"
-        case k if k.startswith(("gemini-", "google")):
-            return "google"
-        case k if k.startswith(("claude-", "anthropic")):
-            return "anthropic"
-        case _:
-            return "openai"
+    return infer_adapter(model)
 
 
 def _provider_profile(model: str, provider: str | None) -> tuple[str, dict]:
@@ -203,14 +106,9 @@ def _provider_protocol(model: str, profile: dict) -> tuple[str, str]:
             provider_type = "openai"
 
     if not api_mode:
-        api_mode = {
-            "openai": ApiMode.CHAT_COMPLETIONS.value,
-            "google": ApiMode.GENERATE_CONTENT.value,
-            "anthropic": ApiMode.MESSAGES.value,
-            "deepseek": ApiMode.CHAT_COMPLETIONS.value,
-        }.get(provider_type, "")
+        api_mode = DEFAULT_API_MODES.get(provider_type, "")
 
-    supported_modes = _PROVIDER_API_MODES.get(provider_type)
+    supported_modes = ADAPTER_API_MODES.get(provider_type)
     if supported_modes is None:
         raise ValueError(f"未知 LLM provider type: {provider_type!r}")
     if api_mode not in supported_modes:
@@ -218,10 +116,15 @@ def _provider_protocol(model: str, profile: dict) -> tuple[str, str]:
     return provider_type, api_mode
 
 
-def provider_uses_responses_api(model: str, provider: str | None = None) -> bool:
+def _route(model: str, provider: str | None) -> Route:
+    """Resolve the profile and protocol once; providers only ever see this."""
     _, profile = _provider_profile(model, provider)
-    _, api_mode = _provider_protocol(model, profile)
-    return api_mode == ApiMode.RESPONSES.value
+    adapter, api_mode = _provider_protocol(model, profile)
+    return Route(model, profile, adapter, api_mode, _infer_provider(model))
+
+
+def provider_uses_responses_api(model: str, provider: str | None = None) -> bool:
+    return _route(model, provider).api_mode == ApiMode.RESPONSES.value
 
 
 def normalize_reasoning_effort(
@@ -229,54 +132,12 @@ def normalize_reasoning_effort(
     provider: str | None,
     effort: str | None,
 ) -> str | None:
-    """Map Frontier's generic effort names to provider-native values.
-
-    DeepSeek V4's Responses API accepts ``low``, ``high`` and ``max``. The
-    generic Frontier settings retain ``medium`` and ``xhigh`` for other
-    providers, so translate those aliases only on an official DeepSeek route.
-    """
+    """Map HyperBot's generic effort names to the route's vendor-native values."""
     if effort is None:
         return None
-    if provider_official_deepseek_api_mode(model, provider) == ApiMode.RESPONSES.value:
-        return DeepSeekProvider(model, _provider_profile(model, provider)[1]).normalize_reasoning_effort(effort)
-    return effort
-
-
-def _targets_https_api(
-    profile: dict,
-    hostname: str,
-    *,
-    paths: frozenset[str],
-    allow_default: bool,
-) -> bool:
-    base_url = _clean_optional(profile.get("base_url"))
-    if not base_url:
-        return allow_default
-
-    parsed_base_url = urlsplit(base_url)
-    try:
-        port = parsed_base_url.port
-    except ValueError:
-        return False
-    return (
-        parsed_base_url.scheme.lower() == "https"
-        and (parsed_base_url.hostname or "").lower() == hostname
-        and parsed_base_url.path.rstrip("/") in paths
-        and not parsed_base_url.query
-        and not parsed_base_url.fragment
-        and parsed_base_url.username is None
-        and parsed_base_url.password is None
-        and port in {None, 443}
-    )
-
-
-def _targets_first_party_api(profile: dict, hostname: str) -> bool:
-    return _targets_https_api(
-        profile,
-        hostname,
-        paths=frozenset({"", "/v1"}),
-        allow_default=True,
-    )
+    route = _route(model, provider)
+    vendor = vendor_for(route)
+    return vendor.normalize_reasoning_effort(route, effort) if vendor else effort
 
 
 def provider_is_official_openai(model: str, provider: str | None = None) -> bool:
@@ -286,69 +147,60 @@ def provider_is_official_openai(model: str, provider: str | None = None) -> bool
     compatible proxies use the same LangChain class but do not share OpenAI's
     request extensions. An empty base URL means the OpenAI SDK default.
     """
-    _, profile = _provider_profile(model, provider)
-    provider_type, _ = _provider_protocol(model, profile)
-    if provider_type != "openai":
-        return False
-    return _targets_first_party_api(profile, "api.openai.com")
+    return get_vendor("openai").serves(_route(model, provider))
 
 
 def provider_is_official_anthropic(model: str, provider: str | None = None) -> bool:
     """Return whether the route targets Anthropic's first-party Messages API."""
-    _, profile = _provider_profile(model, provider)
-    provider_type, api_mode = _provider_protocol(model, profile)
-    return (
-        provider_type == "anthropic"
-        and api_mode == ApiMode.MESSAGES.value
-        and _targets_first_party_api(profile, "api.anthropic.com")
-    )
+    return get_vendor("anthropic").serves(_route(model, provider))
 
 
 def provider_official_deepseek_api_mode(model: str, provider: str | None = None) -> str | None:
     """Return the protocol for an official DeepSeek route, if any."""
     if _infer_provider(model) != "deepseek":
         return None
+    route = _route(model, provider)
+    return route.api_mode if get_vendor("deepseek").serves(route) else None
 
-    _, profile = _provider_profile(model, provider)
-    provider_type, api_mode = _provider_protocol(model, profile)
-    return deepseek_official_api_mode(
-        model=model,
-        provider_type=provider_type,
-        api_mode=api_mode,
-        profile=profile,
-    )
+
+def provider_request_overrides(
+    model: str,
+    provider: str | None,
+    *,
+    user_id: str,
+    cache_key: str,
+) -> dict[str, Any]:
+    """Return ``create_llm`` kwargs accepted only by the route's first-party API.
+
+    Compatible proxies get nothing: they share an adapter with a vendor, not
+    its request extensions.
+    """
+    route = _route(model, provider)
+    vendor = vendor_for(route)
+    return vendor.request_overrides(route, user_id=user_id, cache_key=cache_key) if vendor else {}
 
 
 def native_web_search_support(
     model: str,
     provider: str | None = None,
 ) -> tuple[bool, str]:
-    """Return whether provider-hosted Responses web search is really available.
+    """Return whether provider-hosted web search is really available.
 
     Responses is only a wire protocol. It does not imply that an OpenAI-compatible
-    endpoint implements OpenAI-hosted built-in tools. Official OpenAI Responses is
-    enabled automatically. Compatible Responses providers must opt in explicitly
+    endpoint implements OpenAI-hosted built-in tools. First-party vendors decide
+    for their own routes; compatible Responses providers must opt in explicitly
     with ``native_web_search = true`` after their upstream capability is verified.
-
-    DeepSeek's hosted chatbot tools are model and protocol specific. They
-    require explicit opt-in, while the standalone search tools work across
-    main-model routes and take precedence in the Agent when configured.
     """
-    _, profile = _provider_profile(model, provider)
-    provider_type, api_mode = _provider_protocol(model, profile)
-    deepseek_mode = provider_official_deepseek_api_mode(model, provider)
-    if deepseek_mode is not None:
-        if profile.get("native_web_search") is True:
-            return True, f"official DeepSeek {deepseek_mode} chatbot tools explicitly opted in"
-        return False, "DeepSeek hosted search requires explicit opt-in; prefer standalone deepseek_web_search"
+    route = _route(model, provider)
+    vendor = vendor_for(route)
+    verdict = vendor.native_web_search(route) if vendor else None
+    if verdict is not None:
+        return verdict
 
-    if api_mode != ApiMode.RESPONSES.value:
-        return False, f"api_mode={api_mode or 'unknown'} is not Responses"
+    if route.api_mode != ApiMode.RESPONSES.value:
+        return False, f"api_mode={route.api_mode or 'unknown'} is not Responses"
 
-    if provider_is_official_openai(model, provider):
-        return True, "official OpenAI Responses web_search"
-
-    if profile.get("native_web_search") is True and provider_type == "openai":
+    if route.profile.get("native_web_search") is True and route.adapter == "openai":
         return True, "Responses-compatible provider explicitly opted in"
 
     return (
@@ -362,6 +214,12 @@ def model_supports_native_web_search(model: str, provider: str | None = None) ->
     """Backward-compatible boolean wrapper around :func:`native_web_search_support`."""
     supported, _reason = native_web_search_support(model, provider)
     return supported
+
+
+def native_web_search_tools(model: str, provider: str | None = None) -> tuple[str, ...]:
+    """Return the hosted tool types to inject when native search is enabled."""
+    vendor = vendor_for(_route(model, provider))
+    return vendor.native_search_tools if vendor else ("web_search",)
 
 
 def get_langchain_model_profile(model: str, provider_type: str) -> ModelProfile | None:
@@ -433,17 +291,6 @@ def provider_signal_extra_body(model: str, provider: str | None = None) -> dict[
     return provider_decision_extra_body(model, provider)
 
 
-def _needs_prompt_schema(model: str, provider: str | None, provider_type: str) -> bool:
-    """Return whether schema enforcement must avoid forced tool_choice.
-
-    DeepSeek 思考模式默认开启且只接受 ``tool_choice: auto``；``ChatDeepSeek`` 的
-    ``json_schema`` 也由 function calling 实现，官方 Responses 与 Anthropic 路由
-    共用同一限制。模型别名（例如 ``deepseek-flash``）可能没有能力卡片，因此按
-    路由判断而不是按模型卡判断。
-    """
-    return DeepSeekProvider(model, _provider_profile(model, provider)[1]).needs_prompt_schema(provider_type)
-
-
 def structured_output_options(
     model: str,
     provider: str | None,
@@ -451,60 +298,26 @@ def structured_output_options(
     *,
     method: str | None = None,
 ) -> dict[str, Any]:
-    """Select schema enforcement without silently changing API endpoints."""
-    _, profile = _provider_profile(model, provider)
-    provider_type, _ = _provider_protocol(model, profile)
-    selected = method or profile.get("structured_output_method", "auto")
+    """Select schema enforcement without silently changing API endpoints.
+
+    A first-party vendor may override its adapter's default: official OpenAI
+    and Anthropic use native JSON Schema, while every DeepSeek route keeps the
+    schema in the prompt because thinking mode rejects a forced tool choice.
+    """
+    route = _route(model, provider)
+    selected = method or route.profile.get("structured_output_method", "auto")
     if selected not in {"auto", "json_schema", "function_calling", "json_mode", "text_json"}:
         raise ValueError("不支持的 structured_output_method")
     if selected == "auto":
         capabilities = getattr(llm, "profile", None) or {}
-        if provider_type == "google":
-            selected = "json_schema"
-        elif capabilities.get("structured_output") is True and (
-            provider_is_official_openai(model, provider) or provider_is_official_anthropic(model, provider)
-        ):
-            selected = "json_schema"
-        elif _needs_prompt_schema(model, provider, provider_type):
-            selected = "text_json"
-        elif provider_type == "anthropic" or capabilities.get("tool_calling") is True or provider_type == "deepseek":
-            selected = "function_calling"
-        else:
-            selected = "json_mode"
+        vendor = vendor_for(route)
+        selected = (vendor.structured_output_method(route, capabilities) if vendor else None) or get_adapter(
+            route.adapter
+        ).structured_output_method(route, capabilities)
     options: dict[str, Any] = {"method": selected}
-    if selected == "json_schema" and provider_type == "openai":
+    if selected == "json_schema" and route.adapter == "openai":
         options["strict"] = True
     return options
-
-
-def _defer_anthropic_request_metadata(provider_type: str, filtered: dict) -> dict[str, Any] | None:
-    """Keep API metadata away from BaseChatModel's tracing metadata field."""
-    model_kwargs = filtered.get("model_kwargs")
-    if provider_type != "anthropic" or not isinstance(model_kwargs, dict):
-        return None
-    if "metadata" not in model_kwargs:
-        return None
-
-    deferred = {"metadata": model_kwargs["metadata"]}
-    remaining = {key: value for key, value in model_kwargs.items() if key != "metadata"}
-    if remaining:
-        filtered["model_kwargs"] = remaining
-    else:
-        filtered.pop("model_kwargs")
-    return deferred
-
-
-def _install_deferred_model_kwargs(
-    instance: BaseChatModel,
-    deferred: dict[str, Any] | None,
-) -> None:
-    if not deferred:
-        return
-    existing_model_kwargs = getattr(instance, "model_kwargs", None)
-    if isinstance(existing_model_kwargs, dict):
-        existing_model_kwargs.update(deferred)
-    else:
-        cast(Any, instance).model_kwargs = deferred
 
 
 def create_llm(model: str, provider: str | None = None, **kwargs) -> BaseChatModel:
@@ -517,37 +330,6 @@ def create_llm(model: str, provider: str | None = None, **kwargs) -> BaseChatMod
         raise TypeError("create_llm() 不再接受 endpoint，请通过 provider 选择供应商 profile")
     if "use_responses_api" in kwargs:
         raise TypeError("create_llm() 不再接受 use_responses_api，请在供应商 profile 中配置 api_mode")
-    _, profile = _provider_profile(model, provider)
-    provider_type, api_mode = _provider_protocol(model, profile)
-    if provider_type == "deepseek":
-        catalog_profile = get_langchain_model_profile(model, _infer_provider(model))
-        return DeepSeekProvider(model, profile).create_chat_model(
-            kwargs,
-            catalog_profile=catalog_profile,
-            chat_model_cls=ChatDeepSeek,
-        )
-    config = _PROVIDER_CONFIGS[provider_type]
-
-    cls = config.cls_fn()
-    api_key = SecretStr(_clean_optional(profile.get("api_key")))
-    filtered: dict = {}
-    for k, v in kwargs.items():
-        if k in config.valid_kwargs or k == "tags":
-            actual_key = config.kwarg_map.get(k, k)
-            filtered[actual_key] = v
-    deferred_anthropic_kwargs = _defer_anthropic_request_metadata(provider_type, filtered)
-    if "profile" not in filtered:
-        catalog_profile = get_langchain_model_profile(model, _infer_provider(model))
-        if catalog_profile is not None:
-            filtered["profile"] = catalog_profile
-    if provider_type == "openai":
-        filtered["use_responses_api"] = api_mode == ApiMode.RESPONSES.value
-    base_url = _clean_optional(profile.get("base_url"))
-    if base_url and config.base_url_field:
-        filtered[config.base_url_field] = base_url
-    constructor: Callable[..., BaseChatModel] = cast(Any, cls)
-    instance = constructor(
-        **{config.api_key_field: api_key, "model": model, **filtered, **config.static_kwargs}
-    )
-    _install_deferred_model_kwargs(instance, deferred_anthropic_kwargs)
-    return instance
+    route = _route(model, provider)
+    catalog_profile = None if "profile" in kwargs else get_langchain_model_profile(model, route.model_family)
+    return get_adapter(route.adapter).create_chat_model(route, kwargs, catalog_profile=catalog_profile)

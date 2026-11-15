@@ -20,7 +20,7 @@ from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, ToolMessage
-from utils import deepseek_web as web
+from utils.providers.deepseek import web
 from utils.agent_context import FrontierRuntimeContext
 from utils.configs import EnvConfig
 

@@ -13,6 +13,7 @@ import dotenv
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from utils.event_policy import EventConfig
+from utils.providers.base import ADAPTER_API_MODES, DEFAULT_API_MODES
 
 dotenv.load_dotenv()
 
@@ -30,12 +31,6 @@ _VALID_API_MODES = {
     _API_MODE_RESPONSES,
     _API_MODE_MESSAGES,
     _API_MODE_GENERATE_CONTENT,
-}
-_PROVIDER_API_MODES = {
-    "openai": {_API_MODE_CHAT_COMPLETIONS, _API_MODE_RESPONSES},
-    "google": {_API_MODE_GENERATE_CONTENT},
-    "anthropic": {_API_MODE_MESSAGES},
-    "deepseek": {_API_MODE_CHAT_COMPLETIONS},
 }
 
 
@@ -142,7 +137,7 @@ class FeishuConfig(_FrozenConfig):
     environment variables through :class:`EnvConfig` instead.
     """
 
-    enabled: bool = True
+    enabled: bool = False
     app_id: str = ""
     bot_open_id: str = ""
     path: str = "/feishu/events"
@@ -394,12 +389,7 @@ def _validate_model_provider_sections(
 
 
 def _default_api_mode(provider_type: str) -> str:
-    return {
-        "openai": _API_MODE_CHAT_COMPLETIONS,
-        "google": _API_MODE_GENERATE_CONTENT,
-        "anthropic": _API_MODE_MESSAGES,
-        "deepseek": _API_MODE_CHAT_COMPLETIONS,
-    }.get(provider_type, "")
+    return DEFAULT_API_MODES.get(provider_type, "")
 
 
 def _validate_normalized_provider_protocols(provider_profiles: dict[str, dict[str, Any]]) -> None:
@@ -408,7 +398,7 @@ def _validate_normalized_provider_protocols(provider_profiles: dict[str, dict[st
         api_mode = str(profile.get("api_mode", "")).strip().lower()
         profile["type"] = provider_type
         profile["api_mode"] = api_mode
-        supported_modes = _PROVIDER_API_MODES.get(provider_type)
+        supported_modes = ADAPTER_API_MODES.get(provider_type)
         if supported_modes is None:
             raise ValueError(f"[providers.{name}].type 无效: {provider_type!r}")
         if api_mode not in supported_modes:

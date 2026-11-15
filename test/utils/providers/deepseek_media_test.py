@@ -5,7 +5,7 @@ import wave
 
 import pytest
 
-from utils import deepseek_media
+from utils.providers.deepseek import media as deepseek_media
 
 
 class _Response:
@@ -86,3 +86,20 @@ async def test_ocr_posts_file_and_purpose(monkeypatch):
     _, kwargs = client.calls[0]
     assert kwargs["data"] == {"purpose": "rich_layout_recognition"}
     assert kwargs["files"]["file"][0] == "report.pdf"
+
+
+def test_silk_decode_worker_exists():
+    assert deepseek_media._DECODE_WORKER.is_file()
+
+
+def test_other_vendor_key_is_not_sent_to_the_default_deepseek_host(monkeypatch):
+    profiles = {
+        "openai": {"type": "openai", "base_url": "", "api_key": "sk-openai"},
+        "deepseek": {"type": "deepseek", "base_url": "", "api_key": "sk-deepseek"},
+    }
+    monkeypatch.setattr(deepseek_media, "get_provider_profile", profiles.__getitem__)
+
+    with pytest.raises(deepseek_media.DeepSeekMediaError) as error:
+        deepseek_media._credentials("openai")
+    assert error.value.code == "provider_not_deepseek"
+    assert deepseek_media._credentials("deepseek") == ("https://api.deepseek.com", "sk-deepseek")

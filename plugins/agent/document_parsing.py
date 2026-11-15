@@ -9,7 +9,7 @@ from pathlib import Path
 from nonebot import logger
 
 from utils.configs import DocumentParsingConfig
-from utils.deepseek_media import DeepSeekMediaError, ocr_file
+from utils.providers.deepseek.media import DeepSeekMediaError, ocr_file
 
 SUPPORTED_SUFFIXES = frozenset({
     ".pdf", ".doc", ".docx", ".ppt", ".pptx",

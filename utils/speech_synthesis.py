@@ -7,8 +7,8 @@ import time
 from dataclasses import dataclass
 
 from utils.configs import EnvConfig, SpeechSynthesisConfig
-from utils.deepseek_media import DeepSeekMediaError
-from utils.deepseek_media import synthesize_speech as _synthesize_speech
+from utils.providers.deepseek.media import DeepSeekMediaError
+from utils.providers.deepseek.media import synthesize_speech as _synthesize_speech
 
 
 class SpeechSynthesisError(Exception):

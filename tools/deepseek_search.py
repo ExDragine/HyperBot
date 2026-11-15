@@ -9,7 +9,7 @@ from langchain_core.tools import tool
 from pydantic import Field
 
 from utils.agent_context import FrontierRuntimeContext
-from utils.deepseek_web import fetch_web, search_web
+from utils.providers.deepseek.web import fetch_web, search_web
 
 _DEFAULT_CONFIG = cast(RunnableConfig, None)
 _DEFAULT_RUNTIME = cast(ToolRuntime[FrontierRuntimeContext, dict], None)

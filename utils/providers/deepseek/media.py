@@ -22,7 +22,7 @@ from utils.http_client import get_http_client
 
 _client = get_http_client("deepseek-media", timeout=600.0)
 _SILK_HEADERS = (b"\x02#!SILK_V3", b"#!SILK_V3")
-_DECODE_WORKER = Path(__file__).with_name("speech_decode.py")
+_DECODE_WORKER = Path(__file__).resolve().parents[2] / "speech_decode.py"
 
 
 class DeepSeekMediaError(Exception):
@@ -36,7 +36,13 @@ def _credentials(provider: str) -> tuple[str, str]:
     key = str(profile.get("api_key", "")).strip()
     if not key:
         raise DeepSeekMediaError("missing_api_key")
-    raw = str(profile.get("base_url") or "https://api.deepseek.com").strip()
+    raw = str(profile.get("base_url") or "").strip()
+    if not raw:
+        # Only the DeepSeek adapter defaults to the official host; any other
+        # profile's key must not be sent there by omission.
+        if str(profile.get("type") or "").strip().lower() != "deepseek":
+            raise DeepSeekMediaError("provider_not_deepseek")
+        raw = "https://api.deepseek.com"
     parsed = urlsplit(raw)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise DeepSeekMediaError("invalid_base_url")

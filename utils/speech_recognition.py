@@ -7,8 +7,8 @@ import time
 from dataclasses import dataclass
 
 from utils.configs import EnvConfig, SpeechRecognitionConfig
-from utils.deepseek_media import DeepSeekMediaError
-from utils.deepseek_media import transcribe_audio as _transcribe_audio
+from utils.providers.deepseek.media import DeepSeekMediaError
+from utils.providers.deepseek.media import transcribe_audio as _transcribe_audio
 
 
 class SpeechRecognitionError(Exception):
