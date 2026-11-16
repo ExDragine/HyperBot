@@ -82,5 +82,17 @@ def test_normalize_image_for_model_converts_unsupported_image():
     assert normalized.data.startswith(b"\xff\xd8\xff")
 
 
+def test_normalize_image_for_model_resizes_oversized_supported_image():
+    buffer = BytesIO()
+    Image.new("RGB", (9000, 2), "red").save(buffer, format="PNG")
+
+    normalized = normalize_image_for_model(buffer.getvalue())
+
+    assert normalized is not None
+    with Image.open(BytesIO(normalized.data)) as image:
+        assert image.size == (8192, 2)
+        assert image.format == "JPEG"
+
+
 def test_normalize_image_for_model_rejects_invalid_bytes():
     assert normalize_image_for_model(b"not-an-image") is None

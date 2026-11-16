@@ -89,7 +89,7 @@ profile 常用字段：
 - `safety_check`：可选的 DeepSeek Chatbot API 安全审核参数，例如 `{ level = "high" }`。官方 DeepSeek profile 默认使用高强度审核。
 - `title`：可选的会话标题参数，例如 `{ enabled = true }`。只会发送到官方 DeepSeek 路由。
 
-DeepSeek 可分别配置为 `deepseek + chat_completions`、`openai + responses`、`anthropic + messages`。使用官方地址和 DeepSeek 模型时，HyperBot 会在三种协议中发送不含聊天正文的稳定 scope ID，用于服务端 KV cache、内容安全和调度隔离；兼容代理不会收到该扩展字段。图片和文件输入目前不应交给这些 DeepSeek profile。
+DeepSeek 可分别配置为 `deepseek + chat_completions`、`openai + responses`、`anthropic + messages`。使用官方地址和 DeepSeek 模型时，HyperBot 会在三种协议中发送不含聊天正文的稳定 scope ID，用于服务端 KV cache、内容安全和调度隔离；兼容代理不会收到该扩展字段。视觉输入只应配置给实际支持视觉的模型，例如 `deepseek-flash`；`deepseek-v4-pro` 仍是纯文本模型。`*_model_capabilities` 必须与实际模型能力一致。
 
 ### 模型路由
 

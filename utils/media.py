@@ -23,6 +23,7 @@ _IMAGE_FORMAT_MIME = {
     "WEBP": "image/webp",
 }
 MODEL_IMAGE_MIME_TYPES = frozenset({"image/gif", "image/jpeg", "image/png", "image/webp"})
+_MAX_MODEL_IMAGE_DIMENSION = 8192
 _MIME_EXTENSIONS = {
     "application/pdf": ".pdf",
     "application/vnd.ms-powerpoint": ".ppt",
@@ -182,8 +183,9 @@ def normalize_image_for_model(data: bytes) -> ResolvedMedia | None:
     """Validate an image and convert unsupported formats for model APIs.
 
     Responses-compatible providers accept GIF, JPEG, PNG, and WebP. Supported
-    input is preserved byte-for-byte after Pillow validates it; other decodable
-    formats are converted to PNG when they contain transparency, otherwise JPEG.
+    input is preserved byte-for-byte after Pillow validates it when its dimensions
+    fit the model boundary. Other decodable formats, or oversized images, are
+    converted to PNG when they contain transparency, otherwise JPEG.
     Invalid image bytes return ``None`` so one bad attachment can't fail the
     entire model request.
     """
@@ -194,9 +196,10 @@ def normalize_image_for_model(data: bytes) -> ResolvedMedia | None:
 
         with PILImage.open(BytesIO(data)) as decoded:
             decoded.load()
+            needs_resize = max(decoded.size) > _MAX_MODEL_IMAGE_DIMENSION
 
         mime_type = _IMAGE_FORMAT_MIME.get(image_format)
-        if mime_type in MODEL_IMAGE_MIME_TYPES:
+        if mime_type in MODEL_IMAGE_MIME_TYPES and not needs_resize:
             return ResolvedMedia(
                 kind="image",
                 data=data,
@@ -208,6 +211,11 @@ def normalize_image_for_model(data: bytes) -> ResolvedMedia | None:
             image.seek(0)
             normalized = ImageOps.exif_transpose(image)
             normalized.load()
+            if max(normalized.size) > _MAX_MODEL_IMAGE_DIMENSION:
+                normalized.thumbnail(
+                    (_MAX_MODEL_IMAGE_DIMENSION, _MAX_MODEL_IMAGE_DIMENSION),
+                    PILImage.Resampling.LANCZOS,
+                )
             has_alpha = normalized.mode in {"LA", "RGBA"} or "transparency" in normalized.info
             output = BytesIO()
             if has_alpha:
