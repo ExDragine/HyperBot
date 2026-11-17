@@ -5,6 +5,6 @@ if (-not $env:HF_ENDPOINT) {
 .venv/Scripts/Activate.ps1
 
 do {
-    uv run nb run
+    uv run --locked nb run
     sleep 5
 }while($true)
