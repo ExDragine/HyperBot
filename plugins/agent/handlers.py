@@ -468,21 +468,52 @@ async def _execute_agent_request(
     )
 
 
-async def _process_queued_agent_request(context: AgentRequestContext, history_messages: list[dict[str, Any]]) -> None:
+async def _set_group_processing_reaction(bot: Any, group_id: int, message_seq: int, *, is_add: bool) -> None:
+    try:
+        async with asyncio.timeout(2):
+            await bot.send_group_message_reaction(
+                group_id=group_id,
+                message_seq=message_seq,
+                reaction="32",
+                is_add=is_add,
+            )
+    except Exception as exc:
+        action = "添加" if is_add else "移除"
+        logger.warning(
+            "{}群消息处理表情失败: group_id={} message_seq={} error={}",
+            action,
+            group_id,
+            message_seq,
+            type(exc).__name__,
+        )
+
+
+async def _process_queued_agent_request(
+    context: AgentRequestContext, history_messages: list[dict[str, Any]], *, bot: Any
+) -> None:
     started = False
+    group_id = context.group_id
+    reaction_started = False
 
     async def process() -> bool:
-        nonlocal started
+        nonlocal started, reaction_started
         started = True
+        if group_id is not None and _qq_neutral_eligible(context):
+            reaction_started = True
+            await _set_group_processing_reaction(bot, group_id, context.event_id, is_add=True)
         return await _process_agent_request(context, history_messages)
 
     try:
-        delivery_key = f"delivery:{_agent_workspace_key(context.user_id, context.group_id)}"
-        await run_serialized(
-            delivery_key,
-            process,
-            timeout=EnvConfig.AGENT_JOB_TIMEOUT_SECONDS,
-        )
+        try:
+            delivery_key = f"delivery:{_agent_workspace_key(context.user_id, group_id)}"
+            await run_serialized(
+                delivery_key,
+                process,
+                timeout=EnvConfig.AGENT_JOB_TIMEOUT_SECONDS,
+            )
+        finally:
+            if group_id is not None and reaction_started:
+                await _set_group_processing_reaction(bot, group_id, context.event_id, is_add=False)
     except TimeoutError:
         logger.warning("会话回复超时: group_id={} user_id={} started={}", context.group_id, context.user_id, started)
         notice = "本轮处理超时，请稍后重试。" if started else "等待处理超时，本轮请求尚未开始，请稍后重试。"
@@ -527,7 +558,7 @@ async def _run_agent_turn(
     else:
         _ens_prefix.set("")
 
-    await _process_queued_agent_request(context, history_messages)
+    await _process_queued_agent_request(context, history_messages, bot=bot)
 
 
 

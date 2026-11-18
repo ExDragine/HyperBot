@@ -86,7 +86,7 @@ async def test_voice_gate_precedes_download_and_asr_then_checks_and_persists_tex
             raise speech.SpeechRecognitionError("timeout")
         return speech.Transcription("明天北京的天气怎么样", 1, 0.1)
 
-    async def process(context, _history):
+    async def process(context, _history, *, bot):
         calls.append("agent")
         captured["context"] = context
 

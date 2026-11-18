@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import AsyncMock, call
 
 import pytest
 
@@ -200,11 +201,13 @@ async def test_same_group_members_share_generation_and_delivery_queue(monkeypatc
     calls = []
 
     class Bot:
-        async def send_group_message_reaction(self, **_kwargs):
-            pass
+        async def send_group_message_reaction(self, *, group_id, message_seq, reaction, is_add):
+            assert group_id == 4
+            assert reaction == "32"
+            calls.append(("add" if is_add else "remove", message_seq))
 
     async def process(context, _history):
-        calls.append(context.user_id)
+        calls.append(("process", context.event_id))
         if context.user_id == "2":
             entered.set()
             await release.wait()
@@ -226,11 +229,18 @@ async def test_same_group_members_share_generation_and_delivery_queue(monkeypatc
     second = asyncio.create_task(run(replace(_context(agent), user_id="3", event_id=4)))
     try:
         await asyncio.sleep(0)
-        assert calls == ["2"]
+        assert calls == [("add", 3), ("process", 3)]
     finally:
         release.set()
         await asyncio.gather(first, second)
-    assert calls == ["2", "3"]
+    assert calls == [
+        ("add", 3),
+        ("process", 3),
+        ("remove", 3),
+        ("add", 4),
+        ("process", 4),
+        ("remove", 4),
+    ]
 
 
 @pytest.mark.asyncio
@@ -258,19 +268,23 @@ async def test_delivery_queue_timeout_never_starts_expired_request(monkeypatch):
     monkeypatch.setattr(agent, "_process_agent_request", process)
     monkeypatch.setattr(agent, "send_messages", send)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_JOB_TIMEOUT_SECONDS", 0.01)
+    reaction = AsyncMock()
+    bot = SimpleNamespace(send_group_message_reaction=reaction)
     holder = asyncio.create_task(agent.run_serialized("delivery:group-4", block))
     await locked.wait()
     try:
-        await agent._process_queued_agent_request(_context(agent), [])
+        await agent._process_queued_agent_request(_context(agent), [], bot=bot)
     finally:
         release.set()
         await holder
 
     assert notices == ["等待处理超时，本轮请求尚未开始，请稍后重试。"]
+    reaction.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_processing_deadline_cancels_work_and_releases_delivery_lock(monkeypatch):
+@pytest.mark.parametrize("group_id", [4, None])
+async def test_processing_deadline_cancels_work_and_releases_delivery_lock(monkeypatch, group_id):
     import nonebot
 
     monkeypatch.setattr(nonebot, "require", lambda *_args, **_kwargs: None)
@@ -293,14 +307,67 @@ async def test_processing_deadline_cancels_work_and_releases_delivery_lock(monke
     monkeypatch.setattr(agent, "send_messages", send)
     monkeypatch.setattr(agent.EnvConfig, "AGENT_JOB_TIMEOUT_SECONDS", 0.01)
 
-    await agent._process_queued_agent_request(_context(agent), [])
+    context = replace(_context(agent), group_id=group_id)
+    reaction = AsyncMock()
+    await agent._process_queued_agent_request(context, [], bot=SimpleNamespace(send_group_message_reaction=reaction))
 
     assert cancelled.is_set()
     assert notices == ["本轮处理超时，请稍后重试。"]
+    if group_id is None:
+        reaction.assert_not_called()
+    else:
+        assert reaction.await_args_list == [
+            call(group_id=group_id, message_seq=3, reaction="32", is_add=True),
+            call(group_id=group_id, message_seq=3, reaction="32", is_add=False),
+        ]
+    delivery_key = f"delivery:{agent._agent_workspace_key(context.user_id, group_id)}"
     assert (
-        await agent.run_serialized("delivery:group-4", lambda: asyncio.sleep(0, result="released"), timeout=0.1)
+        await agent.run_serialized(delivery_key, lambda: asyncio.sleep(0, result="released"), timeout=0.1)
         == "released"
     )
+
+
+@pytest.mark.asyncio
+async def test_reaction_api_failure_does_not_interrupt_processing(monkeypatch):
+    import nonebot
+
+    monkeypatch.setattr(nonebot, "require", lambda *_args, **_kwargs: None)
+    from plugins.agent import handlers as agent
+
+    context = _context(agent)
+    process = AsyncMock(return_value=True)
+    reaction = AsyncMock(side_effect=RuntimeError("reaction API unavailable"))
+    monkeypatch.setattr(agent, "_process_agent_request", process)
+
+    await agent._process_queued_agent_request(context, [], bot=SimpleNamespace(send_group_message_reaction=reaction))
+
+    process.assert_awaited_once_with(context, [])
+    assert reaction.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_slow_reaction_cleanup_does_not_send_timeout_after_delivery(monkeypatch):
+    import nonebot
+
+    monkeypatch.setattr(nonebot, "require", lambda *_args, **_kwargs: None)
+    from plugins.agent import handlers as agent
+
+    cleaned_up = asyncio.Event()
+
+    async def react(*, is_add, **_kwargs):
+        if not is_add:
+            await asyncio.sleep(0.03)
+            cleaned_up.set()
+
+    notice = AsyncMock()
+    monkeypatch.setattr(agent, "_process_agent_request", AsyncMock(return_value=True))
+    monkeypatch.setattr(agent, "send_messages", notice)
+    monkeypatch.setattr(agent.EnvConfig, "AGENT_JOB_TIMEOUT_SECONDS", 0.01)
+
+    await agent._process_queued_agent_request(_context(agent), [], bot=SimpleNamespace(send_group_message_reaction=react))
+
+    assert cleaned_up.is_set()
+    notice.assert_not_called()
 
 
 @pytest.mark.asyncio
