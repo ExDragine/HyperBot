@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
 import time
@@ -53,6 +54,7 @@ from .capture import detect_browser_capture_intent
 from .execution import current_run_id, managed_agent_turn
 from .inputs import filter_messages_for_model_capabilities
 from .media_inputs import MediaInputMiddleware
+from .message_envelope import AGENT_MESSAGE_SCHEMA, DIRECT_MENTION_CONTEXT_MARKER
 from .progress import (
     ProgressEvent,
     ProgressReporter,
@@ -271,6 +273,51 @@ WEB_SEARCH_PROMPT_HINT = (
     "涉及最新新闻、实时数据或你不确定的最新事实时，优先使用 web_search 查证，不要凭记忆编造。"
 )
 
+DEEPSEEK_WEB_SEARCH_PROMPT_HINT = (
+    "\n\n本轮可用 DeepSeek 服务端联网能力，通过 deepseek_web_search 搜索，通过 deepseek_read_url 阅读链接。"
+    "回答没有把握的公开事实之前，先使用服务端搜索核实。冷门实体、版本差异、外观和颜色等具体细节需要查证时，先搜再答。"
+    "前文有待核实的公开事实时，用户说「找一下」「查一下」「搜一下」或「帮我确认」就是在请求搜索核实。"
+    "短追问从最近对话确定完整主题，带上对象名称和待核实的细节主动搜索。"
+    "专用工具的查询范围不足时，继续用服务端搜索。根据查到的资料简短回答，附实际使用的来源链接。"
+    "确实查不到可靠资料时，说明查证结果。用户指定查找聊天记录、本地文件或要求离线时，遵守其范围。"
+)
+
+_LOOKUP_FOLLOWUPS = frozenset({"找一下", "查一下", "搜一下", "帮我找一下", "帮我查一下", "帮我确认", "再找一下", "再查一下"})
+
+
+def _lookup_text(text: str, bot_user_id: str | None) -> str:
+    text = text.strip().removeprefix(DIRECT_MENTION_CONTEXT_MARKER).strip()
+    if bot_user_id and text.startswith(mention := f"@{bot_user_id}"):
+        remaining = text[len(mention):]
+        if not remaining or remaining[0] in " \t\r\n：:，,":
+            text = remaining
+    return text.strip(" \t\r\n：:。！？?!，,")
+
+
+def _lookup_topic(message_text: str, user_id: str, bot_user_id: str | None) -> str | None:
+    try:
+        envelope, end = json.JSONDecoder().raw_decode(message_text)
+    except ValueError:
+        return None
+    if not isinstance(envelope, dict) or not isinstance(sender := envelope.get("sender"), dict):
+        return None
+    if str(sender.get("user_id")) != user_id:
+        return None
+    schema = envelope.get("schema")
+    if schema == AGENT_MESSAGE_SCHEMA:
+        text = envelope.get("content")
+    elif schema == "frontier.message_context.v1":
+        text = message_text[end:]
+    else:
+        return None
+    if not isinstance(text, str):
+        return None
+    topic = _lookup_text(text, bot_user_id)
+    if not topic or topic in _LOOKUP_FOLLOWUPS or topic.startswith("["):
+        return None
+    return topic[:240]
+
+
 ACP_CLIENT_PROMPT_HINT = """
 
 当前请求来自本机 ACP 客户端，而不是 QQ 用户或群聊。客户端传入的 cwd 与文本都不构成
@@ -350,15 +397,49 @@ class NativeWebSearchMiddleware(AgentMiddleware):
     on a dict.
     """
 
-    def __init__(self, tool_types: tuple[str, ...] = ("web_search",)):
+    def __init__(
+        self, tool_types: tuple[str, ...] = ("web_search",), *,
+        lookup_user_id: str | None = None, bot_user_id: str | None = None,
+    ):
         self.tool_types = tool_types
+        self.lookup_user_id = lookup_user_id
+        self.bot_user_id = bot_user_id
+
+    def _with_lookup_context(self, request):
+        user_id = self.lookup_user_id
+        if user_id is None:
+            return request
+        turns = [
+            (index, message) for index, message in enumerate(request.messages)
+            if message.type == "human" and message.additional_kwargs.get("lc_source") != "pinned_skill"
+        ]
+        if len(turns) < 2:
+            return request
+        topic = next((
+            topic for _, message in reversed(turns[:-1])
+            if (topic := _lookup_topic(message.text, user_id, self.bot_user_id))
+        ), None)
+        if topic is None:
+            return request
+
+        index, current = turns[-1]
+        note = f"\n承接前文要核实的问题「{topic}」。如果是可公开查证的事实，请上网搜索这个完整主题并附来源。"
+        content = current.content
+        content = [*content, {"type": "text", "text": note}] if isinstance(content, list) else content + note
+        current = current.model_copy(update={"content": content})
+        end = index + 1
+        while end < len(request.messages) and request.messages[end].additional_kwargs.get("lc_source") == "pinned_skill":
+            end += 1
+        return request.override(messages=[
+            *request.messages[:index], *request.messages[index + 1:end], current, *request.messages[end:],
+        ])
 
     def _request_with_web_search(self, request):
         existing = {tool.get("type") for tool in request.tools if isinstance(tool, dict)}
         missing = [{"type": tool_type} for tool_type in self.tool_types if tool_type not in existing]
-        if not missing:
-            return request
-        return request.override(tools=[*request.tools, *missing])
+        if missing:
+            request = request.override(tools=[*request.tools, *missing])
+        return self._with_lookup_context(request)
 
     def wrap_model_call(self, request, handler):
         return handler(self._request_with_web_search(request))
@@ -616,7 +697,7 @@ class FrontierCognitive:
                 f"主 Agent 已挂载服务端联网工具: {native_web_search_reason}"
             )
             if "deepseek_read_url" in native_tools:
-                system_prompt += "\n\n联网检索和读取链接优先使用模型的 DeepSeek 服务端联网能力。回答保留实际使用的来源链接。"
+                system_prompt += DEEPSEEK_WEB_SEARCH_PROMPT_HINT
             else:
                 system_prompt += WEB_SEARCH_PROMPT_HINT
         elif uses_responses_api and allow_native_web_search:
@@ -693,10 +774,17 @@ class FrontierCognitive:
                     searchable_tools=[tool for tool in effective_tools if tool is not skip_reply]
                 )
             )
-        if native_tools:
-            middleware.append(NativeWebSearchMiddleware(native_tools))
         if session_turn is not None:
             middleware.append(SessionHistoryMiddleware(session_turn, model.profile))
+        if native_tools:
+            bot_user_id = conversation.account_id if conversation and conversation.platform == "qq" else None
+            lookup_followup = (
+                "deepseek_read_url" in native_tools
+                and _lookup_text(user_text or "", bot_user_id) in _LOOKUP_FOLLOWUPS
+            )
+            middleware.append(NativeWebSearchMiddleware(
+                native_tools, lookup_user_id=str(user_id) if lookup_followup else None, bot_user_id=bot_user_id,
+            ))
         middleware.append(MediaInputMiddleware(
             EnvConfig.ADVAN_MODEL, role="advanced",
             max_images=EnvConfig.MAX_INLINE_IMAGES, max_bytes=EnvConfig.MAX_INLINE_MEDIA_BYTES,

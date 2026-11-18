@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import json
 import os
 import re
 import types
@@ -11,6 +12,7 @@ from typing import Any, Literal, cast
 
 import pytest
 from langchain_core import exceptions as model_errors
+from langchain_core.messages import HumanMessage
 from PIL import Image
 
 from utils.agent_protocol import AgentArtifact
@@ -1377,6 +1379,7 @@ async def test_chat_agent_injects_native_web_search_when_supported(monkeypatch, 
     filesystem = next(item for item in captured["middleware"] if type(item).__name__ == "FilesystemMiddleware")
     assert filesystem.offload_binary_content is True
     assert "web_search" in captured["system_prompt"]
+    assert cognitive_mod.DEEPSEEK_WEB_SEARCH_PROMPT_HINT not in captured["system_prompt"]
 
 
 @pytest.mark.asyncio
@@ -1396,7 +1399,10 @@ async def test_chat_agent_advertises_deepseek_hosted_tools_without_local_wrapper
     assert not {"web_search_deepseek", "deepseek_web_fetch"} & {tool.name for tool in captured["tools"]}
     middleware = next(item for item in captured["middleware"] if isinstance(item, cognitive_mod.NativeWebSearchMiddleware))
     assert middleware.tool_types == hosted
-    assert "DeepSeek 服务端联网能力" in captured["system_prompt"]
+    assert cognitive_mod.DEEPSEEK_WEB_SEARCH_PROMPT_HINT in captured["system_prompt"]
+    assert "没有把握的公开事实之前，先使用服务端搜索核实" in captured["system_prompt"]
+    assert "「找一下」" in captured["system_prompt"]
+    assert "短追问从最近对话确定完整主题" in captured["system_prompt"]
     assert cognitive_mod.WEB_SEARCH_PROMPT_HINT not in captured["system_prompt"]
 
 
@@ -1463,6 +1469,42 @@ def test_native_web_search_middleware_injects_deepseek_chatbot_tools():
         {"type": "deepseek_web_search"},
         {"type": "deepseek_read_url"},
     ]
+
+
+@pytest.mark.parametrize("schema", ["frontier.qq_message.v1", "frontier.message_context.v1"])
+def test_deepseek_search_followup_uses_same_sender_topic_without_changing_history(schema):
+    def context(user_id, text):
+        envelope = {"schema": schema, "sender": {"user_id": user_id}}
+        if schema == "frontier.qq_message.v1":
+            return HumanMessage(content=json.dumps({**envelope, "content": text}, ensure_ascii=False))
+        return HumanMessage(content=f"{json.dumps(envelope, ensure_ascii=False)}\n{text}")
+
+    topic = "恶魔叮的异色是什么颜色"
+    current = HumanMessage(content="@555\n找一下")
+    pinned = HumanMessage(content="排版说明", additional_kwargs={"lc_source": "pinned_skill"})
+    previous = [context("123", f"@555\n{topic}"), context("789", "另一个人的话题")]
+    request = types.SimpleNamespace(tools=[], messages=[*previous, current, pinned])
+
+    def override(**changes):
+        return types.SimpleNamespace(**{**request.__dict__, **changes})
+
+    request.override = override
+    middleware = cognitive_mod.NativeWebSearchMiddleware(
+        ("deepseek_web_search", "deepseek_read_url"), lookup_user_id="123", bot_user_id="555",
+    )
+    updated = middleware.wrap_model_call(request, lambda value: value)
+
+    assert updated.messages[:-1] == [*previous, pinned]
+    assert updated.messages[-1].content.startswith("@555\n找一下")
+    assert topic in updated.messages[-1].content and "上网搜索" in updated.messages[-1].content
+    assert updated.messages[-1].content.count("@555") == 1
+    assert "另一个人的话题" not in updated.messages[-1].content
+    assert request.messages == [*previous, current, pinned] and current.content == "@555\n找一下"
+
+
+@pytest.mark.parametrize(("message", "expected"), [("@555\n找一下！", "找一下"), ("@5551 找一下", "@5551 找一下")])
+def test_lookup_text_strips_only_current_qq_bot_mention(message, expected):
+    assert cognitive_mod._lookup_text(message, "555") == expected
 
 
 def test_skip_reply_updates_state_and_closes_model_loop():
