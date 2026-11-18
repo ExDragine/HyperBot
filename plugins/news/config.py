@@ -70,6 +70,8 @@ def load_news_config(path: Path | None = None) -> NewsConfig:
         return NewsConfig()
     with path.open("rb") as file:
         data = tomllib.load(file)
-    if set(data) != {"news"}:
+    if set(data) != {"news"} or not isinstance(data["news"], dict):
         raise ValueError("news.toml must contain exactly one [news] section")
-    return NewsConfig.model_validate(data["news"])
+    options = data["news"].copy()
+    options.pop("sources", None)
+    return NewsConfig.model_validate(options)

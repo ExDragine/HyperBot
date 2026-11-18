@@ -3,21 +3,13 @@ enabled = true
 board = "general"
 timezone = "Asia/Shanghai"
 
-# 留空时复用 env.toml 的 daily_news_model / daily_news_model_provider。
-model = ""
-provider = ""
-workspace_dir = "cache/sandbox/workspaces/news"
-
-# 传给 DeepSeek 搜索 Agent 的主题提示；Agent 会根据时间窗口自行搜索和核验。
+# 主 Agent 加载每日新闻技能，并按这些主题和时间窗口检索。
 queries = ["中国 今日 主要新闻", "全球 今日 主要新闻", "科技 最新消息", "经济 社会 最新消息"]
 window_hours = 24
 min_stories = 3
 target_stories = 14
-source_results = 8
 
 generation_timeout = 300
-model_timeout = 90
-source_timeout = 20
 render_timeout = 30
 send_timeout = 30
 max_generation_attempts = 3

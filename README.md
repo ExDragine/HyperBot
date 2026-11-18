@@ -26,7 +26,7 @@ HyperBot 是一个基于 [NoneBot2](https://nonebot.dev/) 与 Milky 适配器的
 | `plugins/clockwork` | APScheduler 定时任务：内置任务、用户自动任务、任务命令和执行历史；`daily_news` 只注册任务，处理器位于 `plugins/news` |
 | `plugins/dashboard` | FastAPI Dashboard：JWT 鉴权、状态/消息/设置/任务管理 API 与 `/dashboard` 静态前端 |
 | `plugins/events` | Milky 申请事件：独立持久化收件箱、规则/受限决策、执行校验与恢复；默认只记录，`/events` 仅超级用户私聊管理 |
-| `plugins/news` | 独立新闻管线：研究 Agent 调用 DeepSeek Search/Fetch → 证据约束编辑 → `news.db` 归档 → 渲染 → 逐目标投递 |
+| `plugins/news` | 调用主 Agent 的 `daily-news` 技能，负责证据校验、归档、渲染与逐目标投递 |
 | `plugins/playground` | `/paint`、`/video` 命令和戳一戳响应，复用共享图片/视频服务 |
 | `plugins/toolbox` | `/update`、`/restart`、`/model`、`/set wake`、`/vehelp` 等管理命令 |
 | `plugins/wolfx` | Wolfx CENC 地震预警：WebSocket 长连接、事件去重、渲染与推送 |
@@ -73,7 +73,7 @@ UniMessage 文本、图片、视频或文件回复
 | 子代理 | `document-agent` 只读分析本地文档；`expose_as_subagent` 的 ACP Agent 以 `acp-<名称>` 注册 |
 | 媒体生成 | AI 绘图、图片编辑、AI 视频 |
 | 自动任务 | 创建、列出、暂停、恢复、取消用户自动任务 |
-| 网络与资料 | 独立 DeepSeek 搜索（默认 20 条）与正文抓取，保留原生搜索和 Exa / Tavily |
+| 网络与资料 | 主模型原生联网，官方 DeepSeek Flash Responses 支持服务端搜索与链接读取 |
 | 天文空间 | 极光、彗星、卫星图、火箭发射、空间天气 |
 | 地球与天气 | 地震、雷达、风场、台风和 ENS 气象媒体 |
 | 游戏/业务工具 | NRC 远行商人、精灵蛋、活动日历等 |
@@ -160,7 +160,7 @@ docker compose up -d
 
 `env.toml` 的要点：
 
-- `[bot]`、`[models]`、`[providers.*]`、`[search]`、`[document_parsing]`、`[key]`、`[features]`、`[agent]`、`[limits]`、`[storage]`、`[dashboard]` 等配置段覆盖人设、模型角色、供应商协议、搜索、文件解析、开关与限额。
+- `[bot]`、`[models]`、`[providers.*]`、`[document_parsing]`、`[key]`、`[features]`、`[agent]`、`[limits]`、`[storage]`、`[dashboard]` 等配置段覆盖人设、模型角色、供应商协议、文件解析、开关与限额。
 - `*_model_provider` 填写 `[providers.<name>]` 的名称而不是 URL；`type` 选择 LangChain 适配器，`api_mode` 选择接口协议，密钥和 base URL 保存在 profile。
 - 绘画和视频 provider 的 `type` 必须为 `openai`；绘画协议跟随 `api_mode`，视频使用 Videos API。
 - `[agent_policy]` / `[auto_reply_policy]` / `[paint_policy]` 控制响应名单、主动回复和媒体生成权限。
@@ -188,7 +188,7 @@ HyperBot/
 │   ├── clockwork/      # 定时任务系统（daily_news 处理器位于 plugins/news）
 │   ├── dashboard/      # FastAPI Dashboard 和静态前端
 │   ├── events/         # Milky 申请事件的收件箱、规则/决策与执行恢复
-│   ├── news/           # 独立新闻检索、编辑、归档和投递
+│   ├── news/           # 主 Agent 日报的校验、归档和投递
 │   ├── playground/     # /paint 和 /video
 │   ├── toolbox/        # 管理命令
 │   └── wolfx/          # CENC 地震预警 WebSocket 监听与推送

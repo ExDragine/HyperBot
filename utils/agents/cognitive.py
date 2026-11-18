@@ -48,7 +48,6 @@ from utils.llm_factory import (
     provider_uses_responses_api,
 )
 from utils.media import detect_mime_type, inline_media_bytes, media_block_kind
-from utils.providers.deepseek.web import SEARCH_PROMPT_HINT, deepseek_search_available
 
 from .capture import detect_browser_capture_intent
 from .execution import current_run_id, managed_agent_turn
@@ -355,14 +354,11 @@ class NativeWebSearchMiddleware(AgentMiddleware):
         self.tool_types = tool_types
 
     def _request_with_web_search(self, request):
-        if any(
-            isinstance(tool, dict) and tool.get("type") in self.tool_types
-            for tool in request.tools
-        ):
+        existing = {tool.get("type") for tool in request.tools if isinstance(tool, dict)}
+        missing = [{"type": tool_type} for tool_type in self.tool_types if tool_type not in existing]
+        if not missing:
             return request
-        return request.override(
-            tools=[*request.tools, *({"type": tool_type} for tool_type in self.tool_types)]
-        )
+        return request.override(tools=[*request.tools, *missing])
 
     def wrap_model_call(self, request, handler):
         return handler(self._request_with_web_search(request))
@@ -516,17 +512,22 @@ class FrontierCognitive:
         capabilities: frozenset[str] = frozenset(),
         workspace_key_override: str | None = None,
         tool_overrides: tuple[object, ...] = (),
+        pinned_skills: tuple[str, ...] = (),
+        include_messages: bool = False,
+        allow_local_tools: bool = True,
+        allow_native_web_search: bool = True,
     ):
         allowed_capture_tools = (
             await detect_browser_capture_intent(user_text)
-            if access_profile == "frontier"
+            if access_profile == "frontier" and allow_local_tools
             else set()
         )
-        await self._prepare_components()
+        if allow_local_tools:
+            await self._prepare_components()
         if session_turn is not None and session_turn.entry.revision != EnvConfig.REVISION:
             raise SessionInterruptedError("configuration changed before session execution")
-        selected_tools = self._tools_for_capabilities(capabilities)
-        if tool_overrides:
+        selected_tools = self._tools_for_capabilities(capabilities) if allow_local_tools else []
+        if allow_local_tools and tool_overrides:
             selected_tools = _merge_named_items(selected_tools, tool_overrides)
         workspace_key = normalize_workspace_key(
             workspace_key_override or conversation_workspace_key(user_id, group_id)
@@ -576,9 +577,9 @@ class FrontierCognitive:
         if access_profile == "acp":
             system_prompt += ACP_CLIENT_PROMPT_HINT
 
-        restricted_tools = _stable_named_items(agent_tools.restricted_tools)
+        restricted_tools = _stable_named_items(agent_tools.restricted_tools) if allow_local_tools else []
         effective_tools = []
-        if access_profile == "frontier":
+        if access_profile == "frontier" and allow_local_tools:
             always_available = [
                 tool
                 for tool in restricted_tools
@@ -598,7 +599,7 @@ class FrontierCognitive:
         else:
             logger.debug("用户未请求截图/录屏，restricted 工具未暴露")
 
-        native_web_search = model_supports_native_web_search(
+        native_web_search = allow_native_web_search and model_supports_native_web_search(
             EnvConfig.ADVAN_MODEL,
             EnvConfig.ADVAN_MODEL_PROVIDER,
         )
@@ -606,19 +607,19 @@ class FrontierCognitive:
             EnvConfig.ADVAN_MODEL,
             EnvConfig.ADVAN_MODEL_PROVIDER,
         )
-        default_deepseek_search = deepseek_search_available() and any(
-            getattr(tool, "name", None) == "deepseek_web_search" for tool in effective_tools
+        native_tools = (
+            native_web_search_tools(EnvConfig.ADVAN_MODEL, EnvConfig.ADVAN_MODEL_PROVIDER)
+            if native_web_search else ()
         )
-        if default_deepseek_search:
-            native_web_search = False
-            system_prompt += SEARCH_PROMPT_HINT
-            logger.info("主 Agent 默认使用 deepseek_web_search / deepseek_web_fetch")
-        elif native_web_search:
+        if native_tools:
             logger.info(
-                f"主 Agent 已挂载服务端原生 web_search 工具: {native_web_search_reason}"
+                f"主 Agent 已挂载服务端联网工具: {native_web_search_reason}"
             )
-            system_prompt += WEB_SEARCH_PROMPT_HINT
-        elif uses_responses_api:
+            if "deepseek_read_url" in native_tools:
+                system_prompt += "\n\n联网检索和读取链接优先使用模型的 DeepSeek 服务端联网能力。回答保留实际使用的来源链接。"
+            else:
+                system_prompt += WEB_SEARCH_PROMPT_HINT
+        elif uses_responses_api and allow_native_web_search:
             logger.warning(
                 "主 Agent 使用 Responses API，但未挂载服务端原生 web_search: "
                 f"{native_web_search_reason}"
@@ -628,9 +629,10 @@ class FrontierCognitive:
                 f"当前模型路由不支持服务端原生 web_search: {native_web_search_reason}"
             )
         subagents = []
-        if document_subagent := getattr(self, "document_subagent", None):
-            subagents.append(document_subagent)
-        if access_profile == "frontier" and enable_acp_subagents:
+        if allow_local_tools:
+            if document_subagent := getattr(self, "document_subagent", None):
+                subagents.append(document_subagent)
+        if allow_local_tools and access_profile == "frontier" and enable_acp_subagents:
             subagents.extend(_stable_named_items(build_acp_subagents()))
 
         messages = filter_messages_for_model_capabilities(
@@ -651,7 +653,7 @@ class FrontierCognitive:
                 mode="deny",
             )
         ]
-        is_read_only_tool = getattr(agent_tools, "is_read_only_tool", None)
+        is_read_only_tool = getattr(agent_tools, "is_read_only_tool", None) if effective_tools else None
         read_only_tools = [
             tool for tool in effective_tools
             if callable(is_read_only_tool) and is_read_only_tool(tool)
@@ -685,18 +687,14 @@ class FrontierCognitive:
         ]
         if allow_silent_reply and access_profile == "frontier":
             middleware.append(SilentReplyMiddleware())
-        if any(name in EnvConfig.ADVAN_MODEL.lower() for name in ("gpt", "claude")):
+        if allow_local_tools and any(name in EnvConfig.ADVAN_MODEL.lower() for name in ("gpt", "claude")):
             middleware.append(
                 ProviderToolSearchMiddleware(
                     searchable_tools=[tool for tool in effective_tools if tool is not skip_reply]
                 )
             )
-        if native_web_search:
-            middleware.append(
-                NativeWebSearchMiddleware(
-                    native_web_search_tools(EnvConfig.ADVAN_MODEL, EnvConfig.ADVAN_MODEL_PROVIDER)
-                )
-            )
+        if native_tools:
+            middleware.append(NativeWebSearchMiddleware(native_tools))
         if session_turn is not None:
             middleware.append(SessionHistoryMiddleware(session_turn, model.profile))
         middleware.append(MediaInputMiddleware(
@@ -754,8 +752,11 @@ class FrontierCognitive:
             "video_inputs": video_inputs or [],
             "suppress_reply": False,
         }
-        if access_profile == "frontier" and (conversation is None or conversation.platform == "qq"):
-            input_data["pinned_skills"] = ["rich-markdown"]
+        skill_names = list(pinned_skills)
+        if allow_local_tools and access_profile == "frontier" and (conversation is None or conversation.platform == "qq"):
+            skill_names.append("rich-markdown")
+        if skill_names:
+            input_data["pinned_skills"] = list(dict.fromkeys(skill_names))
         prior_ids = set()
         if session_turn is not None:
             snapshot = await agent.aget_state(config)
@@ -821,7 +822,7 @@ class FrontierCognitive:
         )
 
         return {
-            "response": {"messages": [final_response]},
+            "response": {"messages": response.get("messages", []) if include_messages else [final_response]},
             "total_time": processing_time,
             "artifacts": artifacts,
             "uni_messages": artifacts,

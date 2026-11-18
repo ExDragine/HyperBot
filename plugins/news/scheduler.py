@@ -7,8 +7,6 @@ from zoneinfo import ZoneInfo
 
 from nonebot import logger
 
-from utils.configs import EnvConfig
-
 from .config import load_news_config
 from .delivery import deliver
 from .editor import NewsEditor
@@ -16,7 +14,6 @@ from .rendering import render_image
 from .repository import NewsRepository
 from .schemas import Edition
 from .service import NewsService
-from .sources import configured_sources
 
 
 def edition_for(now, cfg, namespace="published"):
@@ -37,12 +34,8 @@ def edition_for(now, cfg, namespace="published"):
 
 def context():
     cfg = load_news_config()
-    if not cfg.model:
-        cfg = cfg.model_copy(
-            update={"model": EnvConfig.DAILY_NEWS_MODEL, "provider": EnvConfig.DAILY_NEWS_MODEL_PROVIDER}
-        )
     repo = NewsRepository(Path(os.getenv("FRONTIER_NEWS_DB", "news.db")))
-    service = NewsService(repo, configured_sources(cfg), NewsEditor(cfg, research_agent=True), cfg)
+    service = NewsService(repo, None, NewsEditor(cfg, research_agent=True), cfg)
     return cfg, repo, service
 
 

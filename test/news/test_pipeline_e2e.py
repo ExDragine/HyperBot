@@ -20,10 +20,11 @@ ARTICLE_TEXT = "央行今日宣布启用新型货币政策工具，受访市场�
 ARTICLE_URL = "https://example.com/news/2026/10/24/central-bank-announces-new-policy-tool.html"
 
 
-async def fake_assistant_agent(*, user_prompt, **_kwargs):
-    assert _kwargs["model_provider"] == "fake"
-    assert _kwargs["model_timeout"] == 90
-    window = json.loads(user_prompt)["window"]
+async def fake_main_agent(_runtime, request):
+    assert request.pinned_skills == ("daily-news",)
+    assert request.include_messages and request.allow_native_web_search
+    assert not request.allow_local_tools
+    window = json.loads(request.prompt)["window"]
     published = dt.datetime.fromisoformat(window[1]) - dt.timedelta(hours=1)
     payload = NewsPayload(
         top_stories=[
@@ -41,31 +42,21 @@ async def fake_assistant_agent(*, user_prompt, **_kwargs):
         ],
         worth_reading=[],
     )
-    tool_result = {
-        "status": "ok",
-        "query": "news",
-        "count": 1,
-        "results": [
-            {
+    web_calls = [
+        {"type": "web_search_call", "status": "completed", "kind": "deep_search",
+         "action": {"type": "search", "sources": [{
                 "title": "央行启用新型货币政策工具",
                 "url": ARTICLE_URL,
-                "summary": ARTICLE_TEXT,
-                "content": ARTICLE_TEXT,
-                "date": published.isoformat(),
+                "snippet": ARTICLE_TEXT,
                 "site_name": "example.com",
-            }
-        ],
-    }
-    return {
-        "messages": [
-            SimpleNamespace(
-                type="tool",
-                name="deepseek_web_search",
-                content=json.dumps(tool_result, ensure_ascii=False),
-            )
-        ],
-        "structured_response": payload,
-    }
+         }]}},
+        {"type": "web_search_call", "status": "completed", "kind": "read_link",
+         "action": {"type": "open_page", "url": ARTICLE_URL},
+         "page": {"url": ARTICLE_URL, "published_at": published.isoformat()}},
+    ]
+    return {"status": "success", "response": {"messages": [SimpleNamespace(
+        type="ai", content=[*web_calls, {"type": "text", "text": payload.model_dump_json()}],
+    )]}}
 
 
 class _Sent:
@@ -89,25 +80,23 @@ class FakeUniMessage:
 
 
 @pytest.fixture
-def news_e2e(monkeypatch, tmp_path, load_tool_module):
+def news_e2e(monkeypatch, tmp_path):
     from plugins.news import delivery, editor, scheduler
-
-    load_tool_module("deepseek_search")
 
     monkeypatch.setenv("FRONTIER_NEWS_DB", str(tmp_path / "news.db"))
     monkeypatch.setattr(
         scheduler,
         "load_news_config",
         lambda: NewsConfig(
-            model="fake",
-            provider="fake",
             min_stories=1,
             target_stories=1,
             queries=("news",),
         ),
     )
     monkeypatch.setattr(scheduler, "render_image", AsyncMock(return_value=b"png-bytes"))
-    monkeypatch.setattr(editor, "assistant_agent", fake_assistant_agent)
+    monkeypatch.setattr(editor, "model_supports_native_web_search", lambda *_: True)
+    monkeypatch.setattr(editor, "native_web_search_tools", lambda *_: ("deepseek_web_search", "deepseek_read_url"))
+    monkeypatch.setattr(editor.FrontierAgentRuntime, "run", fake_main_agent)
     FakeUniMessage.recorded = []
     monkeypatch.setattr(delivery, "UniMessage", FakeUniMessage)
 
@@ -147,21 +136,37 @@ async def test_daily_news_full_pipeline(news_e2e, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_daily_news_repairs_shared_article_before_archiving_and_delivering(news_e2e, tmp_path, monkeypatch):
+@pytest.mark.parametrize("missing_evidence_first", [False, True])
+async def test_daily_news_repairs_draft_before_archiving_and_delivering(
+    news_e2e, tmp_path, monkeypatch, missing_evidence_first,
+):
     from plugins.news import editor
 
-    async def duplicated_draft(**kwargs):
-        result = await fake_assistant_agent(**kwargs)
-        draft = result["structured_response"]
-        draft.worth_reading = [draft.top_stories[0].model_copy(update={"title": "流动性支持信号"})]
-        return result
+    calls = []
 
-    async def corrected_draft(_self, schema, system, user):
-        data = json.loads(user)
-        assert data["validation_error"] == "the same article cannot fill multiple news slots"
+    async def generate_draft(runtime, request):
+        calls.append(request.allow_native_web_search)
+        data = json.loads(request.prompt)
+        if request.allow_native_web_search:
+            if missing_evidence_first and "feedback" not in data:
+                return {"status": "success", "response": {"messages": [SimpleNamespace(type="ai", content="{}")]}}
+            result = await fake_main_agent(runtime, request)
+            block = result["response"]["messages"][0].content[-1]
+            if missing_evidence_first:
+                block["text"] = "{}"
+            else:
+                draft = NewsPayload.model_validate_json(block["text"])
+                draft.worth_reading = [draft.top_stories[0].model_copy(update={"title": "流动性支持信号"})]
+                block["text"] = draft.model_dump_json()
+            return result
+        assert request.pinned_skills == ("daily-news",) and not request.allow_local_tools
+        assert data["validation_error"] == (
+            "the initial draft did not match the news schema" if missing_evidence_first
+            else "the same article cannot fill multiple news slots"
+        )
         assert len(data["articles"]) == 1
         assert data["min_stories"] == 1
-        return NewsPayload(
+        draft = NewsPayload(
             top_stories=[{
                 "title": "央行启用新型货币政策工具",
                 "category": "财经",
@@ -174,15 +179,17 @@ async def test_daily_news_repairs_shared_article_before_archiving_and_delivering
             worth_reading=[],
         )
 
-    research = AsyncMock(side_effect=duplicated_draft)
-    monkeypatch.setattr(editor, "assistant_agent", research)
-    monkeypatch.setattr(editor.NewsEditor, "call", corrected_draft)
+        return {"status": "success", "response": {"messages": [SimpleNamespace(
+            type="ai", content=draft.model_dump_json(),
+        )]}}
+
+    monkeypatch.setattr(editor.FrontierAgentRuntime, "run", generate_draft)
 
     result = await news_e2e.daily_news(job_id="daily_news")
 
     assert result.status == "success"
     assert result.messages_sent == 1
-    research.assert_awaited_once()
+    assert calls == ([True, True, False] if missing_evidence_first else [True, False])
     report = await NewsRepository(tmp_path / "news.db").latest("general")
     assert report["status"] == "ready"
     assert report["payload"]["worth_reading"] == []

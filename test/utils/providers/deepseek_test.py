@@ -88,12 +88,13 @@ def test_every_deepseek_route_keeps_the_schema_in_the_prompt():
     assert get_adapter("deepseek").structured_output_method(proxied, capabilities) == "text_json"
 
 
-def test_hosted_search_is_opt_in_and_names_deepseek_tools():
+def test_hosted_flash_search_can_be_disabled():
     vendor = get_vendor("deepseek")
     base = {"base_url": "https://api.deepseek.com"}
 
     assert vendor.native_web_search(_route("deepseek-v4-pro", "openai", "responses", **base))[0] is False
+    assert vendor.native_web_search(_route("deepseek-flash", "openai", "responses", **base))[0] is True
     assert vendor.native_web_search(
-        _route("deepseek-v4-pro", "openai", "responses", native_web_search=True, **base)
-    )[0] is True
+        _route("deepseek-flash", "openai", "responses", native_web_search=False, **base)
+    )[0] is False
     assert vendor.native_search_tools == ("deepseek_web_search", "deepseek_read_url")

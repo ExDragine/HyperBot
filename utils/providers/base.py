@@ -169,6 +169,9 @@ class BaseChatAdapter:
         """Return the SDK class, read at call time so tests can replace it."""
         raise NotImplementedError
 
+    def model_class_for(self, route: Route) -> Any:
+        return self.model_class()
+
     def prepare(self, route: Route, params: dict[str, Any]) -> Any:
         """Adjust constructor parameters in place; the result goes to :meth:`finalize`."""
         return None
@@ -195,7 +198,7 @@ class BaseChatAdapter:
             params[self.base_url_field] = route.base_url
 
         api_key = SecretStr(clean(route.profile.get("api_key")))
-        instance = self.model_class()(**{self.api_key_field: api_key, "model": route.model, **params})
+        instance = self.model_class_for(route)(**{self.api_key_field: api_key, "model": route.model, **params})
         self.finalize(instance, state)
         return instance
 

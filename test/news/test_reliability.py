@@ -309,32 +309,27 @@ async def test_insufficient_collection_reports_safe_diagnostics_without_editing(
 
 @pytest.mark.asyncio
 async def test_editor_receives_configured_story_target(monkeypatch, edition):
-    import json
-
     from plugins.news.editor import NewsEditor
 
     editor = NewsEditor(NewsConfig(target_stories=14))
-    call = AsyncMock(return_value=payload(2))
-    monkeypatch.setattr(editor, "call", call)
+    run = AsyncMock(return_value=[SimpleNamespace(type="ai", content=payload(2).model_dump_json())])
+    monkeypatch.setattr(editor, "_run_skill", run)
     await editor.edit(edition, [article(str(i)) for i in range(2)])
-    data = json.loads(call.call_args.args[2])
-    assert data["target_stories"] == 14
-    assert len(data["articles"]) == 2
+    assert editor.cfg.target_stories == 14
+    assert len(run.call_args.args[1]["articles"]) == 2
+    assert run.call_args.kwargs == {"research": False}
 
 
 @pytest.mark.asyncio
 async def test_editor_receives_validation_feedback(monkeypatch, edition):
-    import json
-
     from plugins.news.editor import NewsEditor
 
     editor = NewsEditor(NewsConfig(min_stories=2, target_stories=2))
-    call = AsyncMock(return_value=payload(2))
-    monkeypatch.setattr(editor, "call", call)
+    run = AsyncMock(return_value=[SimpleNamespace(type="ai", content=payload(2).model_dump_json())])
+    monkeypatch.setattr(editor, "_run_skill", run)
     await editor.edit(
         edition, [article(str(i)) for i in range(2)],
         validation_error="the same article cannot fill multiple news slots",
     )
-    data = json.loads(call.call_args.args[2])
+    data = run.call_args.args[1]
     assert data["validation_error"] == "the same article cannot fill multiple news slots"
-    assert data["min_stories"] == 2

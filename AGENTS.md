@@ -68,7 +68,7 @@ Milky MessageEvent → NoneBot on_message(priority=10)
 | `plugins/acp` | ACP v1/v2 客户端与服务端、`/acp` 命令、子代理桥接和进程维护；`/acp` 仅超级用户可用 |
 | `plugins/clockwork` | APScheduler 定时任务系统：内置任务、用户自动任务、任务命令、执行历史；只负责注册 `daily_news` 任务，处理器位于 `plugins.news` |
 | `plugins/dashboard` | FastAPI Dashboard：`/api/dashboard/*` API、`/dashboard` 静态前端、JWT 鉴权、状态/消息/设置/任务管理 |
-| `plugins/news` | 独立新闻管线：研究 Agent 调用 DeepSeek Search/Fetch → 证据约束编辑 → `news.db` 归档 → 渲染 → 逐目标投递；`/news` 仅超级用户可用 |
+| `plugins/news` | 通过主 Agent 调用 `daily-news` 技能，负责证据校验、归档、渲染与逐目标投递；`/news` 仅超级用户可用 |
 | `plugins/playground` | `/paint`、`/video` 命令和戳一戳响应；直接调用共享图片/视频服务 |
 | `plugins/toolbox` | 工具箱命令：`/update`、`/restart`、`/model`、`/set wake`、`/vehelp`，以及技能沙箱初始化；`/update`、`/restart` 仅超级用户可用，`/model` 向所有用户开放以查看当前模型配置 |
 | `plugins/wolfx` | Wolfx CENC 地震预警：`cenc_client.py` 维护 WebSocket 长连接与重连，`cenc_handler.py` 去重、渲染并推送 |
@@ -88,7 +88,7 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 | 文件 | 职责 |
 |------|------|
 | `agents/` | Agent 包：主 Deep Agent 装配（`cognitive.py`）、中性桥接（`neutral_core.py`）、运行时入口（`runtime_gateway.py`）、消息信封（`message_envelope.py`）、执行与超时（`execution.py`）、用量统计（`usage.py`）、工具错误（`tool_errors.py`）、进度流（`progress.py`）、浏览器意图（`capture.py`）、Prompt、workspace 与 Subagent |
-| `providers/` | Provider 协议与实现：`base.py` 定义 `Route`、`ChatAdapter`（按 `type` 构造模型）和 `Vendor`（官方端点的请求语义）；`openai.py` / `anthropic.py` / `google.py` / `deepseek/`（`chat.py`、托管 `media.py`、`web.py`）各自实现；详见 `docs/providers.md` |
+| `providers/` | Provider 协议与实现：`base.py` 定义 `Route`、`ChatAdapter`（按 `type` 构造模型）和 `Vendor`（官方端点的请求语义）；`openai.py` / `anthropic.py` / `google.py` / `deepseek/`（`chat.py`、托管 `media.py`）各自实现；详见 `docs/providers.md` |
 | `agent_protocol/` | 平台无关契约：`models.py` 值对象（消息段、参与者、会话、请求/响应、投递回执）、`ports.py` 的 `AgentCore`/`ReplyPolicy`/`HistoryStore`/`DeliveryPort`/`PlatformToolProvider`、`identity.py` 的 workspace key 归一化 |
 | `agent_orchestration.py` | `ConversationOrchestrator`：历史 → 门控 → Agent → 投递的平台中性单轮生命周期；QQ 生产入口已接入 |
 | `decision/` | 平台无关 Decision provider：`llm.py`（LLM 决策）、`laya.py`（Laya 候选预筛，默认关闭）、`reply_gate.py`（回复门控打分）、`models.py`；导入不加载 torch/transformers 权重 |
@@ -122,7 +122,7 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 
 | 分组 | 代表模块 | 说明 |
 |------|----------|------|
-| `main` | `adapter`, `milky_*`, `paint`, `video`, `reminder`, `scheduled_task`, `deepseek_balance`, `deepseek_search`, `NRC*`, `typhoon` | QQ 平台操作、媒体生成、提醒/自动任务、游戏/业务工具 |
+| `main` | `adapter`, `milky_*`, `paint`, `video`, `reminder`, `scheduled_task`, `deepseek_balance`, `NRC*`, `typhoon` | QQ 平台操作、媒体生成、提醒/自动任务、游戏/业务工具 |
 | `astro` | `aurora`, `comet`, `heavens_above`, `rocket`, `satellite`, `space_weather` | 天文、卫星、空间天气 |
 | `earth` | `earthquake`, `radar`, `weather` | 地震、雷达、天气 |
 | `memory` | `memory` | 当前会话最近对话、聊天记录搜索和平台历史读取，由主 Agent 按需调用 |
@@ -169,7 +169,7 @@ Prompt 加载链：
 - 框架注入的技能 HumanMessage 带 `lc_source=pinned_skill`，属于操作说明；历史裁剪将它与原始用户问题、工具交换和回复保留为同一轮，不把它当成新的聊天请求。
 - `/skills/rich-markdown/SKILL.md` 定义内容关系与基本 Markdown 组件语法；正文直接写 Markdown，按需插入 `::card`、分区、分栏、步骤或媒体，基本卡片无需先读取参考文件。详细字段、数据与媒体契约位于其 `references/`；旧 ui JSON 契约位于 `references/legacy-ui.md`。短聊天与需要复制的回复保持文字，500 字转图规则只控制发送方式。
 - `plugins/agent/prompts/reply_check.md` 用于群聊是否应主动回复的 Decision LLM 判断。
-- 每日新闻使用 `plugins/news/editor.py` 中的研究 Agent：先调用独立 `deepseek_web_search` / `deepseek_web_fetch`，再按证据约束生成 `NewsPayload`；模板位于 `plugins/news/templates/daily_news.html` 和 `daily_news.css`。
+- 每日新闻技能位于 `/skills/daily-news/SKILL.md`。主 Agent 可按聊天请求加载，定时和预览入口固定加载同一技能。`plugins/news/editor.py` 根据主模型返回的搜索摘要校验 `NewsPayload` 引证。模板位于 `plugins/news/templates/`。
 - ENS 详细工作流位于只读内置 Skill `/skills/ens-weather/SKILL.md`；主提示词只保留加载入口。
 
 ---
@@ -206,7 +206,7 @@ Prompt 加载链：
 - 显式 `*_model_provider` 优先。
 - 所有 `*_model_provider`（包括 paint/video）均指向 `[providers.<name>]`；供应商 profile 用 `type` 管理 LangChain 适配器、用 `api_mode` 管理协议，并统一保存 base URL 和 API key。Decision 的结构化策略由可选 `structured_output_method` 指定，默认 `auto`。
 - Paint/Video 对应 provider 的 `type` 必须为 `openai`。绘图协议跟随 provider 的 `api_mode`：`chat_completions` 选择 Images API 的生成/编辑接口，`responses` 保留依赖 sub2api 重写模型的原绘图路径。Images 返回的公网 URL 经现有 PublicFetcher 校验并下载，不携带 provider 凭据。视频使用 Videos API。
-- 配置有效时，主 Agent 默认使用独立 `deepseek_web_search` / `deepseek_web_fetch`（搜索默认 20 条），配置与主模型供应商独立，长正文写入当前 workspace 并由 `read_file` 继续读取，详见 `docs/deepseek-web-search.md`。未配置独立搜索时，官方 OpenAI Responses 自动启用服务端 `web_search`；DeepSeek 和兼容代理需确认当前模型、上游支持后显式设置 `native_web_search = true`，Flash 会忽略该内置工具。
+- 主模型为官方 DeepSeek Flash Responses 时，默认启用 `deepseek_web_search` 和 `deepseek_read_url` 服务端工具。归档日报使用这一路由收集可校验证据。详见 `docs/deepseek-web-search.md`。
 - 没有显式 provider 时，`llm_factory.py` 会根据模型名前缀推断：`deepseek*`、`gemini-*`、`claude-*`，其余走 OpenAI-compatible。
 
 Dashboard 配置：

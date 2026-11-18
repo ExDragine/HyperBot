@@ -4,9 +4,6 @@ from pathlib import Path
 
 from langchain_core.tools import BaseTool
 
-from utils.providers.deepseek.web import TOOL_NAMES as DEEPSEEK_SEARCH_TOOLS
-from utils.providers.deepseek.web import deepseek_search_available
-
 from .mcp_client import mcp_get_tools_async
 
 _EXCLUDED_MODULES = {"__init__", "mcp_client"}
@@ -16,7 +13,7 @@ _RESTRICTED_GROUPS = ("restricted",)
 _ALL_TOOL_GROUPS = ("main", *_DOMAIN_GROUPS, *_RESTRICTED_GROUPS)
 
 _READ_ONLY_MODULES = {
-    "comet", "deepseek_balance", "deepseek_ocr", "deepseek_search", "earthquake", "iching", "radar",
+    "comet", "deepseek_balance", "deepseek_ocr", "earthquake", "iching", "radar",
     "rocket", "space_weather", "tarot", "weather",
 }
 _READ_ONLY_PREFIXES = {
@@ -47,7 +44,6 @@ _TOOL_MODULE_GROUPS = {
     "milky_system": "main",
     "deepseek_balance": "deepseek",
     "deepseek_ocr": "deepseek",
-    "deepseek_search": "deepseek",
     "reminder": "main",
     "scheduled_task": "main",
     "aurora": "astro",
@@ -147,11 +143,9 @@ class ModuleTools:
         return bool(required & capabilities)
 
     def _filtered_main_tools(self, capabilities: frozenset[str]) -> list[BaseTool]:
-        search_available = deepseek_search_available()
         return [
             tool for tool in self.subagent_tools["main"]
             if self._capability_allows(tool, capabilities)
-            and (tool.name not in DEEPSEEK_SEARCH_TOOLS or search_available)
         ]
 
     def direct_tools_for(self, capabilities: frozenset[str]) -> list[BaseTool]:

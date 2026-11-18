@@ -57,6 +57,10 @@ class AgentRuntimeRequest:
     capabilities: frozenset[str] = frozenset()
     workspace_key: str | None = None
     tool_overrides: tuple[object, ...] = ()
+    pinned_skills: tuple[str, ...] = ()
+    include_messages: bool = False
+    allow_local_tools: bool = True
+    allow_native_web_search: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -312,6 +316,14 @@ class FrontierAgentRuntime:
             compatibility_kwargs["capabilities"] = request.capabilities
         if request.tool_overrides:
             compatibility_kwargs["tool_overrides"] = request.tool_overrides
+        if request.pinned_skills:
+            compatibility_kwargs["pinned_skills"] = request.pinned_skills
+        if request.include_messages:
+            compatibility_kwargs["include_messages"] = True
+        if not request.allow_local_tools:
+            compatibility_kwargs["allow_local_tools"] = False
+        if not request.allow_native_web_search:
+            compatibility_kwargs["allow_native_web_search"] = False
         if workspace_key:
             compatibility_kwargs["workspace_key_override"] = workspace_key
 

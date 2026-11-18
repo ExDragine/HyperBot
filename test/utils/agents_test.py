@@ -103,11 +103,12 @@ def test_frontier_load_system_prompt_keeps_only_always_on_rules(monkeypatch):
     assert "动态人设文件路径" not in prompt
     assert "memory-agent" not in prompt
     assert prompt.count("get_recent_conversation") == 1
-    assert "联网搜索、网页读取和多来源核验由你直接调用" in prompt
-    assert "遇到 429、限流或配额耗尽后停止搜索" in prompt
+    assert "联网查询和链接读取优先使用当前模型的服务端联网能力" in prompt
+    assert "遇到限流或额度耗尽后停止继续搜索" in prompt
     assert prompt.count("document-agent") == 1
     assert "earth-data-agent" not in prompt
     assert prompt.count("`/skills/ens-weather/SKILL.md`") == 1
+    assert prompt.count("`/skills/daily-news/SKILL.md`") == 1
     assert prompt.count("`/skills/eli5/SKILL.md`") == 1
     assert "这是私聊" in prompt
     assert "日常对话优先用一个短段落、1–3 句话" in prompt
@@ -1388,15 +1389,15 @@ async def test_chat_agent_skips_web_search_when_route_unsupported(monkeypatch, t
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("model", ["deepseek-flash", "gpt-5.4", "claude-test"])
-async def test_configured_deepseek_search_is_default_across_main_models(monkeypatch, tmp_path, model):
-    monkeypatch.setattr(cognitive_mod, "deepseek_search_available", lambda: True)
-    tools = [types.SimpleNamespace(name=name) for name in ("deepseek_web_search", "deepseek_web_fetch")]
-    captured = await _run_chat_agent_with_web_search(monkeypatch, tmp_path, supported=True, model=model, tools=tools)
-    assert {tool.name for tool in captured["tools"]} >= {"deepseek_web_search", "deepseek_web_fetch"}
-    assert cognitive_mod.SEARCH_PROMPT_HINT in captured["system_prompt"]
+async def test_chat_agent_advertises_deepseek_hosted_tools_without_local_wrappers(monkeypatch, tmp_path):
+    hosted = ("deepseek_web_search", "deepseek_read_url")
+    monkeypatch.setattr(cognitive_mod, "native_web_search_tools", lambda *_: hosted)
+    captured = await _run_chat_agent_with_web_search(monkeypatch, tmp_path, supported=True, model="deepseek-flash")
+    assert not {"web_search_deepseek", "deepseek_web_fetch"} & {tool.name for tool in captured["tools"]}
+    middleware = next(item for item in captured["middleware"] if isinstance(item, cognitive_mod.NativeWebSearchMiddleware))
+    assert middleware.tool_types == hosted
+    assert "DeepSeek 服务端联网能力" in captured["system_prompt"]
     assert cognitive_mod.WEB_SEARCH_PROMPT_HINT not in captured["system_prompt"]
-    assert not any(isinstance(item, cognitive_mod.NativeWebSearchMiddleware) for item in captured["middleware"])
 
 
 @pytest.mark.asyncio

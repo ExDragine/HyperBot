@@ -32,7 +32,6 @@ HyperBot 的配置分为四类文件：NoneBot 启动参数在 `.env`，HyperBot
 | --- | --- | --- |
 | `[bot]` | 主 system prompt；`{name}` 会替换为当前唤醒词 | 本页 |
 | `[models]` / `[providers.*]` | 模型角色、供应商 profile、密钥和协议 | 本页 |
-| `[search]` | 独立 DeepSeek 网页搜索与正文读取 | [DeepSeek 网页搜索](deepseek-web-search.md) |
 | `[document_parsing]` | DeepSeek 文件 OCR 解析 | [DeepSeek 媒体能力](deepseek-media.md) |
 | `[key]` | NASA、GitHub 等非模型服务密钥 | 本页 |
 | `[features]` | 功能开关与可选 Laya 候选预筛 | 本页 |
@@ -83,7 +82,7 @@ HyperBot 的配置分为四类文件：NoneBot 启动参数在 `.env`，HyperBot
 profile 常用字段：
 
 - `base_url`、`api_key`：地址与密钥；模型 API key 不再放在 `[key]`。
-- `native_web_search`：确认上游实现服务端搜索工具后设为 `true`。官方 OpenAI Responses 使用 `web_search`；官方 DeepSeek 路由使用 `deepseek_web_search` 与 `deepseek_read_url`。独立 DeepSeek Search/Fetch 可用时仍优先使用独立工具。
+- 官方 OpenAI Responses 使用 `web_search`。官方 DeepSeek Flash Responses 默认启用 `deepseek_web_search` 和 `deepseek_read_url`，可在其 profile 设置 `native_web_search = false`。兼容 Responses 网关需确认支持 `web_search` 后显式启用。
 - `structured_output_method`：Decision 结构化策略，`auto`、`json_schema`、`function_calling`、`json_mode`、`text_json`，默认 `auto`。
 - `decision_extra_body`：只作用于 decision 请求的 `extra_body`，例如关闭 DeepSeek 思考模式；旧字段 `signal_extra_body` 仍可读取，不能与 `decision_extra_body` 配置不同内容。
 - `safety_check`：可选的 DeepSeek Chatbot API 安全审核参数，例如 `{ level = "high" }`。官方 DeepSeek profile 默认使用高强度审核。
@@ -97,7 +96,7 @@ DeepSeek 可分别配置为 `deepseek + chat_completions`、`openai + responses`
 - 供应商 profile 名称必须存在；未声明的内置名称按上表默认值可用，未知名称报错。
 - `models/` 模型目录为命中的模型卡注入上下文窗口、输出上限和能力元数据；目录外模型按未知模型降级。
 - 绘画和视频的 provider `type` 必须为 `openai`。绘画协议跟随 provider 的 `api_mode`：`chat_completions` 调用 Images API（`/images/generations`，带参考图时用 `/images/edits`），`responses` 保留依赖 sub2api 重写顶层模型的 Responses `image_generation` 路径；请求失败不会切换协议重试。视频使用 OpenAI-compatible Videos API，不读取 `api_mode`。
-- 每日新闻使用独立的 `daily_news_model` / `daily_news_model_provider`；检索来源与运行语义见 [新闻插件运维](news-plugin.md)。
+- 每日新闻使用 `advanced_model` / `advanced_model_provider` 对应的主模型。归档预览和定时日报需要官方 DeepSeek Flash Responses，旧日报模型字段仍可解析。 [新闻插件运维](news-plugin.md)
 
 ## 其余配置段
 

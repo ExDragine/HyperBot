@@ -93,7 +93,7 @@ class ProviderProfile(BaseModel):
     api_mode: str = ""
     base_url: str = ""
     api_key: str = ""
-    native_web_search: bool = False
+    native_web_search: bool | None = None
     structured_output_method: Literal["auto", "json_schema", "function_calling", "json_mode", "text_json"] = "auto"
     decision_extra_body: dict[str, Any] = Field(default_factory=dict)
     signal_extra_body: dict[str, Any] = Field(default_factory=dict)
@@ -128,6 +128,7 @@ class SearchConfig(_FrozenConfig):
     enabled: bool = True
     provider: str = Field(default="deepseek_responses", min_length=1)
     base_url: str = _DEEPSEEK_RESPONSES_BASE_URL
+    model: str = Field(default="deepseek-flash", min_length=1)
     timeout_seconds: float = Field(default=30.0, gt=0, le=120)
     content_preview_chars: int = Field(default=6000, ge=256, le=20000)
     max_content_chars: int = Field(default=24000, ge=256, le=100000)

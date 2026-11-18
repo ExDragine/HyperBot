@@ -80,7 +80,7 @@ async def init_task_system():
                 handler_function="daily_news", trigger_type="cron",
                 trigger_args={"hour": "9,21", "minute": "0", "timezone": "Asia/Shanghai"},
                 group_ids=[int(group_id) for group_id in EnvConfig.NEWS_SUMMARY_GROUP_ID],
-                description="独立新闻插件：真实检索、证据校验、归档后逐目标投递",
+                description="调用主 Agent 的每日新闻技能，证据校验与归档后逐目标投递",
                 misfire_grace_time=900,
             )
         elif (existing_news.handler_module, existing_news.handler_function) != ("plugins.news.scheduler", "daily_news"):

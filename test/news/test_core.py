@@ -4,7 +4,7 @@ import datetime as dt
 
 import pytest
 
-from plugins.news.config import NewsConfig
+from plugins.news.config import NewsConfig, load_news_config
 from plugins.news.schemas import (
     Article,
     Edition,
@@ -36,6 +36,12 @@ def test_url_drops_tracking_and_rejects_private():
     assert canonical_url("https://example.com/a?utm_source=x&id=1") == "https://example.com/a?id=1"
     with pytest.raises(ValueError):
         canonical_url("http://127.0.0.1/a")
+
+
+def test_news_config_accepts_legacy_source_list(tmp_path):
+    path = tmp_path / "news.toml"
+    path.write_text('[news]\nsources = ["deepseek"]\nmin_stories = 2\n', encoding="utf-8")
+    assert load_news_config(path).min_stories == 2
 
 
 def test_unknown_publication_is_not_eligible():

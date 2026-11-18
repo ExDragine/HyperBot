@@ -6,13 +6,11 @@ from types import SimpleNamespace
 import pytest
 
 from plugins.news.config import NewsConfig
-from plugins.news.editor import AGENT_PROMPT, _article_records, _articles_from_messages
+from plugins.news.editor import _article_records, _articles_from_messages
 from plugins.news.schemas import Edition
 from plugins.news.sources import (
-    DeepSeekSource,
     ExaMcpSource,
     _mcp_articles,
-    configured_sources,
     publication_time,
 )
 
@@ -89,30 +87,24 @@ async def test_exa_mcp_is_used_when_rest_key_is_missing(monkeypatch, dictionary_
     assert calls[0]["startPublishedDate"] == "2026-09-18T01:00:00+00:00"
 
 
-def test_configured_sources_uses_deepseek():
-    sources = configured_sources(NewsConfig()).sources
-    assert [type(source) for source in sources] == [DeepSeekSource]
-
-
-def test_agent_prompt_prioritizes_tavily_exa_before_deepseek():
-    assert AGENT_PROMPT.index("tavily_search") < AGENT_PROMPT.index("web_search_exa")
-    assert AGENT_PROMPT.index("web_search_exa") < AGENT_PROMPT.index("deepseek_web_search")
-
-
-def test_agent_mcp_evidence_is_retained():
-    message = SimpleNamespace(
-        type="tool",
-        name="tavily_search",
-        content='{"results":[{"title":"标题","url":"https://example.com/news",'
-        '"text":"这是一段足够长的新闻正文，用于验证 Tavily MCP 结果可以进入日报证据。",'
-        '"publishedDate":"2026-09-18T12:00:00Z"}]}',
-    )
-    records = _article_records([message])
-    assert records["https://example.com/news"]["provider"] == "tavily"
+def test_search_snippet_is_evidence_and_read_link_can_fill_its_date():
+    url = "https://example.com/news"
+    snippet = "这是服务端搜索真实返回的一段足够长的新闻摘要，用于验证日报可以保存并检查候选稿件引自此处的原句。"
+    search = SimpleNamespace(type="ai", content=[{
+        "type": "web_search_call", "kind": "search", "status": "completed",
+        "action": {"type": "search", "sources": [{"url": url, "title": "来源标题", "snippet": snippet}]},
+    }])
+    read = SimpleNamespace(type="ai", content=[{
+        "type": "web_search_call", "kind": "read_link", "status": "completed",
+        "action": {"type": "open_page", "url": url}, "page": {"url": url, "published_at": "2026-09-18T12:00:00Z"},
+    }, {"type": "text", "text": "这段由模型生成的要点不能用于逐字引用或代替来源摘要。"}])
+    records = _article_records([search, read])
+    assert "content" not in records[url]
     articles = _articles_from_messages(
-        [message], Edition("general", dt.datetime(2026, 9, 19, 1, tzinfo=dt.UTC))
+        [search, read], Edition("general", dt.datetime(2026, 9, 19, 1, tzinfo=dt.UTC))
     )
-    assert articles[0].provider == "tavily"
+    assert articles[0].text == snippet
+    assert articles[0].published_at == dt.datetime(2026, 9, 18, 12, tzinfo=dt.UTC)
 
 
 def test_exa_mcp_markdown_keeps_publication_date():

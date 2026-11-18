@@ -17,6 +17,8 @@ from ..base import CHAT_COMPLETIONS, MESSAGES, RESPONSES, BaseChatAdapter, BaseV
 _HOST = "api.deepseek.com"
 _SAFETY = {"level": "high"}
 _EFFORT_ALIASES = {"medium": "high", "xhigh": "max"}
+_WEB_MODELS = frozenset({"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp"})
+DEEPSEEK_WEB_TOOLS = ("deepseek_web_search", "deepseek_read_url")
 
 
 class DeepSeekAdapter(BaseChatAdapter):
@@ -54,7 +56,7 @@ class DeepSeekAdapter(BaseChatAdapter):
 
 class DeepSeekVendor(BaseVendor):
     name = "deepseek"
-    native_search_tools = ("deepseek_web_search", "deepseek_read_url")
+    native_search_tools = DEEPSEEK_WEB_TOOLS
     profile_fields = ("safety_check", "title")
 
     def official_api_mode(self, route: Route) -> str | None:
@@ -104,9 +106,11 @@ class DeepSeekVendor(BaseVendor):
         return _EFFORT_ALIASES.get(effort, effort)
 
     def native_web_search(self, route: Route) -> tuple[bool, str]:
-        if route.profile.get("native_web_search") is True:
-            return True, f"official DeepSeek {route.api_mode} chatbot tools explicitly opted in"
-        return False, "DeepSeek hosted search requires explicit opt-in; prefer standalone deepseek_web_search"
+        if self.official_api_mode(route) != RESPONSES or route.model.lower() not in _WEB_MODELS:
+            return False, "DeepSeek search and URL reading require an official Flash Responses route"
+        if route.profile.get("native_web_search") is False:
+            return False, "DeepSeek web tools are disabled on this provider profile"
+        return True, "official DeepSeek Flash Responses web tools"
 
     def structured_output_method(self, route: Route, capabilities: Mapping[str, Any]) -> str:
         return "text_json"

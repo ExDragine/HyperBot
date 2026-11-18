@@ -415,7 +415,7 @@ def test_deepseek_responses_does_not_advertise_native_web_search(monkeypatch):
     )
 
     assert supported is False
-    assert "explicit opt-in" in reason
+    assert "official Flash Responses" in reason
     assert factory.model_supports_native_web_search(
         "deepseek-future-model",
         "official_deepseek",
@@ -443,17 +443,19 @@ def test_responses_proxy_can_explicitly_opt_in_to_native_web_search(monkeypatch)
     assert "explicitly opted in" in reason
 
 
-def test_deepseek_hosted_search_can_explicitly_opt_in_for_supported_model(monkeypatch):
-    monkeypatch.setattr(factory.EnvConfig, "LLM_PROVIDERS", {"deepseek_pro": {
+def test_deepseek_hosted_search_is_enabled_for_official_flash(monkeypatch):
+    monkeypatch.setattr(factory.EnvConfig, "LLM_PROVIDERS", {"deepseek_route": {
         "type": "openai", "api_mode": "responses", "base_url": "https://api.deepseek.com",
-        "native_web_search": True,
     }})
-    supported, reason = factory.native_web_search_support("deepseek-v4-pro", "deepseek_pro")
-    assert supported and "explicitly opted in" in reason
+    supported, reason = factory.native_web_search_support("deepseek-flash", "deepseek_route")
+    assert supported and "Flash Responses" in reason
+    assert factory.native_web_search_tools("deepseek-flash", "deepseek_route") == (
+        "deepseek_web_search", "deepseek_read_url",
+    )
 
 
 @pytest.mark.parametrize("api_mode", ["chat_completions", "messages"])
-def test_deepseek_chatbot_tools_can_be_enabled_on_all_official_protocols(monkeypatch, api_mode):
+def test_deepseek_hosted_web_requires_responses_adapter(monkeypatch, api_mode):
     monkeypatch.setattr(
         factory.EnvConfig,
         "LLM_PROVIDERS",
@@ -471,8 +473,8 @@ def test_deepseek_chatbot_tools_can_be_enabled_on_all_official_protocols(monkeyp
 
     supported, reason = factory.native_web_search_support("deepseek-flash", "deepseek_route")
 
-    assert supported
-    assert api_mode in reason
+    assert not supported
+    assert "Responses" in reason
 
 
 @pytest.mark.parametrize(

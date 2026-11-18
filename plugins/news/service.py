@@ -36,7 +36,9 @@ class NewsService:
                             f"insufficient agent evidence: eligible={len(articles)}/{self.cfg.min_stories}; "
                             f"window={edition.start.isoformat()}..{edition.scheduled_at.isoformat()}"
                         )
-                    payload = await self._edited_payload(edition, articles, initial_payload=payload)
+                    payload = await self._edited_payload(
+                        edition, articles, initial_payload=payload, initial_invalid=payload is None,
+                    )
                 else:
                     articles = eligible(await self.sources.collect(edition, set()), edition)
                     if len(articles) < self.cfg.min_stories:
@@ -60,10 +62,10 @@ class NewsService:
             await self.repo.fail(edition.report_id, token, type(exc).__name__)
             raise
 
-    async def _edited_payload(self, edition, articles, *, initial_payload=None):
+    async def _edited_payload(self, edition, articles, *, initial_payload=None, initial_invalid=False):
         """Count the Agent draft toward the same bounded, evidence-preserving retries."""
-        last = None
-        for attempt in range(self.cfg.max_generation_attempts):
+        last = ValueError("the initial draft did not match the news schema") if initial_invalid else None
+        for attempt in range(int(initial_invalid), self.cfg.max_generation_attempts):
             try:
                 if attempt == 0 and initial_payload is not None:
                     payload = initial_payload

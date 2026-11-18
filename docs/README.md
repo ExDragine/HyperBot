@@ -22,7 +22,7 @@
 | [消息、上下文与投递边界](message_flow.md) | 消息归一化、存储、门控与媒体下载顺序，当前请求/历史边界、两级队列锁和投递结果。 |
 | [Agent 执行控制](agent-execution-controls.md) | 主图模型/工具调用预算、用量统计口径、工具错误分类和 Decision 结构化输出策略。 |
 | [QQ 会话缓存](agent-sessions.md) | 有界 checkpoint 会话缓存的开关、参数、容量与媒体语义、投递结算和观测指标。 |
-| [DeepSeek 网页搜索](deepseek-web-search.md) | 独立 Search/Fetch 工具的配置、调用契约、正文预算、工作区落盘、重试与限速。 |
+| [DeepSeek 网页搜索](deepseek-web-search.md) | 主模型服务端搜索与网页读取的配置、证据字段和验收测试。 |
 | [Provider 协议](providers.md) | `ChatAdapter` / `Vendor` 两个角色、`Route`、协议方法和新增供应商的步骤。 |
 | [DeepSeek 媒体能力](deepseek-media.md) | 托管 OCR、语音识别与语音合成的配置、限制和 QQ 媒体适配。 |
 | [Laya 决策 Provider](laya-decision-provider.md) | 可选 Laya 候选预筛的本地 SDK/HTTP 后端、DecisionProvider 契约与门控边界。 |

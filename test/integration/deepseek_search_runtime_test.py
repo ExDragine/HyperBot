@@ -1,91 +1,68 @@
 # ruff: noqa: S101
-"""Real tool schemas, HTTP serialization and a search/fetch/read_file cycle."""
+"""DeepSeek Responses keeps its native tool types and provider evidence on the wire."""
 
 import subprocess
 import sys
 from pathlib import Path
 
 
-def test_search_fetch_and_full_page_read_in_real_agent(tmp_path):
+def test_deepseek_native_web_tools_round_trip_through_the_real_sdk(tmp_path):
     script = r"""
 import asyncio
-import importlib.util
 import json
 import sys
-from pathlib import Path
-repo = Path(sys.argv[1])
-sys.path.insert(0, str(repo))
-from httpx2 import AsyncClient, MockTransport, Response
-from deepagents import create_deep_agent
-from deepagents.backends import FilesystemBackend
-from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
-from langchain_core.messages import AIMessage, ToolMessage
-from utils.providers.deepseek import web
-from utils.agent_context import FrontierRuntimeContext
+sys.path.insert(0, sys.argv[1])
+from httpx import AsyncClient, MockTransport, Response
+from langchain_core.tools import tool
+from openai import AsyncOpenAI
 from utils.configs import EnvConfig
+from utils.llm_factory import create_llm, native_web_search_tools
 
-spec = importlib.util.spec_from_file_location("search_tools_contract", repo / "tools/deepseek_search.py")
-mod = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = mod
-spec.loader.exec_module(mod)
-schema = mod.deepseek_web_search.tool_call_schema.model_json_schema()["properties"]
-assert schema["count"]["default"] == 20 and schema["count"]["maximum"] == 50
-assert schema["need_content"]["default"] is False
-assert not {"runtime", "config", "localization"} & schema.keys()
-EnvConfig.reload({"config_version": 2, "providers": {"deepseek_responses": {"api_key": "contract-key"}},
-                  "search": {"content_preview_chars": 256}})
-root = Path("workspace").resolve()
-root.mkdir()
-calls, seen = [], []
-full_page = "# Page\n" + "Relevant evidence.\n" * 300 + "TAIL_EVIDENCE"
+EnvConfig.reload({"config_version": 2, "providers": {"deepseek_responses": {"api_key": "test-key"}}})
 
-def handler(request):
-    body = json.loads(request.content)
-    calls.append((str(request.url), body))
-    assert request.headers["Authorization"] == "Bearer contract-key"
-    assert request.headers["content-type"] == "application/json"
-    if request.url.path.endswith("/search"):
-        assert body == {"query": "test query", "count": 20, "need_content": False}
-        return Response(200, json={"results": [{
-            "title": f"Page {i}", "url": f"https://example.com/{i}", "summary": "Evidence summary",
-            "snippet": "short", "content": "", "site_name": "Example", "date": None,
-            "rerank_score": 2.4, "authority": 3,
-        } for i in range(20)]})
-    assert request.url.path == "/v1/tools/fetch" and body == {"url": "https://example.com/0"}
-    return Response(200, json={"title": "Page 0", "content": full_page})
+@tool
+def local_lookup(query: str) -> str:
+    'Look up a local record.'
+    return query
 
-class Model(FakeMessagesListChatModel):
-    def bind_tools(self, tools, **kwargs):
-        return self
-    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        seen.append(messages)
-        if len(seen) in {2, 3}:
-            data = json.loads(next(m.content for m in reversed(messages) if isinstance(m, ToolMessage)))
-            assert data["status"] == "ok"
-            if len(seen) == 2:
-                assert data["count"] == 20
-                tool_name, args = "deepseek_web_fetch", {"url": data["results"][0]["url"]}
-            else:
-                assert data["truncated"] and "TAIL_EVIDENCE" not in data["content"]
-                tool_name, args = "read_file", {"file_path": data["content_path"], "limit": 1000}
-            self.responses[self.i] = AIMessage(content="", tool_calls=[{"name": tool_name, "args": args, "id": f"call-{len(seen)}"}])
-        return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+def handle(request):
+    assert request.url.path == "/responses"
+    payload = json.loads(request.content)
+    local, search, read = payload["tools"]
+    assert local["type"] == "function" and local["name"] == "local_lookup"
+    assert search == {"type": "deepseek_web_search"}
+    assert read == {"type": "deepseek_read_url"}
+    assert payload["store"] is False
+    url = "https://example.com/article"
+    return Response(200, json={
+        "id": "resp_test", "object": "response", "status": "completed", "created_at": 0,
+        "model": "deepseek-flash", "output": [
+            {"id": "search_test", "type": "web_search_call", "status": "completed", "kind": "deep_search",
+             "action": {"type": "search", "queries": ["latest news"], "sources": [{
+                 "type": "url", "url": url, "title": "Article", "snippet": "Verbatim search evidence",
+                 "published_at": "2026-11-18T10:00:00Z",
+             }]}},
+            {"id": "read_test", "type": "web_search_call", "status": "completed", "kind": "read_link",
+             "action": {"type": "open_page", "url": url}, "page": {"url": url}},
+            {"id": "msg_test", "type": "message", "status": "completed", "role": "assistant",
+             "content": [{"type": "output_text", "text": "Read and verified", "annotations": []}]},
+        ],
+    })
 
 async def main():
-    async with AsyncClient(transport=MockTransport(handler)) as client:
-        web.get_http_client = lambda *args, **kwargs: client
-        model = Model(responses=[AIMessage(content="", tool_calls=[{
-            "name": "deepseek_web_search", "args": {"query": "test query"}, "id": "call-1",
-        }]), AIMessage(content="placeholder"), AIMessage(content="placeholder"), AIMessage(content="done")])
-        graph = create_deep_agent(model=model, tools=[mod.deepseek_web_search, mod.deepseek_web_fetch],
-                                  subagents=[], backend=FilesystemBackend(root_dir=root),
-                                  context_schema=FrontierRuntimeContext)
-        result = await graph.ainvoke({"messages": [{"role": "user", "content": "Research and verify"}]},
-                                    context=FrontierRuntimeContext("1", 123, None, str(root)))
-        assert result["messages"][-1].content == "done" and len(seen) == 4
-        last = next(m.content for m in reversed(seen[-1]) if isinstance(m, ToolMessage))
-        assert "TAIL_EVIDENCE" in last, str(last)[-1500:]
-        assert len(calls) == 2
+    provider = "deepseek_responses"
+    name = "deepseek-flash"
+    model = create_llm(name, provider=provider, max_retries=0)
+    async with AsyncClient(transport=MockTransport(handle)) as client:
+        model.root_async_client = AsyncOpenAI(api_key="test-key", base_url="https://api.deepseek.com", http_client=client)
+        hosted = [{"type": kind} for kind in native_web_search_tools(name, provider)]
+        result = await model.bind_tools([local_lookup, *hosted]).ainvoke("Find and read the original source")
+    search, read, _text = result.content
+    assert search["action"]["sources"][0]["snippet"] == "Verbatim search evidence"
+    assert read["page"]["url"] == "https://example.com/article"
+    assert result.text == "Read and verified"
+    assert not result.tool_calls
+
 asyncio.run(main())
 """
     result = subprocess.run(  # noqa: S603

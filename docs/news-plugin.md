@@ -2,15 +2,15 @@
 
 The production path is:
 
-Clockwork -> `plugins.news.scheduler` -> standalone research Agent -> Tavily -> Exa -> DeepSeek Search fallback -> evidence validation -> `news.db` archive -> render -> per-target delivery.
+Clockwork -> `plugins.news.scheduler` -> main Agent with the `daily-news` Skill -> DeepSeek server-side search and URL reading -> evidence validation -> `news.db` archive -> render -> per-target delivery.
 
-The research Agent owns search planning and source selection. It receives only the configured edition window, tries the configured Tavily tools first, then Exa MCP tools, and finally the standalone DeepSeek Search/Fetch tools. It returns structured stories whose evidence points to the original source URL. The scheduler still keeps the durable archive, image rendering, per-group delivery state, and explicit retry behavior from the standalone pipeline.
+For a chat request, the main Agent loads the `daily-news` Skill on demand and returns the briefing in the current conversation. The scheduler and `/news preview` pin the same Skill when invoking the main Agent. The application validates verbatim quotes against DeepSeek's server-side search snippets and uses page metadata to supplement publication dates.
 
 ## Configuration
 
-Copy `news.toml.example` to `news.toml` when overrides are needed. If `model` and `provider` are empty, the plugin reuses `env.toml`'s `daily_news_model` and `daily_news_model_provider`. Tavily and Exa are discovered from the configured `mcp.json`; if either is unavailable, the Agent proceeds to the next source. DeepSeek Search uses the independent `[search]` configuration and its provider API key.
+Copy `news.toml.example` to `news.toml` when overrides are needed. Configure the main model with the official DeepSeek Flash Responses route. The scheduler uses the main model, its profile, and its credentials. Existing news configuration files can still contain `sources` and the former dedicated-model options. [DeepSeek web tools](deepseek-web-search.md)
 
-`workspace_dir` is used for bounded DeepSeek page previews and must point to a writable HyperBot workspace. Search and fetch failures are returned as errors and are not treated as an empty evidence set. Results outside the edition window or without a usable date are excluded before the report is archived.
+The archives require sources with a usable date inside the edition window and a snippet that supports the quote. Unsupported main model routes fail before generating an archived edition.
 
 ## Delivery semantics
 

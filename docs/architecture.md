@@ -14,7 +14,7 @@ Agent 与平台解耦的目标架构、统一消息协议、端口和迁移阶�
 | `plugins/acp` | ACP 客户端、服务端、QQ 命令、子代理桥接、进程维护和协议文档 |
 | `plugins/clockwork` | 定时任务实现、任务命令和执行历史；`daily_news` 只注册任务，处理器指向 `plugins.news.scheduler` |
 | `plugins/dashboard` | FastAPI Dashboard API（auth/status/tasks/messages/settings）与 `/dashboard` 静态前端 |
-| `plugins/news` | 独立新闻管线：检索、证据约束编辑、`news.db` 归档、`templates/daily_news.*` 渲染和逐目标投递 |
+| `plugins/news` | 主 Agent 日报的证据校验、`news.db` 归档、`templates/daily_news.*` 渲染和逐目标投递 |
 | `plugins/playground` | `/paint`、`/video` 命令和戳一戳响应，直接调用共享图片/视频服务 |
 | `plugins/toolbox` | `settings.py` 管理模型展示和群唤醒词；`update.py` 管理更新、重启与启动通知；`menu.py` 加载插件内 `templates/vep_menu.*` |
 | `plugins/wolfx` | Wolfx CENC 地震预警 WebSocket 客户端、事件去重、渲染与推送 |

@@ -8,6 +8,23 @@ from typing import Any
 from langchain_openai import ChatOpenAI
 
 from .base import RESPONSES, BaseChatAdapter, BaseVendor, Route, targets_https_api
+from .deepseek.chat import DEEPSEEK_WEB_TOOLS, DeepSeekVendor
+
+
+class DeepSeekWebChatOpenAI(ChatOpenAI):
+    """Bind DeepSeek extensions after LangChain converts local functions."""
+
+    def bind_tools(self, tools, **kwargs):
+        hosted, local = [], []
+        for tool in tools:
+            if isinstance(tool, dict) and tool.get("type") in DEEPSEEK_WEB_TOOLS:
+                hosted.append(tool)
+            else:
+                local.append(tool)
+        bound = super().bind_tools(local, **kwargs)
+        if not hosted:
+            return bound
+        return bound.bind(tools=[*bound.kwargs.get("tools", []), *hosted])
 
 
 class OpenAIAdapter(BaseChatAdapter):
@@ -33,8 +50,16 @@ class OpenAIAdapter(BaseChatAdapter):
     def model_class(self) -> Any:
         return ChatOpenAI
 
+    def model_class_for(self, route: Route) -> Any:
+        if DeepSeekVendor().native_web_search(route)[0]:
+            return DeepSeekWebChatOpenAI
+        return self.model_class()
+
     def prepare(self, route: Route, params: dict[str, Any]) -> None:
         params["use_responses_api"] = route.api_mode == RESPONSES
+        if DeepSeekVendor().native_web_search(route)[0]:
+            params["output_version"] = "responses/v1"
+            params["store"] = False
 
 
 class OpenAIVendor(BaseVendor):
