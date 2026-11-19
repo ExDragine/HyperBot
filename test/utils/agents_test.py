@@ -12,7 +12,7 @@ from typing import Any, Literal, cast
 
 import pytest
 from langchain_core import exceptions as model_errors
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from PIL import Image
 
 from utils.agent_protocol import AgentArtifact
@@ -1461,14 +1461,41 @@ def test_native_web_search_middleware_injects_deepseek_chatbot_tools():
     request.override = override
     captured = {}
 
-    cognitive_mod.NativeWebSearchMiddleware(
-        ("deepseek_web_search", "deepseek_read_url")
-    ).wrap_model_call(request, lambda updated: captured.setdefault("tools", updated.tools))
+    def handler(updated):
+        captured["tools"] = updated.tools
+        return types.SimpleNamespace(result=[AIMessage("ok")])
+
+    cognitive_mod.NativeWebSearchMiddleware(("deepseek_web_search", "deepseek_read_url")).wrap_model_call(request, handler)
 
     assert captured["tools"] == [
         {"type": "deepseek_web_search"},
         {"type": "deepseek_read_url"},
     ]
+
+
+def test_deepseek_search_fallback_preserves_prompt_and_propagates_second_failure():
+    class Request(types.SimpleNamespace):
+        def override(self, **changes):
+            return Request(**(vars(self) | changes))
+
+    local = types.SimpleNamespace(name="local_lookup")
+    request = Request(tools=[local], system_message=SystemMessage("Original system prompt"))
+    middleware = cognitive_mod.NativeWebSearchMiddleware(("deepseek_web_search", "deepseek_read_url"))
+    attempts = []
+
+    def handler(updated):
+        attempts.append(updated)
+        if len(attempts) == 1:
+            raise model_errors.ModelInvalidRequestError("tools: deepseek_web_search rejected")
+        raise model_errors.ModelAuthenticationError("fallback authentication failed")
+
+    with pytest.raises(model_errors.ModelAuthenticationError, match="fallback authentication failed"):
+        middleware.wrap_model_call(request, handler)
+
+    assert len(attempts) == 2
+    assert attempts[1].tools == [local]
+    assert attempts[1].system_message.text.startswith("Original system prompt")
+    assert "请说明哪些信息无法核实" in attempts[1].system_message.text
 
 
 @pytest.mark.parametrize("schema", ["frontier.qq_message.v1", "frontier.message_context.v1"])
@@ -1483,17 +1510,25 @@ def test_deepseek_search_followup_uses_same_sender_topic_without_changing_histor
     current = HumanMessage(content="@555\n找一下")
     pinned = HumanMessage(content="排版说明", additional_kwargs={"lc_source": "pinned_skill"})
     previous = [context("123", f"@555\n{topic}"), context("789", "另一个人的话题")]
-    request = types.SimpleNamespace(tools=[], messages=[*previous, current, pinned])
 
-    def override(**changes):
-        return types.SimpleNamespace(**{**request.__dict__, **changes})
+    class Request(types.SimpleNamespace):
+        def override(self, **changes):
+            return Request(**(vars(self) | changes))
 
-    request.override = override
+    request = Request(tools=[], messages=[*previous, current, pinned])
     middleware = cognitive_mod.NativeWebSearchMiddleware(
         ("deepseek_web_search", "deepseek_read_url"), lookup_user_id="123", bot_user_id="555",
     )
-    updated = middleware.wrap_model_call(request, lambda value: value)
+    captured = []
 
+    def handler(updated):
+        captured.append(updated)
+        return types.SimpleNamespace(result=[AIMessage("ok")])
+
+    middleware.wrap_model_call(request, handler)
+    (updated,) = captured
+
+    assert updated.tools == [{"type": item} for item in middleware.tool_types]
     assert updated.messages[:-1] == [*previous, pinned]
     assert updated.messages[-1].content.startswith("@555\n找一下")
     assert topic in updated.messages[-1].content and "上网搜索" in updated.messages[-1].content
