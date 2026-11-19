@@ -29,9 +29,12 @@ from langchain.agents.middleware import (
 )
 from langchain.messages import AIMessage, ToolMessage
 from langchain.tools import ToolRuntime
+from langchain_core.exceptions import ModelAPIError, ModelInvalidRequestError
+from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.types import Command
+from openai import UnprocessableEntityError
 
 import tools as _tool_registry
 from plugins.acp.subagent import build_acp_subagents
@@ -49,6 +52,7 @@ from utils.llm_factory import (
     provider_uses_responses_api,
 )
 from utils.media import detect_mime_type, inline_media_bytes, media_block_kind
+from utils.providers.deepseek.chat import DEEPSEEK_WEB_TOOLS
 
 from .capture import detect_browser_capture_intent
 from .execution import current_run_id, managed_agent_turn
@@ -282,6 +286,11 @@ DEEPSEEK_WEB_SEARCH_PROMPT_HINT = (
     "确实查不到可靠资料时，说明查证结果。用户指定查找聊天记录、本地文件或要求离线时，遵守其范围。"
 )
 
+_DEEPSEEK_WEB_FALLBACK_HINT = (
+    "\n\n本轮 DeepSeek 服务端搜索和网页读取暂不可用。请基于现有上下文和仍可用的工具继续原任务。"
+    "如果仍需查证且没有可用来源，请说明哪些信息无法核实，避免编造实时信息或来源。"
+)
+
 _LOOKUP_FOLLOWUPS = frozenset({"找一下", "查一下", "搜一下", "帮我找一下", "帮我查一下", "帮我确认", "再找一下", "再查一下"})
 
 
@@ -389,6 +398,34 @@ def _provider_request_overrides(
     )
 
 
+def _deepseek_web_request_failed(exc: Exception) -> bool:
+    if isinstance(exc, (ModelInvalidRequestError, UnprocessableEntityError)):
+        # DeepSeek also uses HTTP 400 for content review. Keep those refusals.
+        return (
+            getattr(exc, "code", None) not in {"content_filter", "content_policy_violation"}
+            and "content exists risk" not in str(exc).lower()
+        )
+    if isinstance(exc, ModelAPIError):
+        return True
+    # ChatOpenAI raises ValueError(ResponseError) for a failed Responses body.
+    detail = exc.args[0] if exc.args else None
+    return getattr(detail, "code", None) == "server_error"
+
+
+def _deepseek_web_result_unusable(response) -> bool:
+    message = response.result[-1]
+    return (
+        message.response_metadata.get("status") == "completed"
+        and not (message.text.strip() or message.tool_calls)
+        and isinstance(message.content, list)
+        and any(
+            isinstance(block, dict) and block.get("type") == "web_search_call" and block.get("status") == "failed"
+            and isinstance(error := block.get("error"), dict) and error.get("code") == "unavailable"
+            for block in message.content
+        )
+    )
+
+
 class NativeWebSearchMiddleware(AgentMiddleware):
     """Inject provider-native web search only after local-tool middleware.
 
@@ -404,6 +441,9 @@ class NativeWebSearchMiddleware(AgentMiddleware):
         self.tool_types = tool_types
         self.lookup_user_id = lookup_user_id
         self.bot_user_id = bot_user_id
+        self._can_fallback = bool(set(tool_types).intersection(DEEPSEEK_WEB_TOOLS))
+        # chat_agent creates a fresh middleware instance for every Agent turn.
+        self._deepseek_web_disabled = False
 
     def _with_lookup_context(self, request):
         user_id = self.lookup_user_id
@@ -435,17 +475,56 @@ class NativeWebSearchMiddleware(AgentMiddleware):
         ])
 
     def _request_with_web_search(self, request):
+        request = self._with_lookup_context(request)
+        if self._deepseek_web_disabled:
+            return self._request_without_deepseek_web(request)
         existing = {tool.get("type") for tool in request.tools if isinstance(tool, dict)}
         missing = [{"type": tool_type} for tool_type in self.tool_types if tool_type not in existing]
         if missing:
-            request = request.override(tools=[*request.tools, *missing])
-        return self._with_lookup_context(request)
+            return request.override(tools=[*request.tools, *missing])
+        return request
+
+    def _request_without_deepseek_web(self, request):
+        tools = [
+            tool for tool in request.tools
+            if not isinstance(tool, dict) or tool.get("type") not in DEEPSEEK_WEB_TOOLS
+        ]
+        system = request.system_message or SystemMessage(content="")
+        content = [*system.content_blocks, {"type": "text", "text": _DEEPSEEK_WEB_FALLBACK_HINT}]
+        return request.override(tools=tools, system_message=system.model_copy(update={"content": content}))
+
+    def _fallback_request(self, request):
+        logger.warning("DeepSeek web tools failed. Continuing the current Agent turn without them.")
+        self._deepseek_web_disabled = True
+        return self._request_without_deepseek_web(request)
 
     def wrap_model_call(self, request, handler):
-        return handler(self._request_with_web_search(request))
+        request = self._request_with_web_search(request)
+        if not self._can_fallback or self._deepseek_web_disabled:
+            return handler(request)
+        try:
+            response = handler(request)
+        except (ModelAPIError, ModelInvalidRequestError, UnprocessableEntityError, ValueError) as exc:
+            if not _deepseek_web_request_failed(exc):
+                raise
+        else:
+            if not _deepseek_web_result_unusable(response):
+                return response
+        return handler(self._fallback_request(request))
 
     async def awrap_model_call(self, request, handler):
-        return await handler(self._request_with_web_search(request))
+        request = self._request_with_web_search(request)
+        if not self._can_fallback or self._deepseek_web_disabled:
+            return await handler(request)
+        try:
+            response = await handler(request)
+        except (ModelAPIError, ModelInvalidRequestError, UnprocessableEntityError, ValueError) as exc:
+            if not _deepseek_web_request_failed(exc):
+                raise
+        else:
+            if not _deepseek_web_result_unusable(response):
+                return response
+        return await handler(self._fallback_request(request))
 
 
 class SilentReplyMiddleware(AgentMiddleware):
