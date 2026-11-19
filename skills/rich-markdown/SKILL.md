@@ -25,7 +25,6 @@ description: Compose expressive QQ replies with ordinary Markdown and small stat
 - **比较对象**：短概览用 grid 内的卡片，各对象使用不同且一致的颜色；共同维度用普通 Markdown 表格，选择依据写在正文。
 - **给出方法**：使用有序列表，步骤较完整时用 `::steps`；每步包含操作、预期结果或检查方法，命令保留 Markdown 代码块。
 - **属性和引文**：需要展示属性或原文引语时，用普通 Markdown 列表或引用。
-- **来源**：按全局输出规范判断是否需要。短回复确需给出处时，在相关句子里添加普通 Markdown 链接，省略来源列表、卡片和 UI 组件。链接指向实际使用的材料。
 - **数据与事件**：确有依据才使用 chart/stats/timeline 的 JSON 代码块，可以放在分区内部。没有数值时用正文或表格，不编造比例、指标或进度。
 - **位置与素材**：使用独立整行的 map/image/iframe/three/flow；地图只填写查证过的 WGS84 坐标，Turf.js 分析、地图图层、三维对象和流程图使用声明式字段，最终网页仍输出静态快照。`three` 与 `flow` 必须使用对应语言标记的 JSON fenced block，不要写成普通 `json` fenced block。
 - **组件数量**：一段较完整的解释通常选一个重点组件；比较、流程或同时存在两种结构时最多选两个。组件必须承载真实信息，不为了装饰把每段文字都放进卡片。

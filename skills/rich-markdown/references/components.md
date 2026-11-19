@@ -48,7 +48,7 @@
 
 颜色可用 neutral/blue/emerald/violet/amber/rose/cyan；variant 为 muted（柔和底色）、outline（描边强调）、ghost（弱化边框）。颜色区分对象或主题，不暗示不存在的好坏。
 
-段落、标题、表格、引文、链接和公式优先使用原生 Markdown；需要独立彩色分组时才用 card。长解释、完整步骤、宽表格和媒体纵向占整行。不要把每段正文装进卡片。
+段落、标题、表格、引文和公式优先使用原生 Markdown；需要独立彩色分组时才用 card。长解释、完整步骤、宽表格和媒体纵向占整行。不要把每段正文装进卡片。
 
 ## Steps
 
