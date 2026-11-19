@@ -38,7 +38,9 @@ Agent 先用 `get_recent_conversation` 或 `search_messages` 确定消息和发�
 
 ## 投递结果
 
-`send_plain_text`、`send_group_message` 和 `send_private_message` 这三个 QQ 工具直接调用 Milky。它们发送的文本达到 `[agent].tool_long_text_forward_threshold`（默认 500 字符）时，自动包装成单节点合并转发，以便在 QQ 中展开查看；短文本沿用原消息类型，配置为 `0` 时关闭包装。文本与换行原样保留，`send_plain_text` 仍先通过输出内容安全检查。发送失败不自动重复发送。该设置不影响 `send_messages()` 的最终回复和 Markdown 转图，也不修改显式的 `send_forwarded_message` 工具。
+`send_plain_text`、`send_group_message` 和 `send_private_message` 这三个 QQ 工具直接调用 Milky。它们发送的文本达到 `[agent].tool_long_text_forward_threshold`（默认 500 字符）时，自动包装成单节点合并转发，以便在 QQ 中展开查看；短文本沿用原消息类型，配置为 `0` 时关闭包装。该设置不影响最终回复和 Markdown 转图。
+
+若 PMHQ 明确返回 `SsoSendLongMsg code=-2 build scratch failed pb=<empty>`，聊天记录尚未生成。`send_forwarded_message` 将失败原因交回 Agent。如果当前用户要在本会话收取正文，Agent 可以调用 `send_plain_text(fold_long_text=false)`，按顺序分段发送可复制的文字。`send_plain_text` 自身在自动折叠遇到同一错误时也会改发普通文本。文本先经过输出检查，分段保留原文与换行。发送超时、未知平台错误、分段中途失败均停止，不重发已提交的消息。
 
 
 绘图生成和编辑请求统一使用 `size="auto"`，分辨率与横竖比例由图片模型结合提示词和参考图选择。旧配置中的 `paint_size` 仅保留加载兼容，不再限制生成尺寸。

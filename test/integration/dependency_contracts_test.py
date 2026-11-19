@@ -292,6 +292,7 @@ assert event.message[0].type == "markdown"
 assert EVENT_CLASSES["group_disband"] is GroupDisbandEvent
 assert "runtime" not in milky_file.persist_group_file.tool_call_schema.model_json_schema()["properties"]
 assert "is_self_send" in milky_file.get_private_file_download_url.args
+assert milky_message.send_plain_text.tool_call_schema.model_json_schema()["properties"]["fold_long_text"]["default"] is True
 
 calls = []
 async def send(**kwargs):

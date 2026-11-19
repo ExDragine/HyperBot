@@ -3,11 +3,71 @@ import json
 import types
 
 import pytest
+from nonebot.adapters.milky.exception import ActionFailed
 
 
 def _config(group_id=123, user_id="456"):
     return {"configurable": {"group_id": group_id, "user_id": user_id}}
 
+
+_BUILD_ERROR = (
+    "Internal error: PMHQ send failed: cmd=trpc.group.long_msg_interface.MsgService.SsoSendLongMsg "
+    "code=-2 build scratch failed pb=<empty>"
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("group_id, method, target", [
+    (123, "send_group_message", {"group_id": 123}), (None, "send_private_message", {"user_id": 456}),
+])
+@pytest.mark.parametrize("fold_long_text", [True, False])
+async def test_plain_text_delivers_all_chunks_after_forward_build_rejection(
+    load_tool_module, install_milky_bot, monkeypatch, group_id, method, target, fold_long_text,
+):
+    module = load_tool_module("milky_message")
+
+    def reply(kwargs):
+        if kwargs["message"][0].type == "forward":
+            raise ActionFailed(status="failed", retcode=500, message=_BUILD_ERROR)
+        return types.SimpleNamespace(message_seq=9, time=123)
+
+    bot = install_milky_bot(module, {method: reply})
+    bot.self_id = "999"
+    monkeypatch.setattr(module.EnvConfig, "TOOL_LONG_TEXT_FORWARD_THRESHOLD", 500)
+    text = "第一段📖\n  " * 400
+    result = await module.send_plain_text(text, config=_config(group_id), fold_long_text=fold_long_text)
+
+    assert "message_seq=9" in result
+    for name, kwargs in bot.calls:
+        assert name == method
+        assert {key: value for key, value in kwargs.items() if key != "message"} == target
+    segments = [kwargs["message"][0] for _, kwargs in bot.calls]
+    assert [seg.type for seg in segments] == (["forward"] if fold_long_text else []) + ["text"] * 3
+    assert "".join(seg.data["text"] for seg in segments if seg.type == "text") == text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fail_at", [1, 3])
+async def test_unconfirmed_forward_or_partial_text_is_never_replayed(
+    load_tool_module, install_milky_bot, monkeypatch, fail_at,
+):
+    module = load_tool_module("milky_message")
+
+    def reply(kwargs):
+        if len(bot.calls) == fail_at:
+            raise TimeoutError
+        if kwargs["message"][0].type == "forward":
+            raise ActionFailed(status="failed", retcode=500, message=_BUILD_ERROR)
+        return types.SimpleNamespace(message_seq=9, time=123)
+
+    bot = install_milky_bot(module, {"send_group_message": reply})
+    bot.self_id = "999"
+    monkeypatch.setattr(module.EnvConfig, "TOOL_LONG_TEXT_FORWARD_THRESHOLD", 500)
+    with pytest.raises(TimeoutError):
+        await module.send_plain_text("A" * 1000 + "B" * 1000 + "C", config=_config())
+    assert len(bot.calls) == fail_at
+    if fail_at == 3:
+        assert [kwargs["message"][0].data["text"] for _, kwargs in bot.calls[1:]] == ["A" * 1000, "B" * 1000]
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("group_id, method, target", [

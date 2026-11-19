@@ -1,16 +1,20 @@
 import json
+import logging
+from functools import partial
 from typing import Literal, cast
 
 from langchain.tools import ToolRuntime
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from nonebot import get_bot
+from nonebot.adapters.milky.exception import ActionFailed
 from nonebot.adapters.milky.message import Message, MessageSegment
 from pydantic import BaseModel, Field
 
 from utils.agent_context import FrontierRuntimeContext
 from utils.agents.runtime import conversation_workspace_key
 from utils.configs import EnvConfig
+from utils.milky_errors import is_forward_build_failure
 from utils.milky_tools import (
     ToolInputError,
     configurable,
@@ -24,6 +28,8 @@ from utils.milky_tools import (
 
 _DEFAULT_CONFIG = cast(RunnableConfig, None)
 _DEFAULT_RUNTIME = cast(ToolRuntime[FrontierRuntimeContext, dict], None)
+_PLAIN_TEXT_CHUNK_SIZE = 1000
+logger = logging.getLogger(__name__)
 
 
 def _tool_text_message(bot: object, text: str) -> Message | str:
@@ -97,16 +103,19 @@ def _format_message_response(response) -> str:
 async def send_plain_text(
     text: str,
     config: RunnableConfig = _DEFAULT_CONFIG,
+    *,
+    fold_long_text: bool = True,
 ) -> str:
     """立即向当前 QQ 会话发送纯文本，不渲染 Markdown、不转图片。
 
     用于用户要求可复制的文字、代码、链接或明确要求不要图片的最终内容。
     保留原文和换行，Markdown 标记也按文字发送；不要用来发送思考或过程状态。
     目标由运行时会话决定，不能指定其他群或用户。成功后不要在最终回复中重复正文。
-    长文本达到配置阈值时自动使用可展开的合并转发消息，仍保留原文；失败不自动重试。
+    默认将达到阈值的长文本折叠成聊天记录。已知转发构建失败时可直接分段发送。
 
     Args:
         text: 要发送的完整纯文本正文
+        fold_long_text: 是否按配置折叠长文本。转发构建失败后传 false，按原文顺序发送普通文本。
     """
     if not text.strip():
         raise ToolInputError("纯文本消息不能为空。")
@@ -122,15 +131,28 @@ async def send_plain_text(
     if not content or not content.strip():
         raise ToolInputError("纯文本消息经内容检查后为空，未发送。")
     bot = get_bot()
-    outgoing = _tool_text_message(bot, content)
-    message = [MessageSegment.text(content)] if isinstance(outgoing, str) else outgoing
-    response = (
-        await bot.send_group_message(group_id=target, message=message)
-        if is_group
-        else await bot.send_private_message(user_id=target, message=message)
+    send = (
+        partial(bot.send_group_message, group_id=target) if is_group
+        else partial(bot.send_private_message, user_id=target)
     )
-    label = "合并转发长文本" if not isinstance(outgoing, str) else "纯文本"
-    return f"已向当前会话发送{label}消息，{_format_message_response(response)}。不要重复发送正文。"
+    if fold_long_text:
+        outgoing = _tool_text_message(bot, content)
+        if isinstance(outgoing, str):
+            response = await send(message=[MessageSegment.text(content)])
+            return f"已向当前会话发送纯文本消息，{_format_message_response(response)}。不要重复发送正文。"
+        try:
+            response = await send(message=outgoing)
+        except ActionFailed as exc:
+            if not is_forward_build_failure(exc):
+                raise
+            logger.warning("QQ long-text forward build failed; sending plain text")
+        else:
+            return f"已向当前会话发送合并转发长文本消息，{_format_message_response(response)}。不要重复发送正文。"
+
+    for start in range(0, len(content), _PLAIN_TEXT_CHUNK_SIZE):
+        chunk = content[start:start + _PLAIN_TEXT_CHUNK_SIZE]
+        response = await send(message=[MessageSegment.text(chunk)])
+    return f"已向当前会话发送全部纯文本，最后一条 {_format_message_response(response)}。不要重复发送正文。"
 
 
 @tool(response_format="content")
