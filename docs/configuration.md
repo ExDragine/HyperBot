@@ -83,6 +83,7 @@ profile 常用字段：
 
 - `base_url`、`api_key`：地址与密钥；模型 API key 不再放在 `[key]`。
 - 官方 OpenAI Responses 使用 `web_search`。官方 DeepSeek Flash Responses 默认启用 `deepseek_web_search` 和 `deepseek_read_url`，可在其 profile 设置 `native_web_search = false`。兼容 Responses 网关需确认支持 `web_search` 后显式启用。
+- 官方 OpenAI profile 可设 `native_decisions = true` 并填写官方 `api_key`，同时在 `[models]` 中配置 `decision_model = "gpt-6-luna"` 和对应的 `decision_model_provider`。回复门控、平台事件判断和截图意图将使用 `/v1/decisions`。这是独立于 `api_mode` 的 Decision 开关，默认关闭。接口使用原生判断题、选择题和评分题，无需设置 `decision_extra_body`。[OpenAI Decisions API](https://developers.openai.com/api/docs/guides/decisions)
 - `structured_output_method`：Decision 结构化策略，`auto`、`json_schema`、`function_calling`、`json_mode`、`text_json`，默认 `auto`。
 - `decision_extra_body`：只作用于 decision 请求的 `extra_body`，例如关闭 DeepSeek 思考模式；旧字段 `signal_extra_body` 仍可读取，不能与 `decision_extra_body` 配置不同内容。
 - `safety_check`：可选的 DeepSeek Chatbot API 安全审核参数，例如 `{ level = "high" }`。官方 DeepSeek profile 默认使用高强度审核。

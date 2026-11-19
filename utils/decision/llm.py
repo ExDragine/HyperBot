@@ -12,6 +12,7 @@ from utils.configs import EnvConfig
 from utils.decision_llm import DecisionLLM
 
 from .models import DecisionQuestions, DecisionResult, DecisionState
+from .openai import decide_with_openai, openai_decisions_route
 from .validation import validate_answers, validate_questions
 
 
@@ -43,7 +44,7 @@ def _json_payload(state: DecisionState, questions: DecisionQuestions) -> str:
 
 
 class LLMDecisionProvider:
-    """Answer the standard decision contract with the configured decision model."""
+    """Answer typed questions through the configured Decision model and protocol."""
 
     def __init__(
         self,
@@ -59,8 +60,17 @@ class LLMDecisionProvider:
         self.max_retries = max_retries
         self.timeout = timeout
         self.method = method
+        self._native_route = None if method is not None else openai_decisions_route(self.model, self.provider)
+
+    @property
+    def uses_native_decisions(self) -> bool:
+        return self._native_route is not None
 
     async def decide(self, state: DecisionState, questions: DecisionQuestions) -> DecisionResult:
+        if self._native_route is not None:
+            return await decide_with_openai(
+                self._native_route, state, questions, max_retries=self.max_retries, timeout=self.timeout,
+            )
         validate_questions(questions)
         started = time.perf_counter()
         envelope: DecisionEnvelope = await DecisionLLM(

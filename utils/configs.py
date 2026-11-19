@@ -94,6 +94,7 @@ class ProviderProfile(BaseModel):
     base_url: str = ""
     api_key: str = ""
     native_web_search: bool | None = None
+    native_decisions: bool = Field(default=False, strict=True)
     structured_output_method: Literal["auto", "json_schema", "function_calling", "json_mode", "text_json"] = "auto"
     decision_extra_body: dict[str, Any] = Field(default_factory=dict)
     signal_extra_body: dict[str, Any] = Field(default_factory=dict)
