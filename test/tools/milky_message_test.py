@@ -31,10 +31,12 @@ async def test_tool_sent_long_text_uploads_a_utf8_file_to_the_same_target(
     upload = method.replace("send_", "upload_").replace("_message", "_file")
     bot = install_milky_bot(module, {upload: "txt-id"})
     text = "  ```python\r\nprint('hello')\n```\n" + "第一段📖\n  " * 400
-    result = await getattr(module, tool_name)(text, config=_config(group_id=group_id))
+    result = await getattr(module, tool_name)(
+        text, config=_config(group_id=group_id), file_title="测试记录",
+    )
 
-    assert "file_id=txt-id" in result
-    assert bot.calls == [(upload, {**target, "raw": text.encode("utf-8"), "file_name": "长文本.txt"})]
+    assert "测试记录.txt" in result and "file_id=txt-id" in result
+    assert bot.calls == [(upload, {**target, "raw": text.encode("utf-8"), "file_name": "测试记录.txt"})]
 
 
 @pytest.mark.asyncio
@@ -46,7 +48,7 @@ async def test_plain_text_uses_file_only_above_character_limit(load_tool_module,
         "upload_group_file": "txt-id",
     })
     text = "字" * length
-    result = await module.send_plain_text(text, config=_config())
+    result = await module.send_plain_text(text, config=_config(), file_title=" .txt ")
 
     if length == 1000:
         assert "message_seq=7" in result
@@ -56,6 +58,19 @@ async def test_plain_text_uses_file_only_above_character_limit(load_tool_module,
         assert bot.calls == [
             ("upload_group_file", {"group_id": 123, "raw": text.encode("utf-8"), "file_name": "长文本.txt"}),
         ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("title, file_name", [
+    (" 项目记录.TXT ", "项目记录.txt"),
+    ("../会议:纪要\n", "会议 纪要.txt"),
+    ("内容" * 40, "内容" * 30 + ".txt"),
+])
+async def test_text_attachment_normalizes_title(load_tool_module, install_milky_bot, title, file_name):
+    module = load_tool_module("milky_message")
+    bot = install_milky_bot(module, {"upload_group_file": "txt-id"})
+    await module.send_group_message("字" * 1001, config=_config(), file_title=title)
+    assert len(bot.calls) == 1 and bot.calls[0][1]["file_name"] == file_name
 
 
 @pytest.mark.asyncio

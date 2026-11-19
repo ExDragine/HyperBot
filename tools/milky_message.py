@@ -1,4 +1,5 @@
 import json
+import re
 from typing import cast
 
 from langchain.tools import ToolRuntime
@@ -23,18 +24,29 @@ _DEFAULT_CONFIG = cast(RunnableConfig, None)
 _DEFAULT_RUNTIME = cast(ToolRuntime[FrontierRuntimeContext, dict], None)
 _MAX_INLINE_TEXT_CHARS = 1000
 _LONG_TEXT_FILE_NAME = "长文本.txt"
+_MAX_FILE_TITLE_CHARS = 60
+_INVALID_FILE_NAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f]+')
 
 
-async def _send_text(text: str, target: int, *, is_group: bool) -> str:
+def _text_file_name(title: str | None) -> str:
+    stem = _INVALID_FILE_NAME_CHARS.sub(" ", title or "").rstrip(" .")
+    if stem.lower().endswith(".txt"):
+        stem = stem[:-4]
+    stem = stem.lstrip(" .")[:_MAX_FILE_TITLE_CHARS].rstrip(" .")
+    return f"{stem}.txt" if stem else _LONG_TEXT_FILE_NAME
+
+
+async def _send_text(text: str, target: int, *, is_group: bool, file_title: str | None) -> str:
     bot = get_bot()
     if len(text) > _MAX_INLINE_TEXT_CHARS:
         payload = text.encode("utf-8")
+        file_name = _text_file_name(file_title)
         file_id = (
-            await bot.upload_group_file(group_id=target, raw=payload, file_name=_LONG_TEXT_FILE_NAME)
+            await bot.upload_group_file(group_id=target, raw=payload, file_name=file_name)
             if is_group
-            else await bot.upload_private_file(user_id=target, raw=payload, file_name=_LONG_TEXT_FILE_NAME)
+            else await bot.upload_private_file(user_id=target, raw=payload, file_name=file_name)
         )
-        return f"文件 {_LONG_TEXT_FILE_NAME}，file_id={file_id}"
+        return f"文件 {file_name}，file_id={file_id}"
     response = (
         await bot.send_group_message(group_id=target, message=text)
         if is_group
@@ -48,6 +60,8 @@ async def _send_text(text: str, target: int, *, is_group: bool) -> str:
 async def send_plain_text(
     text: str,
     config: RunnableConfig = _DEFAULT_CONFIG,
+    *,
+    file_title: str | None = None,
 ) -> str:
     """立即向当前 QQ 会话发送纯文本，不渲染 Markdown、不转图片。
 
@@ -58,6 +72,7 @@ async def send_plain_text(
 
     Args:
         text: 要发送的完整纯文本正文
+        file_title: TXT 附件标题，优先用用户指定的标题，否则根据正文拟一个简短标题。仅在超过 1000 字符时使用，后缀会自动补齐。
     """
     if not text.strip():
         raise ToolInputError("纯文本消息不能为空。")
@@ -72,7 +87,7 @@ async def send_plain_text(
     content = await sanitize_outgoing_text(text)
     if not content or not content.strip():
         raise ToolInputError("纯文本消息经内容检查后为空，未发送。")
-    receipt = await _send_text(content, target, is_group=is_group)
+    receipt = await _send_text(content, target, is_group=is_group, file_title=file_title)
     return f"已向当前会话发送正文，{receipt}。不要重复发送正文。"
 
 
@@ -82,14 +97,17 @@ async def send_private_message(
     message_text: str,
     user_id: int | None = None,
     config: RunnableConfig = _DEFAULT_CONFIG,
+    *,
+    file_title: str | None = None,
 ) -> str:
     """发送私聊文本消息，超过 1000 字符时发送 UTF-8 TXT 附件。
     Args:
         message_text: 消息文本
         user_id: 可选好友 QQ 号，未传时使用当前用户上下文
+        file_title: TXT 附件标题，优先用用户指定的标题，否则根据正文拟一个简短标题。仅在超过 1000 字符时使用，后缀会自动补齐。
     """
     resolved_user_id = require_user_id(user_id, config)
-    return await _send_text(message_text, resolved_user_id, is_group=False)
+    return await _send_text(message_text, resolved_user_id, is_group=False, file_title=file_title)
 
 
 @tool(response_format="content")
@@ -98,14 +116,17 @@ async def send_group_message(
     message_text: str,
     group_id: int | None = None,
     config: RunnableConfig = _DEFAULT_CONFIG,
+    *,
+    file_title: str | None = None,
 ) -> str:
     """发送群文本消息，超过 1000 字符时发送 UTF-8 TXT 附件。
     Args:
         message_text: 消息文本
         group_id: 可选群号，未传时使用当前群聊
+        file_title: TXT 附件标题，优先用用户指定的标题，否则根据正文拟一个简短标题。仅在超过 1000 字符时使用，后缀会自动补齐。
     """
     resolved_group_id = require_group_id(group_id, config)
-    return await _send_text(message_text, resolved_group_id, is_group=True)
+    return await _send_text(message_text, resolved_group_id, is_group=True, file_title=file_title)
 
 
 @tool(response_format="content")

@@ -292,7 +292,9 @@ assert event.message[0].type == "markdown"
 assert EVENT_CLASSES["group_disband"] is GroupDisbandEvent
 assert "runtime" not in milky_file.persist_group_file.tool_call_schema.model_json_schema()["properties"]
 assert "is_self_send" in milky_file.get_private_file_download_url.args
-assert set(milky_message.send_plain_text.tool_call_schema.model_json_schema()["properties"]) == {"text"}
+schema = milky_message.send_plain_text.tool_call_schema.model_json_schema()
+assert set(schema["properties"]) == {"text", "file_title"}
+assert schema["required"] == ["text"]
 assert not hasattr(milky_message, "send_forwarded_message")
 assert milky_message.get_forwarded_messages.name == "get_forwarded_messages"
 
@@ -312,11 +314,14 @@ bot = ContractBot(None, "999", None)
 milky_message.get_bot = lambda: bot
 async def run():
     article = "长文\n" * 500
-    for context in ({"group_id": 789}, {"user_id": 456}):
-        result = await milky_message.send_plain_text.ainvoke({"text": article}, config={"configurable": context})
+    for context, args in (
+        ({"group_id": 789}, {"text": article, "file_title": "文章全文"}),
+        ({"user_id": 456}, {"text": article}),
+    ):
+        result = await milky_message.send_plain_text.ainvoke(args, config={"configurable": context})
         assert "file_id=txt-id" in result
     assert calls == [
-        ("upload_group_file", 789, "长文本.txt", article.encode("utf-8")),
+        ("upload_group_file", 789, "文章全文.txt", article.encode("utf-8")),
         ("upload_private_file", 456, "长文本.txt", article.encode("utf-8")),
     ]
 asyncio.run(run())

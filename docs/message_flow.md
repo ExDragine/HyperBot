@@ -38,7 +38,7 @@ Agent 先用 `get_recent_conversation` 或 `search_messages` 确定消息和发�
 
 ## 投递结果
 
-`send_plain_text`、`send_group_message` 和 `send_private_message` 通过 Milky 发送普通文本。超过 1000 字符时，改发一个 UTF-8 的 `长文本.txt` 附件，保留正文和换行。文件上传失败会按工具错误处理。`send_plain_text` 发送前会执行输出检查。
+`send_plain_text`、`send_group_message` 和 `send_private_message` 通过 Milky 发送普通文本。超过 1000 字符时，改发一个 UTF-8 的 TXT 附件，保留正文和换行。通过 `file_title` 使用用户指定的标题或根据正文拟定标题。工具自动处理文件名字符和 `.txt` 后缀，未提供有效标题时使用 `长文本.txt`。文件上传失败会按工具错误处理。`send_plain_text` 发送前会执行输出检查。
 
 
 绘图生成和编辑请求统一使用 `size="auto"`，分辨率与横竖比例由图片模型结合提示词和参考图选择。旧配置中的 `paint_size` 仅保留加载兼容，不再限制生成尺寸。
