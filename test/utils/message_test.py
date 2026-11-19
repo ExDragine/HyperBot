@@ -434,6 +434,7 @@ def test_message_should_render_image_for_hard_to_text_content(content):
     "content",
     [
         "普通短消息继续走文本",
+        "这项规格可见[官方文档](https://example.com/spec)。",
         "The price is $5 today.",
         "Use `echo hello` in shell.",
         '```markdown\n::card{color="blue"}\n语法示例\n::\n```',

@@ -107,6 +107,8 @@ def test_frontier_load_system_prompt_keeps_only_always_on_rules(monkeypatch):
     assert prompt.count("get_recent_conversation") == 1
     assert "联网查询和链接读取优先使用当前模型的服务端联网能力" in prompt
     assert "遇到限流或额度耗尽后停止继续搜索" in prompt
+    assert "默认省略来源信息" in prompt
+    assert "只有当前用户明确要出处、原文或链接，或本轮任务确实需要可核对的依据" in prompt
     assert prompt.count("document-agent") == 1
     assert "earth-data-agent" not in prompt
     assert prompt.count("`/skills/ens-weather/SKILL.md`") == 1
@@ -125,6 +127,7 @@ def test_rich_markdown_skill_owns_renderer_contract():
     assert "```chart" not in prompts_mod.load_system_prompt()
     assert "不要为所有回答规定同一套模块或顺序" in skill
     assert "500 字符" in skill
+    assert "短回复确需给出处时，在相关句子里添加普通 Markdown 链接" in skill
     assert (root / "references" / "components.md").is_file()
     assert (root / "references" / "data.md").is_file()
 
@@ -1541,6 +1544,7 @@ def test_deepseek_search_followup_uses_same_sender_topic_without_changing_histor
     assert updated.messages[:-1] == [*previous, pinned]
     assert updated.messages[-1].content.startswith("@555\n找一下")
     assert topic in updated.messages[-1].content and "上网搜索" in updated.messages[-1].content
+    assert "附来源" not in updated.messages[-1].content
     assert updated.messages[-1].content.count("@555") == 1
     assert "另一个人的话题" not in updated.messages[-1].content
     assert request.messages == [*previous, current, pinned] and current.content == "@555\n找一下"

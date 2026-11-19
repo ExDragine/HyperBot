@@ -277,6 +277,7 @@ def skip_reply(
 WEB_SEARCH_PROMPT_HINT = (
     "\n\n你拥有 web_search 工具，可以搜索实时网络信息。"
     "涉及最新新闻、实时数据或你不确定的最新事实时，优先使用 web_search 查证，不要凭记忆编造。"
+    "是否在回答中给出来源，按全局输出规范和本轮需求决定。"
 )
 
 DEEPSEEK_WEB_SEARCH_PROMPT_HINT = (
@@ -284,7 +285,7 @@ DEEPSEEK_WEB_SEARCH_PROMPT_HINT = (
     "回答没有把握的公开事实之前，先使用服务端搜索核实。冷门实体、版本差异、外观和颜色等具体细节需要查证时，先搜再答。"
     "前文有待核实的公开事实时，用户说「找一下」「查一下」「搜一下」或「帮我确认」就是在请求搜索核实。"
     "短追问从最近对话确定完整主题，带上对象名称和待核实的细节主动搜索。"
-    "专用工具的查询范围不足时，继续用服务端搜索。根据查到的资料简短回答，附实际使用的来源链接。"
+    "专用工具的查询范围不足时，继续用服务端搜索。根据查到的资料简短回答，按全局输出规范决定是否给出来源。"
     "确实查不到可靠资料时，说明查证结果。用户指定查找聊天记录、本地文件或要求离线时，遵守其范围。"
 )
 
@@ -465,7 +466,7 @@ class NativeWebSearchMiddleware(AgentMiddleware):
             return request
 
         index, current = turns[-1]
-        note = f"\n承接前文要核实的问题「{topic}」。如果是可公开查证的事实，请上网搜索这个完整主题并附来源。"
+        note = f"\n承接前文要核实的问题「{topic}」。如果是可公开查证的事实，请上网搜索这个完整主题。"
         content = current.content
         content = [*content, {"type": "text", "text": note}] if isinstance(content, list) else content + note
         current = current.model_copy(update={"content": content})
