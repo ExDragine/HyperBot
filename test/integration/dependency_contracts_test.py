@@ -292,25 +292,25 @@ assert event.message[0].type == "markdown"
 assert EVENT_CLASSES["group_disband"] is GroupDisbandEvent
 assert "runtime" not in milky_file.persist_group_file.tool_call_schema.model_json_schema()["properties"]
 assert "is_self_send" in milky_file.get_private_file_download_url.args
-assert milky_message.send_plain_text.tool_call_schema.model_json_schema()["properties"]["fold_long_text"]["default"] is True
+assert set(milky_message.send_plain_text.tool_call_schema.model_json_schema()["properties"]) == {"text"}
+assert not hasattr(milky_message, "send_forwarded_message")
+assert milky_message.get_forwarded_messages.name == "get_forwarded_messages"
 
 calls = []
 async def send(**kwargs):
-    message = kwargs["message"]
-    assert isinstance(message, Message)
-    elements = message.to_elements()
-    assert elements[0]["data"]["messages"][0]["time"] == 123
-    calls.append(kwargs)
-    return SimpleNamespace(message_seq=9, time=456)
+    elements = Message(kwargs["message"]).to_elements()
+    assert [segment["type"] for segment in elements] == ["text"]
+    calls.append((kwargs["group_id"], elements[0]["data"]["text"]))
+    return SimpleNamespace(message_seq=len(calls), time=456)
 
 milky_message.get_bot = lambda: SimpleNamespace(send_group_message=send)
 async def run():
-    result = await milky_message.send_forwarded_message.ainvoke({
-        "messages": [{"user_id": 456, "sender_name": "Alice", "text": "hello", "time": 123}],
-        "message_scene": "group", "peer_id": 789,
-    })
-    assert "message_seq=9" in result
-    assert calls[0]["group_id"] == 789
+    article = "长文\n" * 500
+    result = await milky_message.send_plain_text.ainvoke(
+        {"text": article}, config={"configurable": {"group_id": 789}},
+    )
+    assert "message_seq=2" in result
+    assert calls == [(789, article[:1000]), (789, article[1000:])]
 asyncio.run(run())
 '''
     result = subprocess.run(  # noqa: S603 - fixed script and repository path

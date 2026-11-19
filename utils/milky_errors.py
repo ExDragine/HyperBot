@@ -20,23 +20,6 @@ _TOKENS = re.compile(r"(?i)\b(?:bearer\s+[^\s,;}\]]+|sk-[a-z0-9_-]+)")
 _EMAILS = re.compile(r"\b[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}\b")
 _IDENTIFIERS = re.compile(r"(?<!\w)\d{5,}(?!\w)")
 
-_PMHQ_FORWARD_BUILD_FAILURE = (
-    "PMHQ send failed: cmd=trpc.group.long_msg_interface.MsgService.SsoSendLongMsg "
-    "code=-2 build scratch failed pb=<empty>"
-)
-
-
-def is_forward_build_failure(exc: Exception) -> bool:
-    """Match the PMHQ resource-build rejection before the chat card is sent."""
-    if not isinstance(exc, ActionFailed):
-        return False
-    info = exc.info
-    return (
-        info.get("status") == "failed"
-        and info.get("retcode") in (500, "500")
-        and info.get("message") in (_PMHQ_FORWARD_BUILD_FAILURE, f"Internal error: {_PMHQ_FORWARD_BUILD_FAILURE}")
-    )
-
 
 def _sensitive_strings(value: object, depth: int = 0) -> Iterator[str]:
     if isinstance(value, str):

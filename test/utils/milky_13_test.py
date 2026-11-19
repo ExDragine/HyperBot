@@ -5,7 +5,6 @@ from types import SimpleNamespace
 
 import pytest
 from nonebot.adapters.milky.event import GroupDisbandEvent
-from nonebot.adapters.milky.message import Message
 
 from plugins.agent import gateway as gateway_module
 from plugins.agent.message_normalizer import normalize_segments
@@ -78,33 +77,6 @@ async def test_group_disband_passes_nudge_matcher_and_is_handled_without_reply(m
     assert not await playground._is_nudge(event)
     assert await agent._is_group_disband(event)
     await agent.handle_group_disband(event)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("scene", ["friend", "group"])
-async def test_forward_tool_preserves_node_times(load_tool_module, monkeypatch, scene):
-    module = load_tool_module("milky_message")
-    calls = []
-
-    async def send(**kwargs):
-        calls.append(kwargs)
-        return SimpleNamespace(message_seq=3, time=456)
-
-    monkeypatch.setattr(module, "get_bot", lambda: SimpleNamespace(send_group_message=send, send_private_message=send))
-    result = await module.send_forwarded_message(
-        messages=[
-            {"user_id": 456, "sender_name": "Alice", "text": "first", "time": 123},
-            {"user_id": 789, "sender_name": "Bob", "text": "second"},
-        ],
-        message_scene=scene, config={"configurable": {"group_id": 123, "user_id": "456"}},
-    )
-    assert "message_seq=3" in result
-    assert calls[0]["group_id" if scene == "group" else "user_id"] == (123 if scene == "group" else 456)
-    message = calls[0]["message"]
-    assert isinstance(message, Message)
-    nodes = message[0].data["messages"]
-    assert [node.time for node in nodes] == [123, None]
-    assert str(nodes[0].segments) == "first"
 
 
 @pytest.mark.asyncio

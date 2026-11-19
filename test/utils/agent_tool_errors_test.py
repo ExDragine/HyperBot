@@ -52,48 +52,6 @@ async def test_write_failure_halts_instead_of_inviting_repeat():
     assert "secrets" not in str(result)
 
 
-_BUILD_ERROR = (
-    "Internal error: PMHQ send failed: cmd=trpc.group.long_msg_interface.MsgService.SsoSendLongMsg "
-    "code=-2 build scratch failed pb=<empty>"
-)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("scene, peer, same_chat", [("group", None, True), ("group", 456, False), ("friend", 123, False)])
-async def test_rejected_forward_build_returns_recoverable_error_without_replaying(scene, peer, same_chat):
-    calls = []
-    req = request("send_forwarded_message")
-    req.runtime = SimpleNamespace(config={"configurable": {"group_id": 123, "user_id": 123}})
-    req.tool_call["args"] = {"message_scene": scene, "peer_id": peer, "messages": [{"text": "private article"}]}
-
-    async def fail(_request):
-        calls.append(1)
-        raise ActionFailed(status="failed", retcode=500, message=_BUILD_ERROR)
-
-    reply = await tool_error_middleware().awrap_tool_call(req, fail)
-    assert calls == [1]
-    assert reply.status == "error" and reply.tool_call_id == "call-1"
-    assert "本次转发未送达" in reply.content
-    assert ("fold_long_text=false" in reply.content) is same_chat
-    assert "private article" not in reply.content and "PMHQ" not in reply.content
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("name, retcode, message", [
-    ("send_forwarded_message", 500, "Internal error: request timed out"),
-    ("send_forwarded_message", 500, _BUILD_ERROR.replace("SsoSendLongMsg", "SendMsg")),
-    ("send_forwarded_message", 500, _BUILD_ERROR.replace("pb=<empty>", "pb=1234")),
-    ("send_forwarded_message", 400, _BUILD_ERROR),
-    ("send_plain_text", 500, _BUILD_ERROR),
-])
-async def test_unconfirmed_writes_still_stop(name, retcode, message):
-    async def fail(_request):
-        raise ActionFailed(status="failed", retcode=retcode, message=message)
-
-    with pytest.raises(ToolExecutionUncertainError):
-        await tool_error_middleware().awrap_tool_call(request(name), fail)
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize("error", [
     asyncio.CancelledError(),

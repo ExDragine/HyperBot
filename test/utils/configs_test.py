@@ -24,7 +24,17 @@ def test_retired_middleware_settings_are_ignored_without_mutating_input():
     assert config["limits"]["agent_ptc_call_limit"] == 20
 
 
-@pytest.mark.parametrize("section", ["features", "limits"])
+def test_retired_forward_threshold_allows_existing_agent_config():
+    from utils.configs import parse_config
+
+    agent = {"tool_long_text_forward_threshold": 500, "message_image_text_threshold": 800}
+    settings = parse_config({"config_version": 2, "agent": agent})
+    assert settings.agent.message_image_text_threshold == 800
+    assert "tool_long_text_forward_threshold" not in settings.agent.model_dump()
+    assert agent["tool_long_text_forward_threshold"] == 500
+
+
+@pytest.mark.parametrize("section", ["features", "limits", "agent"])
 def test_retired_middleware_compatibility_keeps_unknown_fields_strict(section):
     from utils.configs import parse_config
 
