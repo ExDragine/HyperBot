@@ -53,6 +53,8 @@ from utils.llm_factory import (
 )
 from utils.media import detect_mime_type, inline_media_bytes, media_block_kind
 from utils.providers.deepseek.chat import DEEPSEEK_WEB_TOOLS
+from utils.providers.deepseek.web import SEARCH_PROMPT_HINT
+from utils.providers.deepseek.web import TOOL_NAMES as DEEPSEEK_SEARCH_TOOLS
 
 from .capture import detect_browser_capture_intent
 from .execution import current_run_id, managed_agent_turn
@@ -475,14 +477,14 @@ class NativeWebSearchMiddleware(AgentMiddleware):
         ])
 
     def _request_with_web_search(self, request):
-        request = self._with_lookup_context(request)
-        if self._deepseek_web_disabled:
-            return self._request_without_deepseek_web(request)
         existing = {tool.get("type") for tool in request.tools if isinstance(tool, dict)}
         missing = [{"type": tool_type} for tool_type in self.tool_types if tool_type not in existing]
-        if missing:
-            return request.override(tools=[*request.tools, *missing])
-        return request
+        tools = request.tools
+        if self._can_fallback:
+            # Keep the standalone tools registered in the graph. Only advertise them
+            # after dropping the hosted tools, including the identically named search.
+            tools = [tool for tool in tools if _named_item_key(tool)[0] not in DEEPSEEK_SEARCH_TOOLS]
+        return request.override(tools=[*tools, *missing])
 
     def _request_without_deepseek_web(self, request):
         tools = [
@@ -490,7 +492,10 @@ class NativeWebSearchMiddleware(AgentMiddleware):
             if not isinstance(tool, dict) or tool.get("type") not in DEEPSEEK_WEB_TOOLS
         ]
         system = request.system_message or SystemMessage(content="")
-        content = [*system.content_blocks, {"type": "text", "text": _DEEPSEEK_WEB_FALLBACK_HINT}]
+        hint = _DEEPSEEK_WEB_FALLBACK_HINT
+        if DEEPSEEK_SEARCH_TOOLS <= {_named_item_key(tool)[0] for tool in tools}:
+            hint += SEARCH_PROMPT_HINT
+        content = [*system.content_blocks, {"type": "text", "text": hint}]
         return request.override(tools=tools, system_message=system.model_copy(update={"content": content}))
 
     def _fallback_request(self, request):
@@ -499,11 +504,14 @@ class NativeWebSearchMiddleware(AgentMiddleware):
         return self._request_without_deepseek_web(request)
 
     def wrap_model_call(self, request, handler):
-        request = self._request_with_web_search(request)
-        if not self._can_fallback or self._deepseek_web_disabled:
-            return handler(request)
+        request = self._with_lookup_context(request)
+        if self._deepseek_web_disabled:
+            return handler(self._request_without_deepseek_web(request))
+        primary = self._request_with_web_search(request)
+        if not self._can_fallback:
+            return handler(primary)
         try:
-            response = handler(request)
+            response = handler(primary)
         except (ModelAPIError, ModelInvalidRequestError, UnprocessableEntityError, ValueError) as exc:
             if not _deepseek_web_request_failed(exc):
                 raise
@@ -513,11 +521,14 @@ class NativeWebSearchMiddleware(AgentMiddleware):
         return handler(self._fallback_request(request))
 
     async def awrap_model_call(self, request, handler):
-        request = self._request_with_web_search(request)
-        if not self._can_fallback or self._deepseek_web_disabled:
-            return await handler(request)
+        request = self._with_lookup_context(request)
+        if self._deepseek_web_disabled:
+            return await handler(self._request_without_deepseek_web(request))
+        primary = self._request_with_web_search(request)
+        if not self._can_fallback:
+            return await handler(primary)
         try:
-            response = await handler(request)
+            response = await handler(primary)
         except (ModelAPIError, ModelInvalidRequestError, UnprocessableEntityError, ValueError) as exc:
             if not _deepseek_web_request_failed(exc):
                 raise
@@ -788,6 +799,8 @@ class FrontierCognitive:
             logger.debug(
                 f"当前模型路由不支持服务端原生 web_search: {native_web_search_reason}"
             )
+        if not native_tools and DEEPSEEK_SEARCH_TOOLS <= {tool.name for tool in effective_tools}:
+            system_prompt += SEARCH_PROMPT_HINT
         subagents = []
         if allow_local_tools:
             if document_subagent := getattr(self, "document_subagent", None):

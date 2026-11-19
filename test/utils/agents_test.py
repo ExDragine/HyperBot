@@ -1392,11 +1392,20 @@ async def test_chat_agent_skips_web_search_when_route_unsupported(monkeypatch, t
 
 
 @pytest.mark.asyncio
-async def test_chat_agent_advertises_deepseek_hosted_tools_without_local_wrappers(monkeypatch, tmp_path):
+async def test_chat_agent_exposes_standalone_search_without_native_web_search(monkeypatch, tmp_path):
+    tools = [types.SimpleNamespace(name=name) for name in ("deepseek_web_search", "deepseek_web_fetch")]
+    captured = await _run_chat_agent_with_web_search(monkeypatch, tmp_path, supported=False, tools=tools)
+
+    assert {tool.name for tool in tools} <= {tool.name for tool in captured["tools"]}
+    assert cognitive_mod.SEARCH_PROMPT_HINT in captured["system_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_chat_agent_advertises_deepseek_hosted_tools(monkeypatch, tmp_path):
     hosted = ("deepseek_web_search", "deepseek_read_url")
     monkeypatch.setattr(cognitive_mod, "native_web_search_tools", lambda *_: hosted)
     captured = await _run_chat_agent_with_web_search(monkeypatch, tmp_path, supported=True, model="deepseek-flash")
-    assert not {"web_search_deepseek", "deepseek_web_fetch"} & {tool.name for tool in captured["tools"]}
+    assert cognitive_mod.SEARCH_PROMPT_HINT not in captured["system_prompt"]
     middleware = next(item for item in captured["middleware"] if isinstance(item, cognitive_mod.NativeWebSearchMiddleware))
     assert middleware.tool_types == hosted
     assert cognitive_mod.DEEPSEEK_WEB_SEARCH_PROMPT_HINT in captured["system_prompt"]

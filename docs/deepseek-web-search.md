@@ -16,7 +16,11 @@ base_url = "https://api.deepseek.com"
 api_key = ""
 ```
 
-API Key 配在模型使用的 profile 中。`native_web_search = false` 可关闭该 profile 的服务端工具。旧 `[search]` 配置仍可读取，当前联网能力由主模型路由决定。
+API Key 配在模型使用的 profile 中。`native_web_search = false` 可关闭该 profile 的服务端工具。
+
+独立工具 `deepseek_web_search` 和 `deepseek_web_fetch` 由 HyperBot 调用 DeepSeek Search / Fetch 接口，复用 `[search].provider` 的 API Key。默认复用 `deepseek_responses`，已有 `[search]` 配置可以继续使用。`[search].enabled = false` 可关闭独立工具。
+
+DeepSeek 服务端联网失败并触发回退时，当前轮会改用独立工具。主模型无服务端联网时，已配置的独立工具可以直接使用。搜索默认返回 20 条，网页正文过长时可通过 `content_path` 读取全文。独立接口按成功请求计费。 [DeepSeek Search & Fetch](https://api-docs.deepseek.com/zh-cn/guides/search/)
 
 ## 每日新闻
 

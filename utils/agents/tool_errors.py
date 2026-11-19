@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 BUDGET_ERRORS = (ModelCallLimitExceededError, ToolCallLimitExceededError)
 CONTROL_ERRORS = (*BUDGET_ERRORS, CheckpointCapacityExceeded, SessionInterruptedError)
 WEB_SEARCH_TOOL_NAMES = frozenset({
+    "deepseek_web_search", "deepseek_web_fetch",
     "web_search_exa", "web_fetch_exa", "tavily_search", "tavily_extract",
     "tavily_map", "tavily_crawl", "tavily_research",
 })

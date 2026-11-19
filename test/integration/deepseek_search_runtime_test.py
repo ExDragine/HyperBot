@@ -87,9 +87,12 @@ from langchain.agents import create_agent
 from langchain_core.exceptions import ModelInvalidRequestError
 from langchain_core.tools import tool
 from openai import AsyncOpenAI
+from tools.deepseek_search import deepseek_web_fetch, deepseek_web_search
+from utils.agent_context import FrontierRuntimeContext
 from utils.agents.cognitive import NativeWebSearchMiddleware
 from utils.configs import EnvConfig
 from utils.llm_factory import create_llm, native_web_search_tools
+from utils.providers.deepseek import web
 
 EnvConfig.reload({"config_version": 2, "providers": {"deepseek_responses": {"api_key": "test-key"}}})
 MODEL = "deepseek-flash"
@@ -106,7 +109,8 @@ def response(*items, status="completed", error=None):
                                "model": MODEL, "output": items, "error": error})
 
 async def check(case):
-    requests, executions = [], []
+    requests, executions, standalone_calls = [], [], []
+    source_url = "https://example.com/article"
 
     @tool
     def local_action(value: str) -> str:
@@ -114,9 +118,9 @@ async def check(case):
         executions.append(value)
         return f"done: {value}"
 
-    def local_call(value):
-        return response({"id": f"fc_{value}", "type": "function_call", "name": "local_action",
-                         "call_id": f"call_{value}", "arguments": json.dumps({"value": value})})
+    def local_call(name, arguments):
+        return response({"id": f"fc_{name}", "type": "function_call", "name": name,
+                         "call_id": f"call_{name}", "arguments": json.dumps(arguments)})
 
     def handle(request):
         payload = json.loads(request.content)
@@ -124,10 +128,15 @@ async def check(case):
         step = len(requests)
         assert "previous_response_id" not in payload
         assert payload["store"] is False
-        expected_types = ["function", *HOSTED] if step <= 2 else ["function"]
-        assert [item["type"] for item in payload["tools"]] == expected_types
+        assert [item["type"] for item in payload["tools"] if item["type"] != "function"] == (
+            list(HOSTED) if step <= 2 else []
+        )
+        expected_functions = {"local_action"} if step <= 2 else {
+            "local_action", "deepseek_web_search", "deepseek_web_fetch",
+        }
+        assert {item["name"] for item in payload["tools"] if item["type"] == "function"} == expected_functions
         if step == 1:
-            return local_call("first")
+            return local_call("local_action", {"value": "first"})
         if step == 2:
             if case == "invalid_parameters":
                 return Response(400, json={"error": {"message": "tools: deepseek_web_search rejected"}})
@@ -142,28 +151,51 @@ async def check(case):
             return response(FAILED_SEARCH)
         if step == 3:
             assert payload["input"][1:] == requests[1]["input"][1:]
-            assert "DeepSeek 服务端搜索和网页读取暂不可用" in json.dumps(payload["input"][0], ensure_ascii=False)
-            return local_call("second")
-        assert step == 4
-        assert any(item.get("output") == "done: second" for item in payload["input"])
+            prompt = json.dumps(payload["input"][0], ensure_ascii=False)
+            assert "DeepSeek 服务端搜索和网页读取暂不可用" in prompt and "deepseek_web_fetch" in prompt
+            return local_call("deepseek_web_search", {"query": "verify"})
+        if step == 4:
+            assert any(source_url in item.get("output", "") for item in payload["input"])
+            return local_call("deepseek_web_fetch", {"url": source_url})
+        assert step == 5
+        assert any("verified page body" in item.get("output", "") for item in payload["input"])
         return response(ANSWER)
 
+    def handle_standalone(request):
+        assert request.headers["authorization"] == "Bearer test-key"
+        operation = request.url.path
+        standalone_calls.append(operation)
+        if operation == "/v1/tools/search":
+            assert json.loads(request.content)["query"] == "verify"
+            return Response(200, json={"results": [{"title": "Article", "url": source_url,
+                                                   "rerank_score": 2.0, "authority": 3}]})
+        assert operation == "/v1/tools/fetch"
+        assert json.loads(request.content) == {"url": source_url}
+        return Response(200, json={"title": "Article", "content": "verified page body"})
+
     model = create_llm(MODEL, provider=PROVIDER, max_retries=0, streaming=False)
-    async with AsyncClient(transport=MockTransport(handle)) as client:
+    async with (
+        AsyncClient(transport=MockTransport(handle)) as client,
+        AsyncClient(transport=MockTransport(handle_standalone)) as standalone,
+    ):
+        web.get_http_client = lambda *args, **kwargs: standalone
         model.root_async_client = AsyncOpenAI(api_key="test-key", base_url="https://api.deepseek.com", http_client=client)
-        agent = create_agent(model, tools=[local_action], system_prompt="Original system prompt",
+        agent = create_agent(model, tools=[local_action, deepseek_web_search, deepseek_web_fetch],
+                             context_schema=FrontierRuntimeContext, system_prompt="Original system prompt",
                              middleware=[NativeWebSearchMiddleware(HOSTED)])
         try:
-            result = await agent.ainvoke({"messages": [{"role": "user", "content": "Complete the task"}]})
+            result = await agent.ainvoke({"messages": [{"role": "user", "content": "Complete the task"}]},
+                                         context=FrontierRuntimeContext("test-user", None, None, "."))
         except ModelInvalidRequestError:
             assert case == "content_review"
         else:
             assert case != "content_review"
             assert result["messages"][-1].text == "Task continued", (case, executions, result["messages"])
     if case in {"content_review", "failed_call_with_answer"}:
-        assert len(requests) == 2 and executions == ["first"]
+        assert len(requests) == 2 and not standalone_calls
     else:
-        assert len(requests) == 4 and executions == ["first", "second"]
+        assert len(requests) == 5 and standalone_calls == ["/v1/tools/search", "/v1/tools/fetch"]
+    assert executions == ["first"]
 
 async def main():
     for case in ("invalid_parameters", "unprocessable_parameters", "failed_response", "failed_call",
