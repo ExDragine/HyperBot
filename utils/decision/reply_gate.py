@@ -13,15 +13,10 @@ REPLY_GATE_QUESTIONS: dict[str, dict[str, Any]] = {
     "should_reply": {
         "type": "predicate",
         "instructions": (
-            "Does the latest message ask the AI assistant for help or an answer? "
-            "Return true for a direct question, request, or problem report. Return "
-            "false for casual conversation, acknowledgements, jokes, or a message "
-            "addressed to other people."
+            "Estimate whether the latest message asks the AI assistant for help or an answer. "
+            "Direct questions, requests, and problem reports favor replying. Casual conversation, "
+            "acknowledgements, jokes, and messages addressed to other people favor silence."
         ),
-        "criteria": {
-            "false": "casual conversation or not addressed to the assistant",
-            "true": "a question, request for help, problem report, or clear assistant request",
-        },
     }
 }
 

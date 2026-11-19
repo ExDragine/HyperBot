@@ -348,6 +348,7 @@ async def test_agent_task_final_group_delivery_mentions_owner(monkeypatch):
 
     result = await agent_task_handler_module.run_agent_task("scheduled_1")
 
+    assert agent_calls[0]["job_prompt"] == "scheduled-task"
     assert result.messages_sent == 1
     assert result.groups_sent == [123]
     assert len(calls) == 1

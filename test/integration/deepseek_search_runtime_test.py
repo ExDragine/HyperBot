@@ -135,6 +135,11 @@ async def check(case):
             "local_action", "deepseek_web_search", "deepseek_web_fetch",
         }
         assert {item["name"] for item in payload["tools"] if item["type"] == "function"} == expected_functions
+        prompt = json.dumps(payload["input"][0], ensure_ascii=False)
+        assert prompt.count("Original system prompt") == 1
+        assert prompt.count("本轮可用 DeepSeek 服务端联网") == (1 if step <= 2 else 0)
+        assert prompt.count("DeepSeek 服务端搜索和网页读取暂不可用") == (0 if step <= 2 else 1)
+        assert ("deepseek_web_fetch" in prompt) == (step > 2)
         if step == 1:
             return local_call("local_action", {"value": "first"})
         if step == 2:
@@ -151,8 +156,6 @@ async def check(case):
             return response(FAILED_SEARCH)
         if step == 3:
             assert payload["input"][1:] == requests[1]["input"][1:]
-            prompt = json.dumps(payload["input"][0], ensure_ascii=False)
-            assert "DeepSeek 服务端搜索和网页读取暂不可用" in prompt and "deepseek_web_fetch" in prompt
             return local_call("deepseek_web_search", {"query": "verify"})
         if step == 4:
             assert any(source_url in item.get("output", "") for item in payload["input"])

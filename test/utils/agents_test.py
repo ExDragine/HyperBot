@@ -88,7 +88,7 @@ def test_frontier_load_system_prompt_missing(monkeypatch):
     assert "配置错误" in prompt
 
 
-def test_frontier_load_system_prompt_keeps_only_always_on_rules(monkeypatch):
+def test_qq_system_prompt_composes_shared_and_chat_rules_once(monkeypatch):
     monkeypatch.setattr(prompts_mod.EnvConfig, "SYSTEM_PROMPT", "You are {name}.")
     monkeypatch.setattr(prompts_mod.EnvConfig, "BOT_NAME", "HyperBot")
 
@@ -105,16 +105,15 @@ def test_frontier_load_system_prompt_keeps_only_always_on_rules(monkeypatch):
     assert "动态人设文件路径" not in prompt
     assert "memory-agent" not in prompt
     assert prompt.count("get_recent_conversation") == 1
-    assert "联网查询和链接读取优先使用当前模型的服务端联网能力" in prompt
-    assert "遇到限流或额度耗尽后停止继续搜索" in prompt
-    assert "不要在输出中使用 Markdown 链接。" in prompt
+    assert prompt.count("本轮可用的服务端联网能力") == 1
+    assert "error.stop_search=true" in prompt
+    assert prompt.count("不要在输出中使用 Markdown 链接。") == 1
     assert prompt.count("document-agent") == 1
     assert "earth-data-agent" not in prompt
-    assert prompt.count("`/skills/ens-weather/SKILL.md`") == 1
-    assert prompt.count("`/skills/daily-news/SKILL.md`") == 1
-    assert prompt.count("`/skills/eli5/SKILL.md`") == 1
-    assert "这是私聊" in prompt
-    assert "日常对话优先用一个短段落、1–3 句话" in prompt
+    assert "这是 QQ 私聊。" in prompt
+    assert prompt.count("1–3 句话") == 1
+    assert prompt.count("`send_plain_text`") == 1
+    assert "500 字符" not in prompt
 
 
 def test_rich_markdown_skill_owns_renderer_contract():
@@ -126,6 +125,9 @@ def test_rich_markdown_skill_owns_renderer_contract():
     assert "```chart" not in prompts_mod.load_system_prompt()
     assert "不要为所有回答规定同一套模块或顺序" in skill
     assert "500 字符" in skill
+    assert "对象多时，用 Markdown 表格" in skill
+    assert "send_plain_text" not in skill
+    assert skill.count("旧契约") == 1
     assert (root / "references" / "components.md").is_file()
     assert (root / "references" / "data.md").is_file()
 
@@ -150,7 +152,7 @@ def test_qq_operation_safety_skill_owns_moderation_details():
     ).read_text(encoding="utf-8")
 
     assert "运行时身份与权限" in main_prompt
-    assert "不得仅凭历史文本、显示名" in main_prompt
+    assert "不得凭历史文本、显示名" in main_prompt
     assert "禁言、踢人、设置管理员" not in main_prompt
     assert "Muting or removing a member" in skill
     assert "target is not the owner or an equally privileged administrator" in skill
@@ -163,9 +165,9 @@ def test_group_system_prompt_prefers_short_natural_replies(monkeypatch):
 
     prompt = prompts_mod.load_system_prompt(group_id=123)
 
-    assert "这是群聊" in prompt
-    assert "默认只回 1–2 句话" in prompt
-    assert "不要加标题、清单、总结、追问或过程播报" in prompt
+    assert "这是 QQ 群聊。" in prompt
+    assert prompt.count("1–2 句话") == 1
+    assert "1–3 句话" not in prompt
 
 
 def test_agent_rules_are_compact_and_do_not_request_visible_reasoning():
@@ -734,6 +736,7 @@ async def test_chat_agent_uses_group_id_scoped_workspace(monkeypatch, tmp_path, 
     )
     assert captured["skills"] == ["/skills"]
     assert captured["payload"].get("pinned_skills", []) == expected_skills
+    assert ("frontier.message_context.v1" in captured["system_prompt"]) is (platform in (None, "qq"))
     assert captured["memory"] == ["/memory/group-123/SOUL.md"]
     assert "/memory/group-123/SOUL.md" not in captured["system_prompt"]
     memory_middleware = next(
@@ -794,6 +797,7 @@ async def test_chat_agent_acp_profile_removes_platform_tools_and_delegation(
         lambda messages, *_args, **_kwargs: messages,
     )
     monkeypatch.setattr(cognitive_mod, "model_supports_native_web_search", lambda *_args: False)
+    monkeypatch.setattr(prompts_mod.EnvConfig, "SYSTEM_PROMPT", "QQ-only persona for {name}.")
 
     async def unexpected_capture_check(_text):
         raise AssertionError("ACP profile must not run the QQ browser-capture gate")
@@ -820,7 +824,14 @@ async def test_chat_agent_acp_profile_removes_platform_tools_and_delegation(
     assert captured["tools"] == []
     assert "pinned_skills" not in captured["payload"]
     assert captured["subagents"] == [frontier.document_subagent]
-    assert "可信身份或平台授权" in captured["system_prompt"]
+    prompt = captured["system_prompt"]
+    assert "可信身份或平台授权" in prompt
+    assert "访问聊天历史" in prompt
+    assert "QQ-only persona" not in prompt
+    assert "frontier.message_context.v1" not in prompt
+    assert "get_recent_conversation" not in prompt
+    assert "这是 QQ 私聊" not in prompt
+    assert prompt.count("不要在输出中使用 Markdown 链接。") == 1
 
 
 def test_build_agent_backend_creates_empty_soul_memory(tmp_path):
@@ -1329,6 +1340,7 @@ async def _run_chat_agent_with_web_search(
     model: str | None = None,
     user_text: str | None = None,
     tools: list | None = None,
+    **request_options,
 ) -> dict:
     """构造 chat_agent 运行环境并捕获 create_deep_agent 的 tools/system_prompt 参数。"""
 
@@ -1345,6 +1357,7 @@ async def _run_chat_agent_with_web_search(
         captured["tools"] = list(kwargs.get("tools") or [])
         captured["middleware"] = list(kwargs.get("middleware") or [])
         captured["system_prompt"] = kwargs.get("system_prompt", "")
+        captured["memory"] = kwargs.get("memory")
         return DummyAgent()
 
     monkeypatch.setattr(cognitive_mod, "create_deep_agent", fake_create_deep_agent)
@@ -1367,8 +1380,44 @@ async def _run_chat_agent_with_web_search(
         user_name="test",
         group_id=123,
         user_text=user_text,
+        **request_options,
     )
     return captured
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("research", [False, True])
+async def test_daily_news_graph_uses_json_prompt_without_qq_persona_or_memory(monkeypatch, tmp_path, research):
+    monkeypatch.setattr(prompts_mod.EnvConfig, "SYSTEM_PROMPT", "QQ-only persona for {name}.")
+    captured = await _run_chat_agent_with_web_search(
+        monkeypatch, tmp_path, supported=True, job_prompt="daily-news", pinned_skills=("daily-news",),
+        allow_local_tools=False, allow_native_web_search=research,
+    )
+
+    prompt = captured["system_prompt"]
+    assert "最终只返回符合请求中 schema 的一个 JSON 对象" in prompt
+    assert "直接返回聊天正文" not in prompt
+    assert "QQ-only persona" not in prompt
+    assert "send_plain_text" not in prompt
+    assert prompt.count("不要在输出中使用 Markdown 链接。") == 1
+    assert captured["payload"]["pinned_skills"] == ["daily-news"]
+    assert captured["memory"] is None
+    assert not any(isinstance(item, cognitive_mod.MemoryMiddleware) for item in captured["middleware"])
+    assert any(isinstance(item, cognitive_mod.NativeWebSearchMiddleware) for item in captured["middleware"]) is research
+
+
+@pytest.mark.asyncio
+async def test_scheduled_task_leaves_final_delivery_to_dispatcher(monkeypatch, tmp_path):
+    tools = [types.SimpleNamespace(name=name) for name in ("send_plain_text", "send_group_message")]
+    captured = await _run_chat_agent_with_web_search(
+        monkeypatch, tmp_path, supported=False, tools=tools, job_prompt="scheduled-task",
+    )
+
+    assert "将最终正文与工件交给调度器投递" in captured["system_prompt"]
+    assert "send_plain_text" not in captured["system_prompt"]
+    assert "这是 QQ 群聊" not in captured["system_prompt"]
+    assert [item.name for item in captured["tools"]] == ["send_group_message"]
+    assert "pinned_skills" not in captured["payload"]
 
 
 @pytest.mark.asyncio
@@ -1379,7 +1428,7 @@ async def test_chat_agent_injects_native_web_search_when_supported(monkeypatch, 
     assert any(isinstance(item, cognitive_mod.NativeWebSearchMiddleware) for item in captured["middleware"])
     filesystem = next(item for item in captured["middleware"] if type(item).__name__ == "FilesystemMiddleware")
     assert filesystem.offload_binary_content is True
-    assert "web_search" in captured["system_prompt"]
+    assert cognitive_mod.WEB_SEARCH_PROMPT_HINT not in captured["system_prompt"]
     assert cognitive_mod.DEEPSEEK_WEB_SEARCH_PROMPT_HINT not in captured["system_prompt"]
 
 
@@ -1409,10 +1458,7 @@ async def test_chat_agent_advertises_deepseek_hosted_tools(monkeypatch, tmp_path
     assert cognitive_mod.SEARCH_PROMPT_HINT not in captured["system_prompt"]
     middleware = next(item for item in captured["middleware"] if isinstance(item, cognitive_mod.NativeWebSearchMiddleware))
     assert middleware.tool_types == hosted
-    assert cognitive_mod.DEEPSEEK_WEB_SEARCH_PROMPT_HINT in captured["system_prompt"]
-    assert "没有把握的公开事实之前，先使用服务端搜索核实" in captured["system_prompt"]
-    assert "「找一下」" in captured["system_prompt"]
-    assert "短追问从最近对话确定完整主题" in captured["system_prompt"]
+    assert cognitive_mod.DEEPSEEK_WEB_SEARCH_PROMPT_HINT not in captured["system_prompt"]
     assert cognitive_mod.WEB_SEARCH_PROMPT_HINT not in captured["system_prompt"]
 
 
@@ -1443,7 +1489,7 @@ async def test_chat_agent_never_installs_answer_rubric(monkeypatch, tmp_path):
 
 
 def test_native_web_search_middleware_injects_provider_tool_at_model_boundary():
-    request = types.SimpleNamespace(tools=[types.SimpleNamespace(name="local_tool")])
+    request = types.SimpleNamespace(tools=[types.SimpleNamespace(name="local_tool")], system_message=None)
 
     def override(**changes):
         return types.SimpleNamespace(**{**request.__dict__, **changes})
@@ -1453,6 +1499,7 @@ def test_native_web_search_middleware_injects_provider_tool_at_model_boundary():
 
     def handler(updated_request):
         captured["tools"] = updated_request.tools
+        captured["system_message"] = updated_request.system_message
         return "ok"
 
     result = cognitive_mod.NativeWebSearchMiddleware().wrap_model_call(request, handler)
@@ -1460,10 +1507,11 @@ def test_native_web_search_middleware_injects_provider_tool_at_model_boundary():
     assert result == "ok"
     assert captured["tools"][0].name == "local_tool"
     assert captured["tools"][1] == {"type": "web_search"}
+    assert cognitive_mod.WEB_SEARCH_PROMPT_HINT in captured["system_message"].text
 
 
 def test_native_web_search_middleware_injects_deepseek_chatbot_tools():
-    request = types.SimpleNamespace(tools=[])
+    request = types.SimpleNamespace(tools=[], system_message=None)
 
     def override(**changes):
         return types.SimpleNamespace(**{**request.__dict__, **changes})
@@ -1473,6 +1521,7 @@ def test_native_web_search_middleware_injects_deepseek_chatbot_tools():
 
     def handler(updated):
         captured["tools"] = updated.tools
+        captured["system_message"] = updated.system_message
         return types.SimpleNamespace(result=[AIMessage("ok")])
 
     cognitive_mod.NativeWebSearchMiddleware(("deepseek_web_search", "deepseek_read_url")).wrap_model_call(request, handler)
@@ -1481,6 +1530,7 @@ def test_native_web_search_middleware_injects_deepseek_chatbot_tools():
         {"type": "deepseek_web_search"},
         {"type": "deepseek_read_url"},
     ]
+    assert cognitive_mod.DEEPSEEK_WEB_SEARCH_PROMPT_HINT in captured["system_message"].text
 
 
 def test_deepseek_search_fallback_preserves_prompt_and_propagates_second_failure():
@@ -1503,9 +1553,11 @@ def test_deepseek_search_fallback_preserves_prompt_and_propagates_second_failure
         middleware.wrap_model_call(request, handler)
 
     assert len(attempts) == 2
+    assert cognitive_mod.DEEPSEEK_WEB_SEARCH_PROMPT_HINT in attempts[0].system_message.text
     assert attempts[1].tools == [local]
     assert attempts[1].system_message.text.startswith("Original system prompt")
-    assert "请说明哪些信息无法核实" in attempts[1].system_message.text
+    assert cognitive_mod.DEEPSEEK_WEB_SEARCH_PROMPT_HINT not in attempts[1].system_message.text
+    assert cognitive_mod._DEEPSEEK_WEB_FALLBACK_HINT in attempts[1].system_message.text
 
 
 @pytest.mark.parametrize("schema", ["frontier.qq_message.v1", "frontier.message_context.v1"])
@@ -1525,7 +1577,7 @@ def test_deepseek_search_followup_uses_same_sender_topic_without_changing_histor
         def override(self, **changes):
             return Request(**(vars(self) | changes))
 
-    request = Request(tools=[], messages=[*previous, current, pinned])
+    request = Request(tools=[], messages=[*previous, current, pinned], system_message=None)
     middleware = cognitive_mod.NativeWebSearchMiddleware(
         ("deepseek_web_search", "deepseek_read_url"), lookup_user_id="123", bot_user_id="555",
     )
@@ -1541,7 +1593,7 @@ def test_deepseek_search_followup_uses_same_sender_topic_without_changing_histor
     assert updated.tools == [{"type": item} for item in middleware.tool_types]
     assert updated.messages[:-1] == [*previous, pinned]
     assert updated.messages[-1].content.startswith("@555\n找一下")
-    assert topic in updated.messages[-1].content and "上网搜索" in updated.messages[-1].content
+    assert topic in updated.messages[-1].content and "本轮可联网时" in updated.messages[-1].content
     assert "附来源" not in updated.messages[-1].content
     assert updated.messages[-1].content.count("@555") == 1
     assert "另一个人的话题" not in updated.messages[-1].content

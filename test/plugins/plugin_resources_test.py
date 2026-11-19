@@ -45,7 +45,11 @@ async def test_agent_reads_its_reply_prompt_from_another_directory(monkeypatch, 
     async def decide(self, messages, questions):
         from utils.decision import DecisionResult
 
-        assert questions["should_reply"]["instructions"]
+        question = questions["should_reply"]
+        assert question["type"] == "predicate"
+        assert "probability above 0.5" in question["instructions"]
+        assert 'Reply "true"' not in question["instructions"]
+        assert 'Reply "false"' not in question["instructions"]
         assert "帮我" in messages
         return DecisionResult(answers={"should_reply": {"type": "predicate", "probability": 1.0}}, provider="test", latency_ms=0)
 

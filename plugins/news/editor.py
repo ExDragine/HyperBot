@@ -108,15 +108,12 @@ class NewsEditor:
 
     async def _run_skill(self, edition: Edition, data: dict, *, research: bool) -> list:
         prompt = json.dumps({
-            "instruction": (
-                "执行每日新闻技能的归档检索。请先使用 DeepSeek 服务端搜索收集带日期的来源，打开重点报道后再生成日报。"
-                if research else "执行每日新闻技能的归档修订。用给定证据生成修订稿。"
-            ),
+            **data,
+            "mode": "research" if research else "revision",
             "window": [edition.start.isoformat(), edition.scheduled_at.isoformat()],
             "target_stories": self.cfg.target_stories,
             "min_stories": self.cfg.min_stories,
             "schema": NewsPayload.model_json_schema(),
-            **data,
         }, ensure_ascii=False)
         result = await FrontierAgentRuntime().run(AgentRuntimeRequest(
             session_id=f"daily-news:{edition.report_id}",
@@ -124,6 +121,7 @@ class NewsEditor:
             user_name="Daily news",
             prompt=prompt,
             access_profile="frontier",
+            job_prompt="daily-news",
             pinned_skills=("daily-news",),
             include_messages=research,
             allow_local_tools=False,

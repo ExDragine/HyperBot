@@ -163,10 +163,10 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 - 内置 skills 路径通过 FilesystemPermission 禁止写入。
 
 Prompt 加载链：
-- `FrontierCognitive.load_system_prompt()` 组合 `env.toml` 的 `[bot].system_prompt` 与 `prompts/AGENTS.md` 始终适用的全局操作规范；基础人设中的 `{name}` 会按当前唤醒词注入。
-- 自定义 `MemoryMiddleware` 从当前 workspace 的 `/memory/{workspace_key}/SOUL.md` 注入动态人设，并同时提供 SOUL 的写入边界与优先级约束。
+- `FrontierCognitive.load_system_prompt()` 组合 `prompts/AGENTS.md` 的全局规范与入口专属说明。QQ 使用 `[bot].system_prompt` 基础人设、`prompts/qq.md` 和当前会话风格；`{name}` 按唤醒词注入。ACP、定时任务和日报归档使用各自的任务说明。
+- 自定义 `MemoryMiddleware` 从当前 workspace 的 `/memory/{workspace_key}/SOUL.md` 注入动态人设及其写入约束。日报归档不注入 SOUL。
 - QQ 主回复与兼容 QQ 入口每轮在输入状态中传 `pinned_skills=["rich-markdown"]`（Deep Agents >= 0.7.23），由 Skills middleware 在首个模型调用前注入精简的排版决策正文，无需模型先调用 `read_file`。本轮后续工具循环不重复注入；ACP 档与显式非 QQ 平台不固定加载该技能。
-- 框架注入的技能 HumanMessage 带 `lc_source=pinned_skill`，属于操作说明；历史裁剪将它与原始用户问题、工具交换和回复保留为同一轮，不把它当成新的聊天请求。
+- 框架注入的技能 HumanMessage 带 `lc_source=pinned_skill`，属于当轮操作说明。会话缓存向模型提供历史时省略旧轮的技能正文，保留原始用户问题、工具交换和回复。
 - `/skills/rich-markdown/SKILL.md` 定义内容关系与基本 Markdown 组件语法；正文直接写 Markdown，按需插入 `::card`、分区、分栏、步骤或媒体，基本卡片无需先读取参考文件。详细字段、数据与媒体契约位于其 `references/`；旧 ui JSON 契约位于 `references/legacy-ui.md`。短聊天与需要复制的回复保持文字，500 字转图规则只控制发送方式。
 - `plugins/agent/prompts/reply_check.md` 用于群聊是否应主动回复的 Decision LLM 判断。
 - 每日新闻技能位于 `/skills/daily-news/SKILL.md`。主 Agent 可按聊天请求加载，定时和预览入口固定加载同一技能。`plugins/news/editor.py` 根据主模型返回的搜索摘要校验 `NewsPayload` 引证。模板位于 `plugins/news/templates/`。
@@ -274,7 +274,7 @@ Milky 群管理工具会读取 `RunnableConfig.configurable.group_member_role` �
 
 4. Browser capture 工具不是普通兜底工具。`webpage_screenshot` / `webpage_recording` 只有在 Decision LLM 判断用户明确要求网页外观/录屏时才暴露。
 
-5. 提示词分层：`env.toml` 基本人设与 `prompts/AGENTS.md` 全局规范常驻，workspace `SOUL.md` 由 Memory middleware 注入，QQ 富文本决策技能通过 `pinned_skills` 每轮预加载，详细工作流与组件契约按需读取。修改前先确认目标层级；不要同时把整份技能正文复制进系统提示词。
+5. 提示词分层：`prompts/AGENTS.md` 全局规范适用所有主 Agent 入口。QQ 基本人设来自 `env.toml`，消息信封和聊天工具说明在 `prompts/qq.md`。workspace `SOUL.md` 由 Memory middleware 注入，QQ 富文本决策技能通过 `pinned_skills` 每轮预加载，详细工作流与组件契约按需读取。
 
 6. 测试依赖 monkeypatch 和第三方 stub。插件测试通常先 patch `nonebot.require`，再延迟 import `plugins.agent.handlers`。
 

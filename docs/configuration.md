@@ -103,7 +103,7 @@ DeepSeek 可分别配置为 `deepseek + chat_completions`、`openai + responses`
 
 ### `[bot]`
 
-`system_prompt` 是基础人设，与 `prompts/AGENTS.md` 中始终适用的全局操作规范组合后进入系统提示词；`{name}` 会按当前唤醒词注入。机器人名称不写在这里。
+`system_prompt` 是 QQ 会话的基础人设，和 `prompts/AGENTS.md` 的全局规范及 `prompts/qq.md` 的 QQ 说明共同组成系统提示词。`{name}` 按当前唤醒词注入。ACP、定时任务和日报归档使用各自的任务说明。
 
 ### `[features]`
 

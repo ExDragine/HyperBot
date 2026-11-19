@@ -153,6 +153,9 @@ async def main():
         assert result['usage']['model_calls'] == 2, result
         assert lease.entry.state == 'awaiting_delivery'
         assert not result['uni_messages']
+        for messages in prompts[-2:]:
+            pinned = [msg for msg in messages if msg.additional_kwargs.get('lc_source') == 'pinned_skill']
+            assert [msg.additional_kwargs['skill']['name'] for msg in pinned] == ['rich-markdown'], pinned
         if number:
             text = str([m.content for m in prompts[-2]])
             assert 'audited-0' in text and 'unreviewed-0' not in text, text

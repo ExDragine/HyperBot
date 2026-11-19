@@ -193,6 +193,83 @@ assert (Path(agent.working_dir) / "memory" / workspace_key / "SOUL.md").is_file(
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_real_news_agent_uses_json_contract_for_research_and_revision(tmp_path):
+    script = r'''
+import asyncio
+import json
+import sys
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from types import SimpleNamespace
+
+sys.path.insert(0, sys.argv[1])
+from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+from langchain_core.messages import AIMessage
+from plugins.news import editor
+from plugins.news.schemas import NewsPayload
+from utils.agents import cognitive
+from utils.agents.runtime_gateway import FrontierAgentRuntime
+from utils.configs import EnvConfig
+
+EnvConfig.ADVAN_MODEL = "contract-model"
+EnvConfig.SYSTEM_PROMPT = "QQ-only persona for {name}"
+cognitive.model_supports_native_web_search = lambda *_: True
+cognitive.native_web_search_tools = lambda *_: ("deepseek_web_search", "deepseek_read_url")
+agent = object.__new__(cognitive.FrontierCognitive)
+agent.working_dir = str(Path.cwd() / "sandbox")
+editor.FrontierAgentRuntime = lambda: FrontierAgentRuntime(agent)
+
+class Model(FakeMessagesListChatModel):
+    research: bool
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    def _generate(self, messages, *args, **kwargs):
+        system = messages[0].text
+        assert "符合请求中 schema 的一个 JSON 对象" in system
+        assert "完全缺少合格证据时返回 `{}`" in system
+        assert system.count("不要在输出中使用 Markdown 链接。") == 1
+        assert "QQ-only persona" not in system and "直接返回聊天正文" not in system
+        assert "<workspace_soul>" not in system
+        assert ("本轮可用 DeepSeek 服务端联网" in system) is self.research
+        task, pinned = messages[1:]
+        data = json.loads(task.text)
+        assert data["mode"] == ("research" if self.research else "revision")
+        assert ("articles" in data) is not self.research
+        assert data["schema"] == NewsPayload.model_json_schema()
+        assert pinned.additional_kwargs["skill"]["name"] == "daily-news"
+        assert "`mode=revision` 时，只使用给定的 `articles` 修订" in pinned.text
+        return super()._generate(messages, *args, **kwargs)
+
+now = datetime.now(UTC)
+edition = SimpleNamespace(start=now - timedelta(days=1), scheduled_at=now, report_id="test", namespace="test")
+news = editor.NewsEditor(SimpleNamespace(target_stories=1, min_stories=1))
+article_id = "https://example.com/evidence"
+quote = "The city opened its new public library."
+expected = NewsPayload(top_stories=[{
+    "title": "Library opened", "category": "Local", "summary": quote,
+    "evidence": [{"article_id": article_id, "quote": quote}],
+}], worth_reading=[])
+for research in (True, False):
+    model = Model(research=research, responses=[AIMessage(expected.model_dump_json())])
+    cognitive.create_llm = lambda **_: model
+    data = {"queries": ["test"]} if research else {
+        "articles": [{"article_id": article_id, "text": quote}], "validation_error": None,
+    }
+    messages = asyncio.run(news._run_skill(edition, data, research=research))
+    assert NewsPayload.model_validate_json(messages[-1].text) == expected
+'''
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", script, str(Path(__file__).resolve().parents[2])],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_real_milky_13_adapter_and_tool_schemas(tmp_path):
     script = r'''
 import asyncio

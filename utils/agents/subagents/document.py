@@ -35,7 +35,7 @@ def build_document_subagent() -> SubAgent:
         name="document-agent",
         description=(
             "定位、分段读取并总结当前会话 workspace 或 memory 中的文档和附件。"
-            "用户要求阅读、比较、提取或总结本地文件时委托本代理；网络资料和媒体生成不要委托。"
+            "需要分段处理大型本地文件或比较多份文档时委托本代理。"
         ),
         model=model,
         tools=[],

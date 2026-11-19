@@ -22,9 +22,12 @@ ARTICLE_URL = "https://example.com/news/2026/10/24/central-bank-announces-new-po
 
 async def fake_main_agent(_runtime, request):
     assert request.pinned_skills == ("daily-news",)
+    assert request.job_prompt == "daily-news"
     assert request.include_messages and request.allow_native_web_search
     assert not request.allow_local_tools
-    window = json.loads(request.prompt)["window"]
+    data = json.loads(request.prompt)
+    assert data["mode"] == "research" and "articles" not in data
+    window = data["window"]
     published = dt.datetime.fromisoformat(window[1]) - dt.timedelta(hours=1)
     payload = NewsPayload(
         top_stories=[
@@ -160,6 +163,9 @@ async def test_daily_news_repairs_draft_before_archiving_and_delivering(
                 block["text"] = draft.model_dump_json()
             return result
         assert request.pinned_skills == ("daily-news",) and not request.allow_local_tools
+        assert request.job_prompt == "daily-news"
+        assert data["mode"] == "revision"
+        assert data["schema"] == NewsPayload.model_json_schema()
         assert data["validation_error"] == (
             "the initial draft did not match the news schema" if missing_evidence_first
             else "the same article cannot fill multiple news slots"

@@ -14,6 +14,7 @@ from nonebot.adapters.milky.model.message import IncomingMessage
 from nonebug import App
 
 from utils.agents.progress import ProgressEvent, emit_progress
+from utils.agents.prompts import load_system_prompt
 from utils.delivery import DeliveryResult
 from utils.timeutil import SHANGHAI
 
@@ -1356,7 +1357,8 @@ async def test_process_agent_request_adds_current_chat_metadata(monkeypatch, gro
     assert len(captured["messages"]) == 3
     current_content = captured["messages"][-1]["content"]
     assert _body_blocks(current_content) == [{"type": "text", "text": "hi"}]
-    assert json.loads(current_content[0]["text"]) == {
+    metadata = json.loads(current_content[0]["text"])
+    assert metadata == {
         "schema": "frontier.message_context.v1",
         "time": "1970-01-01T00:00:01+00:00",
         "message_id": "1",
@@ -1364,6 +1366,10 @@ async def test_process_agent_request_adds_current_chat_metadata(monkeypatch, gro
         "chat": {"platform": "qq", "type": expected_chat_type, "id": str(group_id) if group_id is not None else "456"},
         "directly_mentioned": group_id is not None,
     }
+    prompt = load_system_prompt(group_id)
+    assert f'`{metadata["schema"]}`' in prompt
+    assert all(f"`{field}`" in prompt for field in ("chat.type", "chat.id", "sender.user_id", "directly_mentioned"))
+    assert all(field not in prompt for field in ("frontier.qq_message.v1", "chat.group_id", "bot_context.user_id"))
     conversation = captured["kwargs"]["conversation"]
     assert conversation.kind == expected_chat_type
     assert conversation.conversation_id == (str(group_id) if group_id is not None else "456")
@@ -1586,22 +1592,14 @@ async def test_run_serialized_blocks_same_thread_concurrent_requests(monkeypatch
     assert calls == ["start-0", "end-0", "start-1", "end-1"]
 
 
-def test_system_prompt_describes_message_envelope_and_tool_scope(monkeypatch):
-    import nonebot
+def test_qq_system_prompt_describes_quote_sender_and_tool_scope():
+    prompt = load_system_prompt()
 
-    monkeypatch.setattr(nonebot, "require", lambda *_args, **_kwargs: None)
-    from plugins.agent import handlers as agent
-
-    prompt = (agent.PROJECT_ROOT / "prompts" / "AGENTS.md").read_text(encoding="utf-8")
-
-    assert "`frontier.qq_message.v1`" in prompt
-    assert "`chat.group_id`" in prompt
-    assert "`sender.user_id`" in prompt
-    assert "`reply_to`" in prompt
-    assert '"private"' in prompt
-    assert '"group"' in prompt
-    assert "私聊里只用好友/私聊工具" in prompt
-    assert "群聊里使用群聊工具" in prompt
+    assert "`[引用: ...]`" in prompt
+    assert "当前信封的 `sender` 是引用者" in prompt
+    assert "`private` 或 `group`" in prompt
+    assert "私聊使用好友或私聊工具" in prompt
+    assert "群聊使用当前群的工具" in prompt
 
 
 @pytest.mark.asyncio

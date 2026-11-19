@@ -20,6 +20,7 @@ from utils.media import (
 
 if TYPE_CHECKING:
     from .execution import AgentResult
+    from .prompts import JobPrompt
     from .sessions import TurnLease
 
 
@@ -61,6 +62,7 @@ class AgentRuntimeRequest:
     include_messages: bool = False
     allow_local_tools: bool = True
     allow_native_web_search: bool = True
+    job_prompt: JobPrompt | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -307,7 +309,7 @@ class FrontierAgentRuntime:
             if request.workspace_key
             else _conversation_workspace_key(request.conversation)
         )
-        compatibility_kwargs: dict[str, Any] = {}
+        compatibility_kwargs: dict[str, Any] = {"job_prompt": request.job_prompt} if request.job_prompt is not None else {}
         if request.conversation is not None:
             compatibility_kwargs["conversation"] = request.conversation
         if request.principal is not None:

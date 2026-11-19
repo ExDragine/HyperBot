@@ -91,6 +91,7 @@ async def run_agent_task(job_id: str = "", **kwargs) -> TaskRunResult:  # noqa: 
         capability=EnvConfig.AGENT_CAPABILITY,
         group_id=group_id,
         access_profile="frontier",
+        job_prompt="scheduled-task",
         enable_acp_subagents=True,
     ))
     _require_agent_success(result)

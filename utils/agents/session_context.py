@@ -22,7 +22,7 @@ def history_budget(settings, profile, *, reserved_tokens: int = 0) -> int:
 
 
 def recent_complete_turns(messages, max_tokens: int):
-    """Retain complete user-led turns, including their internally pinned skills."""
+    """Retain complete dialogue turns without replaying earlier skill instructions."""
     turns = []
     for message in messages:
         role = message.get("role") if isinstance(message, dict) else getattr(message, "type", None)
@@ -30,7 +30,9 @@ def recent_complete_turns(messages, max_tokens: int):
             message.get("additional_kwargs", {}) if isinstance(message, dict)
             else getattr(message, "additional_kwargs", {})
         )
-        if role in {"user", "human"} and metadata.get("lc_source") != "pinned_skill":
+        if metadata.get("lc_source") == "pinned_skill":
+            continue
+        if role in {"user", "human"}:
             turns.append([])
         if turns:
             turns[-1].append(message)

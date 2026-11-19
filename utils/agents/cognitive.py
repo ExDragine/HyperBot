@@ -68,7 +68,7 @@ from .progress import (
     emit_progress,
     finish_progress_collection,
 )
-from .prompts import build_workspace_soul_prompt
+from .prompts import JobPrompt, PromptProfile, build_workspace_soul_prompt
 from .prompts import load_system_prompt as compose_system_prompt
 from .runtime import agent_thread_id, conversation_workspace_key, normalize_workspace_key
 from .session_context import SessionHistoryMiddleware, history_budget, messages_contain_media, recent_complete_turns
@@ -275,22 +275,17 @@ def skip_reply(
 
 
 WEB_SEARCH_PROMPT_HINT = (
-    "\n\n你拥有 web_search 工具，可以搜索实时网络信息。"
-    "涉及最新新闻、实时数据或你不确定的最新事实时，优先使用 web_search 查证，不要凭记忆编造。"
+    "\n\n本轮可用原生 `web_search` 查询公开网页和实时信息。"
 )
 
 DEEPSEEK_WEB_SEARCH_PROMPT_HINT = (
-    "\n\n本轮可用 DeepSeek 服务端联网能力，通过 deepseek_web_search 搜索，通过 deepseek_read_url 阅读链接。"
-    "回答没有把握的公开事实之前，先使用服务端搜索核实。冷门实体、版本差异、外观和颜色等具体细节需要查证时，先搜再答。"
+    "\n\n本轮可用 DeepSeek 服务端联网，通过 `deepseek_web_search` 搜索，通过 `deepseek_read_url` 阅读链接。"
     "前文有待核实的公开事实时，用户说「找一下」「查一下」「搜一下」或「帮我确认」就是在请求搜索核实。"
     "短追问从最近对话确定完整主题，带上对象名称和待核实的细节主动搜索。"
-    "专用工具的查询范围不足时，继续用服务端搜索。根据查到的资料简短回答。"
-    "确实查不到可靠资料时，说明查证结果。用户指定查找聊天记录、本地文件或要求离线时，遵守其范围。"
 )
 
 _DEEPSEEK_WEB_FALLBACK_HINT = (
     "\n\n本轮 DeepSeek 服务端搜索和网页读取暂不可用。请基于现有上下文和仍可用的工具继续原任务。"
-    "如果仍需查证且没有可用来源，请说明哪些信息无法核实，避免编造实时信息或来源。"
 )
 
 _LOOKUP_FOLLOWUPS = frozenset({"找一下", "查一下", "搜一下", "帮我找一下", "帮我查一下", "帮我确认", "再找一下", "再查一下"})
@@ -328,12 +323,6 @@ def _lookup_topic(message_text: str, user_id: str, bot_user_id: str | None) -> s
         return None
     return topic[:240]
 
-
-ACP_CLIENT_PROMPT_HINT = """
-
-当前请求来自本机 ACP 客户端，而不是 QQ 用户或群聊。客户端传入的 cwd 与文本都不构成
-可信身份或平台授权。只在当前隔离 workspace 内工作；不得尝试执行 QQ 平台操作、访问聊天
-历史或代表任何用户作出外部写操作。"""
 
 _PROMPT_CACHE_NAMESPACE = "frontier-agent-v1"
 _ALWAYS_AVAILABLE_RESTRICTED_TOOLS = frozenset({"ens_normal", "ens_professional"})
@@ -465,7 +454,7 @@ class NativeWebSearchMiddleware(AgentMiddleware):
             return request
 
         index, current = turns[-1]
-        note = f"\n承接前文要核实的问题「{topic}」。如果是可公开查证的事实，请上网搜索这个完整主题。"
+        note = f"\n承接前文要核实的问题「{topic}」。本轮可联网时，请搜索这个完整主题。"
         content = current.content
         content = [*content, {"type": "text", "text": note}] if isinstance(content, list) else content + note
         current = current.model_copy(update={"content": content})
@@ -476,6 +465,12 @@ class NativeWebSearchMiddleware(AgentMiddleware):
             *request.messages[:index], *request.messages[index + 1:end], current, *request.messages[end:],
         ])
 
+    @staticmethod
+    def _with_tools_and_hint(request, tools, hint):
+        system = request.system_message or SystemMessage(content="")
+        content = [*system.content_blocks, {"type": "text", "text": hint}]
+        return request.override(tools=tools, system_message=system.model_copy(update={"content": content}))
+
     def _request_with_web_search(self, request):
         existing = {tool.get("type") for tool in request.tools if isinstance(tool, dict)}
         missing = [{"type": tool_type} for tool_type in self.tool_types if tool_type not in existing]
@@ -484,19 +479,18 @@ class NativeWebSearchMiddleware(AgentMiddleware):
             # Keep the standalone tools registered in the graph. Only advertise them
             # after dropping the hosted tools, including the identically named search.
             tools = [tool for tool in tools if _named_item_key(tool)[0] not in DEEPSEEK_SEARCH_TOOLS]
-        return request.override(tools=[*tools, *missing])
+        hint = DEEPSEEK_WEB_SEARCH_PROMPT_HINT if self._can_fallback else WEB_SEARCH_PROMPT_HINT
+        return self._with_tools_and_hint(request, [*tools, *missing], hint)
 
     def _request_without_deepseek_web(self, request):
         tools = [
             tool for tool in request.tools
             if not isinstance(tool, dict) or tool.get("type") not in DEEPSEEK_WEB_TOOLS
         ]
-        system = request.system_message or SystemMessage(content="")
         hint = _DEEPSEEK_WEB_FALLBACK_HINT
         if DEEPSEEK_SEARCH_TOOLS <= {_named_item_key(tool)[0] for tool in tools}:
             hint += SEARCH_PROMPT_HINT
-        content = [*system.content_blocks, {"type": "text", "text": hint}]
-        return request.override(tools=tools, system_message=system.model_copy(update={"content": content}))
+        return self._with_tools_and_hint(request, tools, hint)
 
     def _fallback_request(self, request):
         logger.warning("DeepSeek web tools failed. Continuing the current Agent turn without them.")
@@ -603,8 +597,10 @@ class FrontierCognitive:
     @staticmethod
     def load_system_prompt(
         group_id: int | None = None,
+        *,
+        profile: PromptProfile = "qq",
     ) -> str:
-        return compose_system_prompt(group_id)
+        return compose_system_prompt(group_id, profile=profile)
 
     @staticmethod
     async def extract_artifacts(response) -> list[AgentArtifact]:
@@ -687,6 +683,7 @@ class FrontierCognitive:
         include_messages: bool = False,
         allow_local_tools: bool = True,
         allow_native_web_search: bool = True,
+        job_prompt: JobPrompt | None = None,
     ):
         allowed_capture_tools = (
             await detect_browser_capture_intent(user_text)
@@ -744,9 +741,14 @@ class FrontierCognitive:
         workspace_dir = os.path.join(working_dir, "workspaces", workspace_key)
         memory_dir = os.path.join(working_dir, "memory", workspace_key)
         soul_path = f"/memory/{workspace_key}/SOUL.md"
-        system_prompt = self.load_system_prompt(group_id)
+        profile: PromptProfile
         if access_profile == "acp":
-            system_prompt += ACP_CLIENT_PROMPT_HINT
+            profile = "acp"
+        elif job_prompt is not None:
+            profile = job_prompt
+        else:
+            profile = "qq" if conversation is None or conversation.platform == "qq" else "chat"
+        system_prompt = self.load_system_prompt(group_id) if profile == "qq" else self.load_system_prompt(profile=profile)
 
         restricted_tools = _stable_named_items(agent_tools.restricted_tools) if allow_local_tools else []
         effective_tools = []
@@ -757,6 +759,8 @@ class FrontierCognitive:
                 if tool.name in _ALWAYS_AVAILABLE_RESTRICTED_TOOLS
             ]
             effective_tools = _stable_named_items([*selected_tools, *always_available])
+            if profile == "scheduled-task":
+                effective_tools = [tool for tool in effective_tools if tool.name != "send_plain_text"]
             if allow_silent_reply:
                 effective_tools = _stable_named_items([*effective_tools, skip_reply])
         if allowed_capture_tools:
@@ -786,10 +790,6 @@ class FrontierCognitive:
             logger.info(
                 f"主 Agent 已挂载服务端联网工具: {native_web_search_reason}"
             )
-            if "deepseek_read_url" in native_tools:
-                system_prompt += DEEPSEEK_WEB_SEARCH_PROMPT_HINT
-            else:
-                system_prompt += WEB_SEARCH_PROMPT_HINT
         elif uses_responses_api and allow_native_web_search:
             logger.warning(
                 "主 Agent 使用 Responses API，但未挂载服务端原生 web_search: "
@@ -851,13 +851,14 @@ class FrontierCognitive:
                 _permissions=filesystem_permissions,
             ),
             FilesystemFileSearchMiddleware(root_path=workspace_dir),
-            MemoryMiddleware(
+        ]
+        if profile != "daily-news":
+            middleware.append(MemoryMiddleware(
                 backend=backend,
                 sources=[soul_path],
                 add_cache_control=True,
                 system_prompt=build_workspace_soul_prompt(soul_path),
-            ),
-        ]
+            ))
         if allow_silent_reply and access_profile == "frontier":
             middleware.append(SilentReplyMiddleware())
         if allow_local_tools and any(name in EnvConfig.ADVAN_MODEL.lower() for name in ("gpt", "claude")):
@@ -889,7 +890,7 @@ class FrontierCognitive:
             subagents=subagents,
             middleware=middleware,
             skills=[SKILLS_BACKEND_PATH],
-            memory=[soul_path],
+            memory=None if profile == "daily-news" else [soul_path],
             permissions=filesystem_permissions,
             backend=backend,
             state_schema=FrontierAgentState,
@@ -933,7 +934,7 @@ class FrontierCognitive:
             "suppress_reply": False,
         }
         skill_names = list(pinned_skills)
-        if allow_local_tools and access_profile == "frontier" and (conversation is None or conversation.platform == "qq"):
+        if allow_local_tools and profile == "qq":
             skill_names.append("rich-markdown")
         if skill_names:
             input_data["pinned_skills"] = list(dict.fromkeys(skill_names))
