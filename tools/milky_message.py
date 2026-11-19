@@ -1,16 +1,14 @@
 import json
-from typing import Literal, cast
+import re
+from typing import cast
 
 from langchain.tools import ToolRuntime
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from nonebot import get_bot
-from nonebot.adapters.milky.message import Message, MessageSegment
-from pydantic import BaseModel, Field
 
 from utils.agent_context import FrontierRuntimeContext
 from utils.agents.runtime import conversation_workspace_key
-from utils.configs import EnvConfig
 from utils.milky_tools import (
     ToolInputError,
     configurable,
@@ -24,71 +22,36 @@ from utils.milky_tools import (
 
 _DEFAULT_CONFIG = cast(RunnableConfig, None)
 _DEFAULT_RUNTIME = cast(ToolRuntime[FrontierRuntimeContext, dict], None)
+_MAX_INLINE_TEXT_CHARS = 1000
+_LONG_TEXT_FILE_NAME = "长文本.txt"
+_MAX_FILE_TITLE_CHARS = 60
+_INVALID_FILE_NAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f]+')
 
 
-def _tool_text_message(bot: object, text: str) -> Message | str:
-    """Wrap tool-sent long text in an expandable QQ forward, preserving source text."""
-    threshold = EnvConfig.TOOL_LONG_TEXT_FORWARD_THRESHOLD
-    if threshold == 0 or len(text) < threshold:
-        return text
-
-    try:
-        sender_id = int(getattr(bot, "self_id", None))
-    except (AttributeError, TypeError, ValueError) as exc:
-        raise ToolInputError("无法确认机器人 QQ 号，长文本未发送。") from exc
-    if sender_id <= 0:
-        raise ToolInputError("机器人 QQ 号无效，长文本未发送。")
-
-    node = MessageSegment.node(sender_id, EnvConfig.BOT_NAME, Message(text))
-    return Message(MessageSegment.forward([node], title="长文本", summary="查看完整内容"))
+def _text_file_name(title: str | None) -> str:
+    stem = _INVALID_FILE_NAME_CHARS.sub(" ", title or "").rstrip(" .")
+    if stem.lower().endswith(".txt"):
+        stem = stem[:-4]
+    stem = stem.lstrip(" .")[:_MAX_FILE_TITLE_CHARS].rstrip(" .")
+    return f"{stem}.txt" if stem else _LONG_TEXT_FILE_NAME
 
 
-class ForwardMessageNode(BaseModel):
-    user_id: int = Field(gt=0, description="原消息发送者 QQ 号")
-    sender_name: str = Field(min_length=1, description="原消息发送者名称")
-    text: str = Field(min_length=1, description="转发节点的文本内容")
-    time: int | None = Field(default=None, ge=0, description="原消息 Unix 秒时间戳，未知时省略")
-
-
-@tool(response_format="content")
-@input_error_text
-async def send_forwarded_message(
-    messages: list[ForwardMessageNode],
-    message_scene: Literal["friend", "group"],
-    peer_id: int | None = None,
-    title: str | None = None,
-    summary: str | None = None,
-    config: RunnableConfig = _DEFAULT_CONFIG,
-) -> str:
-    """发送文本合并转发，可保留每个节点的原始发送时间（Milky 1.3）。
-
-    Args:
-        messages: 原始消息节点，包含 user_id、sender_name、text 和可选的 time（秒）；不要编造来源或时间
-        message_scene: friend 为私聊，group 为群聊
-        peer_id: 目标会话 ID，省略时使用当前对应会话
-        title: 可选转发标题
-        summary: 可选转发摘要
-    """
-    if not messages:
-        return "合并转发至少需要一条消息。"
-    if message_scene not in {"friend", "group"}:
-        return "合并转发仅支持 friend 或 group。"
-    resolved_peer_id = require_peer(message_scene, peer_id, config)
-    nodes = [ForwardMessageNode.model_validate(node) for node in messages]
-    outgoing = Message(MessageSegment.forward([
-        MessageSegment.node(node.user_id, node.sender_name, Message(node.text), time=node.time)
-        for node in nodes
-    ], title=title, summary=summary))
+async def _send_text(text: str, target: int, *, is_group: bool, file_title: str | None) -> str:
     bot = get_bot()
+    if len(text) > _MAX_INLINE_TEXT_CHARS:
+        payload = text.encode("utf-8")
+        file_name = _text_file_name(file_title)
+        file_id = (
+            await bot.upload_group_file(group_id=target, raw=payload, file_name=file_name)
+            if is_group
+            else await bot.upload_private_file(user_id=target, raw=payload, file_name=file_name)
+        )
+        return f"文件 {file_name}，file_id={file_id}"
     response = (
-        await bot.send_group_message(group_id=resolved_peer_id, message=outgoing)
-        if message_scene == "group"
-        else await bot.send_private_message(user_id=resolved_peer_id, message=outgoing)
+        await bot.send_group_message(group_id=target, message=text)
+        if is_group
+        else await bot.send_private_message(user_id=target, message=text)
     )
-    return _format_message_response(response)
-
-
-def _format_message_response(response) -> str:
     return f"message_seq={response.message_seq} time={response.time}"
 
 
@@ -97,16 +60,19 @@ def _format_message_response(response) -> str:
 async def send_plain_text(
     text: str,
     config: RunnableConfig = _DEFAULT_CONFIG,
+    *,
+    file_title: str | None = None,
 ) -> str:
     """立即向当前 QQ 会话发送纯文本，不渲染 Markdown、不转图片。
 
     用于用户要求可复制的文字、代码、链接或明确要求不要图片的最终内容。
     保留原文和换行，Markdown 标记也按文字发送；不要用来发送思考或过程状态。
     目标由运行时会话决定，不能指定其他群或用户。成功后不要在最终回复中重复正文。
-    长文本达到配置阈值时自动使用可展开的合并转发消息，仍保留原文；失败不自动重试。
+    超过 1000 字符时，以 UTF-8 的 TXT 附件发送完整正文。
 
     Args:
         text: 要发送的完整纯文本正文
+        file_title: TXT 附件标题，优先用用户指定的标题，否则根据正文拟一个简短标题。仅在超过 1000 字符时使用，后缀会自动补齐。
     """
     if not text.strip():
         raise ToolInputError("纯文本消息不能为空。")
@@ -121,16 +87,8 @@ async def send_plain_text(
     content = await sanitize_outgoing_text(text)
     if not content or not content.strip():
         raise ToolInputError("纯文本消息经内容检查后为空，未发送。")
-    bot = get_bot()
-    outgoing = _tool_text_message(bot, content)
-    message = [MessageSegment.text(content)] if isinstance(outgoing, str) else outgoing
-    response = (
-        await bot.send_group_message(group_id=target, message=message)
-        if is_group
-        else await bot.send_private_message(user_id=target, message=message)
-    )
-    label = "合并转发长文本" if not isinstance(outgoing, str) else "纯文本"
-    return f"已向当前会话发送{label}消息，{_format_message_response(response)}。不要重复发送正文。"
+    receipt = await _send_text(content, target, is_group=is_group, file_title=file_title)
+    return f"已向当前会话发送正文，{receipt}。不要重复发送正文。"
 
 
 @tool(response_format="content")
@@ -139,16 +97,17 @@ async def send_private_message(
     message_text: str,
     user_id: int | None = None,
     config: RunnableConfig = _DEFAULT_CONFIG,
+    *,
+    file_title: str | None = None,
 ) -> str:
-    """发送私聊文本消息；长文本自动包装为可展开的合并转发。
+    """发送私聊文本消息，超过 1000 字符时发送 UTF-8 TXT 附件。
     Args:
         message_text: 消息文本
         user_id: 可选好友 QQ 号，未传时使用当前用户上下文
+        file_title: TXT 附件标题，优先用用户指定的标题，否则根据正文拟一个简短标题。仅在超过 1000 字符时使用，后缀会自动补齐。
     """
     resolved_user_id = require_user_id(user_id, config)
-    bot = get_bot()
-    response = await bot.send_private_message(user_id=resolved_user_id, message=_tool_text_message(bot, message_text))
-    return _format_message_response(response)
+    return await _send_text(message_text, resolved_user_id, is_group=False, file_title=file_title)
 
 
 @tool(response_format="content")
@@ -157,16 +116,17 @@ async def send_group_message(
     message_text: str,
     group_id: int | None = None,
     config: RunnableConfig = _DEFAULT_CONFIG,
+    *,
+    file_title: str | None = None,
 ) -> str:
-    """发送群文本消息；长文本自动包装为可展开的合并转发。
+    """发送群文本消息，超过 1000 字符时发送 UTF-8 TXT 附件。
     Args:
         message_text: 消息文本
         group_id: 可选群号，未传时使用当前群聊
+        file_title: TXT 附件标题，优先用用户指定的标题，否则根据正文拟一个简短标题。仅在超过 1000 字符时使用，后缀会自动补齐。
     """
     resolved_group_id = require_group_id(group_id, config)
-    bot = get_bot()
-    response = await bot.send_group_message(group_id=resolved_group_id, message=_tool_text_message(bot, message_text))
-    return _format_message_response(response)
+    return await _send_text(message_text, resolved_group_id, is_group=True, file_title=file_title)
 
 
 @tool(response_format="content")

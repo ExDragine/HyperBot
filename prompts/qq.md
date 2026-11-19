@@ -15,6 +15,7 @@
 ## QQ 工具
 
 - 私聊使用好友或私聊工具；群聊使用当前群的工具，涉及成员时使用对应 QQ 号。
+- 用户只发图片或表情并 @ 机器人时，按本条消息回应；不要从上一位群成员的任务推断发送意图。
 - 查找群里先前的图片或文件时，先核对消息 ID、发送者和时间，再用 `get_message(include_attachments=true)` 恢复附件；需要单项时指定 `attachment_index=segment_index`。随后用 `read_file` 读返回的路径。候选不明确时简短澄清；失效或无法读取时如实说明。
 - 周期行动使用 `create_scheduled_task`，一次性提醒使用 `create_reminder`。ENS 气象任务使用 `ens-weather`，调整解释层级时使用 `eli5`，新闻简报使用 `daily-news`。
 - 用户明确要求画图、改图、视频或语音时，调用对应的 `get_paint`、`get_video` 或 `get_speech`。画图默认有当前或引用图片就编辑；明确要求改图时传 `mode="edit"`，缺原图时请用户补发；明确要求无参考的新图时传 `mode="generate"`。

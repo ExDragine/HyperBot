@@ -274,11 +274,11 @@ def test_real_milky_13_adapter_and_tool_schemas(tmp_path):
     script = r'''
 import asyncio
 import sys
-from types import SimpleNamespace
+from base64 import b64decode
 sys.path.insert(0, sys.argv[1])
 
+from nonebot.adapters.milky import Bot
 from nonebot.adapters.milky.event import EVENT_CLASSES, GroupDisbandEvent, MessageEvent
-from nonebot.adapters.milky.message import Message
 from tools import milky_message, milky_file
 
 event = MessageEvent.model_validate({
@@ -292,24 +292,38 @@ assert event.message[0].type == "markdown"
 assert EVENT_CLASSES["group_disband"] is GroupDisbandEvent
 assert "runtime" not in milky_file.persist_group_file.tool_call_schema.model_json_schema()["properties"]
 assert "is_self_send" in milky_file.get_private_file_download_url.args
+schema = milky_message.send_plain_text.tool_call_schema.model_json_schema()
+assert set(schema["properties"]) == {"text", "file_title"}
+assert schema["required"] == ["text"]
+assert not hasattr(milky_message, "send_forwarded_message")
+assert milky_message.get_forwarded_messages.name == "get_forwarded_messages"
 
 calls = []
-async def send(**kwargs):
-    message = kwargs["message"]
-    assert isinstance(message, Message)
-    elements = message.to_elements()
-    assert elements[0]["data"]["messages"][0]["time"] == 123
-    calls.append(kwargs)
-    return SimpleNamespace(message_seq=9, time=456)
+class ContractBot(Bot):
+    async def call_api(self, api, **data):
+        return await getattr(type(self), api)(self, **data)
 
-milky_message.get_bot = lambda: SimpleNamespace(send_group_message=send)
+    async def _call(self, action, data):
+        uri = data["file_uri"]
+        assert uri.startswith("base64://")
+        peer_id = data.get("group_id", data.get("user_id"))
+        calls.append((action, peer_id, data["file_name"], b64decode(uri.removeprefix("base64://"), validate=True)))
+        return {"file_id": "txt-id"}
+
+bot = ContractBot(None, "999", None)
+milky_message.get_bot = lambda: bot
 async def run():
-    result = await milky_message.send_forwarded_message.ainvoke({
-        "messages": [{"user_id": 456, "sender_name": "Alice", "text": "hello", "time": 123}],
-        "message_scene": "group", "peer_id": 789,
-    })
-    assert "message_seq=9" in result
-    assert calls[0]["group_id"] == 789
+    article = "长文\n" * 500
+    for context, args in (
+        ({"group_id": 789}, {"text": article, "file_title": "文章全文"}),
+        ({"user_id": 456}, {"text": article}),
+    ):
+        result = await milky_message.send_plain_text.ainvoke(args, config={"configurable": context})
+        assert "file_id=txt-id" in result
+    assert calls == [
+        ("upload_group_file", 789, "文章全文.txt", article.encode("utf-8")),
+        ("upload_private_file", 456, "长文本.txt", article.encode("utf-8")),
+    ]
 asyncio.run(run())
 '''
     result = subprocess.run(  # noqa: S603 - fixed script and repository path

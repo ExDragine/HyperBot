@@ -10,96 +10,80 @@ def _config(group_id=123, user_id="456"):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("group_id, method, target", [
-    (123, "send_group_message", {"group_id": 123}),
-    (None, "send_private_message", {"user_id": 456}),
-    (0, "send_private_message", {"user_id": 456}),
+@pytest.mark.parametrize("tool_name, group_id, method, target", [
+    ("send_plain_text", 123, "send_group_message", {"group_id": 123}),
+    ("send_plain_text", None, "send_private_message", {"user_id": 456}),
+    ("send_plain_text", 0, "send_private_message", {"user_id": 456}),
+    ("send_group_message", 123, "send_group_message", {"group_id": 123}),
+    ("send_private_message", None, "send_private_message", {"user_id": 456}),
 ])
-async def test_plain_text_preserves_long_markdown_without_rendering(
-    load_tool_module, install_milky_bot, monkeypatch, group_id, method, target,
+async def test_tool_sent_long_text_uploads_a_utf8_file_to_the_same_target(
+    load_tool_module, install_milky_bot, monkeypatch, tool_name, group_id, method, target,
 ):
     from utils import message as delivery
 
     async def fail_render(*_args, **_kwargs):
         pytest.fail("plain text must never enter Markdown rendering")
+
     monkeypatch.setattr(delivery, "markdown_to_image", fail_render)
     monkeypatch.setattr(delivery, "markdown_to_text", fail_render)
-    message = load_tool_module("milky_message")
-    bot = install_milky_bot(message, {method: types.SimpleNamespace(message_seq=7, time=123)})
-    bot.self_id = "999"
-    monkeypatch.setattr(message.EnvConfig, "TOOL_LONG_TEXT_FORWARD_THRESHOLD", 500)
-    monkeypatch.setattr(message.EnvConfig, "BOT_NAME", "HyperBot")
-    text = "  ```python\nprint('hello')\n```\nhttps://example.com\n" + "长文本\n" * 1000
+    module = load_tool_module("milky_message")
+    upload = method.replace("send_", "upload_").replace("_message", "_file")
+    bot = install_milky_bot(module, {upload: "txt-id"})
+    text = "  ```python\r\nprint('hello')\n```\n" + "第一段📖\n  " * 400
+    result = await getattr(module, tool_name)(
+        text, config=_config(group_id=group_id), file_title="测试记录",
+    )
 
-    result = await message.send_plain_text(text, config=_config(group_id=group_id))
-
-    assert "message_seq=7" in result
-    assert len(bot.calls) == 1
-    called_method, kwargs = bot.calls[0]
-    assert called_method == method
-    assert {key: value for key, value in kwargs.items() if key != "message"} == target
-    assert len(kwargs["message"]) == 1
-    forward = kwargs["message"][0]
-    assert forward.type == "forward"
-    assert forward.data["title"] == "长文本"
-    assert forward.data["summary"] == "查看完整内容"
-    node, = forward.data["messages"]
-    assert node.user_id == 999
-    assert node.sender_name == "HyperBot"
-    assert len(node.segments) == 1
-    assert node.segments[0].type == "text"
-    assert node.segments[0].data == {"text": text}
+    assert "测试记录.txt" in result and "file_id=txt-id" in result
+    assert bot.calls == [(upload, {**target, "raw": text.encode("utf-8"), "file_name": "测试记录.txt"})]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("text, threshold, is_forward", [
-    ("x" * 499, 500, False),
-    ("x" * 500, 500, True),
-    ("x" * 1000, 0, False),
-])
-async def test_plain_text_forward_threshold(load_tool_module, install_milky_bot, monkeypatch, text, threshold, is_forward):
+@pytest.mark.parametrize("length", [1000, 1001])
+async def test_plain_text_uses_file_only_above_character_limit(load_tool_module, install_milky_bot, length):
+    module = load_tool_module("milky_message")
+    bot = install_milky_bot(module, {
+        "send_group_message": types.SimpleNamespace(message_seq=7, time=123),
+        "upload_group_file": "txt-id",
+    })
+    text = "字" * length
+    result = await module.send_plain_text(text, config=_config(), file_title=" .txt ")
 
-    message = load_tool_module("milky_message")
-    bot = install_milky_bot(message, {"send_group_message": types.SimpleNamespace(message_seq=7, time=123)})
-    bot.self_id = "999"
-    monkeypatch.setattr(message.EnvConfig, "TOOL_LONG_TEXT_FORWARD_THRESHOLD", threshold)
-
-    await message.send_plain_text(text, config=_config())
-    outgoing = bot.calls[0][1]["message"]
-    assert len(outgoing) == 1
-    assert outgoing[0].type == ("forward" if is_forward else "text")
-    actual_text = outgoing[0].data["messages"][0].segments[0].data["text"] if is_forward else outgoing[0].data["text"]
-    assert actual_text == text
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("method", ["send_private_message", "send_group_message"])
-async def test_other_send_tools_forward_long_text(load_tool_module, install_milky_bot, monkeypatch, method):
-    message = load_tool_module("milky_message")
-    bot = install_milky_bot(message, {method: types.SimpleNamespace(message_seq=7, time=123)})
-    bot.self_id = "999"
-    monkeypatch.setattr(message.EnvConfig, "TOOL_LONG_TEXT_FORWARD_THRESHOLD", 500)
-    content = "长" * 600
-
-    if method == "send_private_message":
-        result = await message.send_private_message(message_text=content, user_id=456)
+    if length == 1000:
+        assert "message_seq=7" in result
+        assert bot.calls == [("send_group_message", {"group_id": 123, "message": text})]
     else:
-        result = await message.send_group_message(message_text=content, config=_config())
-    assert "message_seq=7" in result
-    assert len(bot.calls) == 1
-    sent = bot.calls[0][1]["message"]
-    assert len(sent) == 1 and sent[0].type == "forward"
-    assert sent[0].data["messages"][0].segments[0].data["text"] == content
+        assert "file_id=txt-id" in result
+        assert bot.calls == [
+            ("upload_group_file", {"group_id": 123, "raw": text.encode("utf-8"), "file_name": "长文本.txt"}),
+        ]
 
 
 @pytest.mark.asyncio
-async def test_missing_bot_identity_prevents_long_text_delivery(load_tool_module, install_milky_bot, monkeypatch):
-    message = load_tool_module("milky_message")
-    bot = install_milky_bot(message)
-    monkeypatch.setattr(message.EnvConfig, "TOOL_LONG_TEXT_FORWARD_THRESHOLD", 500)
-    result = await message.send_group_message(message_text="x" * 500, config=_config())
-    assert "无法确认机器人 QQ 号" in result
-    assert bot.calls == []
+@pytest.mark.parametrize("title, file_name", [
+    (" 项目记录.TXT ", "项目记录.txt"),
+    ("../会议:纪要\n", "会议 纪要.txt"),
+    ("内容" * 40, "内容" * 30 + ".txt"),
+])
+async def test_text_attachment_normalizes_title(load_tool_module, install_milky_bot, title, file_name):
+    module = load_tool_module("milky_message")
+    bot = install_milky_bot(module, {"upload_group_file": "txt-id"})
+    await module.send_group_message("字" * 1001, config=_config(), file_title=title)
+    assert len(bot.calls) == 1 and bot.calls[0][1]["file_name"] == file_name
+
+
+@pytest.mark.asyncio
+async def test_plain_text_upload_failure_does_not_resend_or_switch_transport(load_tool_module, install_milky_bot):
+    module = load_tool_module("milky_message")
+
+    def fail(_kwargs):
+        raise TimeoutError
+
+    bot = install_milky_bot(module, {"upload_group_file": fail})
+    with pytest.raises(TimeoutError):
+        await module.send_plain_text("字" * 1001, config=_config())
+    assert [name for name, _ in bot.calls] == ["upload_group_file"]
 
 
 @pytest.mark.asyncio
@@ -141,7 +125,7 @@ async def test_plain_text_applies_output_safety_and_does_not_retry_on_failure(
     with pytest.raises(RuntimeError, match="platform rejected"):
         await message.send_plain_text("original", config=_config())
     assert len(calls) == 1
-    assert calls[0]["message"][0].data == {"text": "blocked"}
+    assert calls[0]["message"] == "blocked"
 
 
 def _echoed_message(kwargs):

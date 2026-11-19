@@ -38,7 +38,7 @@ Agent 先用 `get_recent_conversation` 或 `search_messages` 确定消息和发�
 
 ## 投递结果
 
-`send_plain_text`、`send_group_message` 和 `send_private_message` 这三个 QQ 工具直接调用 Milky。它们发送的文本达到 `[agent].tool_long_text_forward_threshold`（默认 500 字符）时，自动包装成单节点合并转发，以便在 QQ 中展开查看；短文本沿用原消息类型，配置为 `0` 时关闭包装。文本与换行原样保留，`send_plain_text` 仍先通过输出内容安全检查。发送失败不自动重复发送。该设置不影响 `send_messages()` 的最终回复和 Markdown 转图，也不修改显式的 `send_forwarded_message` 工具。
+`send_plain_text`、`send_group_message` 和 `send_private_message` 通过 Milky 发送普通文本。超过 1000 字符时，改发一个 UTF-8 的 TXT 附件，保留正文和换行。通过 `file_title` 使用用户指定的标题或根据正文拟定标题。工具自动处理文件名字符和 `.txt` 后缀，未提供有效标题时使用 `长文本.txt`。文件上传失败会按工具错误处理。`send_plain_text` 发送前会执行输出检查。
 
 
 绘图生成和编辑请求统一使用 `size="auto"`，分辨率与横竖比例由图片模型结合提示词和参考图选择。旧配置中的 `paint_size` 仅保留加载兼容，不再限制生成尺寸。
