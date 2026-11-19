@@ -1,13 +1,10 @@
 import json
-from collections.abc import Awaitable, Callable
-from functools import partial
 from typing import cast
 
 from langchain.tools import ToolRuntime
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from nonebot import get_bot
-from nonebot.adapters.milky.model.api import MessageResponse
 
 from utils.agent_context import FrontierRuntimeContext
 from utils.agents.runtime import conversation_workspace_key
@@ -24,13 +21,25 @@ from utils.milky_tools import (
 
 _DEFAULT_CONFIG = cast(RunnableConfig, None)
 _DEFAULT_RUNTIME = cast(ToolRuntime[FrontierRuntimeContext, dict], None)
-_PLAIN_TEXT_CHUNK_SIZE = 1000
+_MAX_INLINE_TEXT_CHARS = 1000
+_LONG_TEXT_FILE_NAME = "长文本.txt"
 
 
-async def _send_text(send: Callable[..., Awaitable[MessageResponse]], text: str) -> str:
-    response = await send(message=text[:_PLAIN_TEXT_CHUNK_SIZE])
-    for start in range(_PLAIN_TEXT_CHUNK_SIZE, len(text), _PLAIN_TEXT_CHUNK_SIZE):
-        response = await send(message=text[start:start + _PLAIN_TEXT_CHUNK_SIZE])
+async def _send_text(text: str, target: int, *, is_group: bool) -> str:
+    bot = get_bot()
+    if len(text) > _MAX_INLINE_TEXT_CHARS:
+        payload = text.encode("utf-8")
+        file_id = (
+            await bot.upload_group_file(group_id=target, raw=payload, file_name=_LONG_TEXT_FILE_NAME)
+            if is_group
+            else await bot.upload_private_file(user_id=target, raw=payload, file_name=_LONG_TEXT_FILE_NAME)
+        )
+        return f"文件 {_LONG_TEXT_FILE_NAME}，file_id={file_id}"
+    response = (
+        await bot.send_group_message(group_id=target, message=text)
+        if is_group
+        else await bot.send_private_message(user_id=target, message=text)
+    )
     return f"message_seq={response.message_seq} time={response.time}"
 
 
@@ -45,7 +54,7 @@ async def send_plain_text(
     用于用户要求可复制的文字、代码、链接或明确要求不要图片的最终内容。
     保留原文和换行，Markdown 标记也按文字发送；不要用来发送思考或过程状态。
     目标由运行时会话决定，不能指定其他群或用户。成功后不要在最终回复中重复正文。
-    长文本会按原文顺序分段发送。
+    超过 1000 字符时，以 UTF-8 的 TXT 附件发送完整正文。
 
     Args:
         text: 要发送的完整纯文本正文
@@ -63,13 +72,8 @@ async def send_plain_text(
     content = await sanitize_outgoing_text(text)
     if not content or not content.strip():
         raise ToolInputError("纯文本消息经内容检查后为空，未发送。")
-    bot = get_bot()
-    send = (
-        partial(bot.send_group_message, group_id=target) if is_group
-        else partial(bot.send_private_message, user_id=target)
-    )
-    receipt = await _send_text(send, content)
-    return f"已向当前会话发送纯文本消息，{receipt}。不要重复发送正文。"
+    receipt = await _send_text(content, target, is_group=is_group)
+    return f"已向当前会话发送正文，{receipt}。不要重复发送正文。"
 
 
 @tool(response_format="content")
@@ -79,14 +83,13 @@ async def send_private_message(
     user_id: int | None = None,
     config: RunnableConfig = _DEFAULT_CONFIG,
 ) -> str:
-    """发送私聊文本消息，长文本按顺序分段。
+    """发送私聊文本消息，超过 1000 字符时发送 UTF-8 TXT 附件。
     Args:
         message_text: 消息文本
         user_id: 可选好友 QQ 号，未传时使用当前用户上下文
     """
     resolved_user_id = require_user_id(user_id, config)
-    bot = get_bot()
-    return await _send_text(partial(bot.send_private_message, user_id=resolved_user_id), message_text)
+    return await _send_text(message_text, resolved_user_id, is_group=False)
 
 
 @tool(response_format="content")
@@ -96,14 +99,13 @@ async def send_group_message(
     group_id: int | None = None,
     config: RunnableConfig = _DEFAULT_CONFIG,
 ) -> str:
-    """发送群文本消息，长文本按顺序分段。
+    """发送群文本消息，超过 1000 字符时发送 UTF-8 TXT 附件。
     Args:
         message_text: 消息文本
         group_id: 可选群号，未传时使用当前群聊
     """
     resolved_group_id = require_group_id(group_id, config)
-    bot = get_bot()
-    return await _send_text(partial(bot.send_group_message, group_id=resolved_group_id), message_text)
+    return await _send_text(message_text, resolved_group_id, is_group=True)
 
 
 @tool(response_format="content")
