@@ -86,6 +86,7 @@
         "context_window": {
           "oneOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]
         },
+        "max_input_tokens": {"type": "integer", "minimum": 1},
         "max_output_tokens": {
           "oneOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]
         },

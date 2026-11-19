@@ -128,7 +128,7 @@ def test_load_catalog_returns_frozen_typed_data() -> None:
     manifest = _load_resource("catalog.json")
     expected_model_count = sum(len(_load_resource(entry["file"])["models"]) for entry in manifest["providers"])
 
-    assert catalog.schema_version == "1.1"
+    assert catalog.schema_version == "1.2"
     assert catalog.catalog_version == manifest["catalog_version"]
     assert len(catalog.models) == expected_model_count
     with pytest.raises(AttributeError):
@@ -145,6 +145,14 @@ def test_get_model_and_unknown_model() -> None:
     assert canonical_case_model is not None
     assert canonical_case_model.id == "Ling-2.6-1T"
     assert get_model("custom", "private-model") is None
+
+
+def test_gpt_6_2_astra_has_distinct_input_and_context_limits() -> None:
+    model = get_model("openai", "gpt-6.2-astra")
+
+    assert model is not None
+    assert model.context_window == 1_050_000
+    assert model.max_input_tokens == 922_000
 
 
 def test_get_model_display_name_uses_local_overlays_without_affecting_unknown_models() -> None:

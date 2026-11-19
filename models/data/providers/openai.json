@@ -2,6 +2,103 @@
   "provider": "openai",
   "models": [
     {
+      "id": "gpt-6.2-astra",
+      "display_name": "GPT-6.2 Astra",
+      "description": {
+        "en": "A frontier reasoning model for complex coding and professional work. Tool calling requires the Responses API.",
+        "zh-CN": "面向复杂编程和专业工作的旗舰推理模型。工具调用需要使用 Responses API。"
+      },
+      "capabilities": {
+        "input": [
+          "text",
+          "image",
+          "file"
+        ],
+        "output": [
+          "text"
+        ],
+        "features": [
+          "reasoning",
+          "tool_calling",
+          "structured_output",
+          "web_search",
+          "image_generation"
+        ],
+        "api_modes": [
+          "responses",
+          "chat_completions"
+        ]
+      },
+      "context_window": 1050000,
+      "max_input_tokens": 922000,
+      "max_output_tokens": 128000,
+      "knowledge_cutoff": "2026-05",
+      "released_at": "2026-11-17",
+      "status": "active",
+      "sources": [
+        {
+          "url": "https://developers.openai.com/api/docs/models/gpt-6.2-astra",
+          "verified_at": "2026-11-19"
+        },
+        {
+          "url": "https://developers.openai.com/api/docs/changelog",
+          "verified_at": "2026-11-19"
+        },
+        {
+          "url": "https://developers.openai.com/api/docs/guides/file-inputs",
+          "verified_at": "2026-11-19"
+        }
+      ]
+    },
+    {
+      "id": "gpt-6.1-terra",
+      "display_name": "GPT-6.1 Terra",
+      "description": {
+        "en": "An efficient reasoning model for visual analysis, computer use, and writing. Tool calling requires the Responses API.",
+        "zh-CN": "面向视觉分析、计算机操作和写作的高效推理模型。工具调用需要使用 Responses API。"
+      },
+      "capabilities": {
+        "input": [
+          "text",
+          "image",
+          "file"
+        ],
+        "output": [
+          "text"
+        ],
+        "features": [
+          "reasoning",
+          "tool_calling",
+          "structured_output",
+          "web_search",
+          "image_generation"
+        ],
+        "api_modes": [
+          "responses",
+          "chat_completions"
+        ]
+      },
+      "context_window": 1050000,
+      "max_output_tokens": 128000,
+      "knowledge_cutoff": "2026-06",
+      "released_at": "2026-10-26",
+      "status": "active",
+      "sources": [
+        {
+          "url": "https://developers.openai.com/api/docs/models/gpt-6.1-terra",
+          "verified_at": "2026-11-19"
+        },
+        {
+          "url": "https://developers.openai.com/api/docs/changelog",
+          "verified_at": "2026-11-19"
+        },
+        {
+          "url": "https://developers.openai.com/api/docs/guides/file-inputs",
+          "verified_at": "2026-11-19"
+        }
+      ]
+    },
+    {
       "id": "gpt-6.1-sol",
       "display_name": "GPT-6.1 Sol",
       "description": {

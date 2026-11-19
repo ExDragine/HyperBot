@@ -68,20 +68,22 @@ def test_catalog_profile_accepts_proxy_prefixed_model_id(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("model_id", "context", "output", "audio", "video", "status"),
+    ("model_id", "max_input", "output", "audio", "video", "status"),
     [
         ("gpt-6.1-sol", 1_050_000, 128_000, False, False, "active"),
         ("mimo-v2.6-pro", 1_048_576, 131_072, True, True, "active"),
         ("qwen3.8-omni-flash", 1_000_000, 131_072, True, True, "active"),
         ("step-5-preview", 1_000_000, 64_000, False, True, "preview"),
         ("mistral-large-4", 1_000_000, None, False, False, "preview"),
+        ("gpt-6.2-astra", 922_000, 128_000, False, False, "active"),
+        ("gpt-6.1-terra", 1_050_000, 128_000, False, False, "active"),
     ],
 )
-def test_new_model_profiles_preserve_modalities_limits_and_status(model_id, context, output, audio, video, status):
+def test_new_model_profiles_preserve_modalities_limits_and_status(model_id, max_input, output, audio, video, status):
     profile = factory.get_langchain_model_profile(f"gateway/{model_id}", "openai")
 
     assert profile is not None
-    assert profile["max_input_tokens"] == context
+    assert profile["max_input_tokens"] == max_input
     assert profile.get("max_output_tokens") == output
     assert profile["image_inputs"] is True
     assert profile["audio_inputs"] is audio

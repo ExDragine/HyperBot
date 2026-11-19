@@ -228,8 +228,9 @@ def get_langchain_model_profile(model: str, provider_type: str) -> ModelProfile 
         "structured_output": ModelFeature.STRUCTURED_OUTPUT in features,
         "attachment": ModelInput.FILE in inputs,
     }
-    if card.context_window is not None:
-        profile["max_input_tokens"] = card.context_window
+    max_input_tokens = card.max_input_tokens if card.max_input_tokens is not None else card.context_window
+    if max_input_tokens is not None:
+        profile["max_input_tokens"] = max_input_tokens
     if card.max_output_tokens is not None:
         profile["max_output_tokens"] = card.max_output_tokens
     if card.released_at is not None:

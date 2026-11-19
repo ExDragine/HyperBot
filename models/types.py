@@ -75,6 +75,7 @@ class ModelCard:
     released_at: str | None
     status: ModelStatus
     sources: tuple[ModelSource, ...]
+    max_input_tokens: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

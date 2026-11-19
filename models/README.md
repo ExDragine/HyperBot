@@ -59,6 +59,7 @@ assert get_model("my-provider", "custom-model") is None
 - `capabilities.features`：受控的模型或官方 API 能力标签。
 - `capabilities.api_modes`：开发商官方支持的 API 形态。
 - `context_window`、`max_output_tokens`、`knowledge_cutoff`、`released_at`：可空技术字段。官方资料不明确时保持 `null`，不推测。
+- `max_input_tokens`：可选。官方单独公布输入上限时填写。运行时优先采用该上限，否则使用 `context_window`。
 - `status`：`active`、`preview`、`legacy` 或 `deprecated`。
 - `sources`：支持该模型卡内容的官方资料 URL 和核验日期。
 

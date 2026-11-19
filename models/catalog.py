@@ -48,6 +48,7 @@ def _parse_model(provider: str, raw: dict[str, Any]) -> ModelCard:
         released_at=raw["released_at"],
         status=ModelStatus(raw["status"]),
         sources=tuple(ModelSource(**source) for source in raw["sources"]),
+        max_input_tokens=raw.get("max_input_tokens"),
     )
 
 
