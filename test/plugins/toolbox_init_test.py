@@ -438,7 +438,7 @@ async def test_summarize_update_commits_calls_llm(monkeypatch):
     assert "add changelog" in captured["user_prompt"]
     assert "fix update" in captured["user_prompt"]
     assert captured["kwargs"]["tools"] is None
-    assert captured["kwargs"]["temperature"] == 0
+    assert "temperature" not in captured["kwargs"]
 
 
 @pytest.mark.asyncio

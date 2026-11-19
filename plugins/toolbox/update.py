@@ -99,7 +99,7 @@ async def summarize_update_commits(commits: list[CommitInfo]) -> str | None:
     )
     user_prompt = f"请总结这次更新包含的变化：\n\n{_format_commits_for_prompt(commits)}"
     try:
-        result = await _call_assistant_agent(system_prompt, user_prompt, tools=None, temperature=0)
+        result = await _call_assistant_agent(system_prompt, user_prompt, tools=None)
     except Exception as e:
         logger.warning(f"生成更新日志失败: {e}")
         return None
