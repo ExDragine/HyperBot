@@ -11,9 +11,9 @@ def test_run_sh_matches_run_ps1_startup_contract():
     assert "https://hf-mirror.com" in run_ps1
     assert 'export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"' in run_sh
     assert "source .venv/bin/activate" in run_sh
-    assert "uv run nb run" in run_sh
+    assert "uv run --locked nb run" in run_sh
     assert "sleep 5" in run_sh
 
     assert "uv sync" not in run_sh
     assert "playwright install" not in run_sh
-    assert "nb run" not in run_sh.replace("uv run nb run", "")
+    assert "nb run" not in run_sh.replace("uv run --locked nb run", "")
