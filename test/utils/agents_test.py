@@ -23,6 +23,9 @@ from utils.agents import progress as progress_mod
 from utils.agents import prompts as prompts_mod
 from utils.agents import runtime as runtime_mod
 from utils.agents import workspace as workspace_mod
+from utils.providers.deepseek import agent_web as deepseek_web
+from utils.providers.deepseek.web import SEARCH_PROMPT_HINT
+from utils.providers.web_search import WEB_SEARCH_PROMPT_HINT, NativeWebSearchMiddleware
 
 
 def _standard_test_image_block() -> dict[str, str]:
@@ -632,7 +635,6 @@ async def test_chat_agent_drops_reasoning_params_when_chat_completions(monkeypat
     monkeypatch.setattr(cognitive_mod.EnvConfig, "ADVAN_MODEL_PROVIDER", "openrouter")
     monkeypatch.setattr(cognitive_mod, "provider_uses_responses_api", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(cognitive_mod, "provider_request_overrides", lambda *_args, **_kwargs: {})
-    monkeypatch.setattr(cognitive_mod, "model_supports_native_web_search", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(
         cognitive_mod, "native_web_search_support", lambda *_args, **_kwargs: (False, "test route")
     )
@@ -796,7 +798,7 @@ async def test_chat_agent_acp_profile_removes_platform_tools_and_delegation(
         "filter_messages_for_model_capabilities",
         lambda messages, *_args, **_kwargs: messages,
     )
-    monkeypatch.setattr(cognitive_mod, "model_supports_native_web_search", lambda *_args: False)
+    monkeypatch.setattr(cognitive_mod, "native_web_search_support", lambda *_args: (False, "test route"))
     monkeypatch.setattr(prompts_mod.EnvConfig, "SYSTEM_PROMPT", "QQ-only persona for {name}.")
 
     async def unexpected_capture_check(_text):
@@ -950,7 +952,7 @@ async def test_chat_agent_passes_base_system_prompt_from_load_method(monkeypatch
     monkeypatch.setattr(
         cognitive_mod.FrontierCognitive, "load_system_prompt", staticmethod(lambda *_args, **_kwargs: "base prompt")
     )
-    monkeypatch.setattr(cognitive_mod, "model_supports_native_web_search", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(cognitive_mod, "native_web_search_support", lambda *_args: (False, "test route"))
 
     frontier = cognitive_mod.FrontierCognitive.__new__(cognitive_mod.FrontierCognitive)
     frontier.tools = []
@@ -1194,7 +1196,9 @@ def test_provider_request_overrides_adds_deepseek_chatbot_features(
     assert payload["title"] == {"enabled": True}
     assert set(payload) >= {"safety_check", "title"}
     if api_mode == "responses":
-        assert overrides["model_kwargs"]["user"].startswith("frontier_user_")
+        assert overrides["model_kwargs"]["user"] == cognitive_mod._provider_user_id(
+            workspace_key="group-1", access_profile="frontier",
+        )
 
 
 @pytest.mark.asyncio
@@ -1219,10 +1223,9 @@ async def test_chat_agent_stabilizes_tool_order_and_keeps_gated_tools_at_tail(mo
         types.SimpleNamespace(
             restricted_tools=[
                 tool("webpage_screenshot"),
-                tool("ens_professional"),
                 tool("webpage_recording"),
-                tool("ens_normal"),
-            ]
+            ],
+            skill_tools=[tool("ens_normal"), tool("get_china_earthquake")],
         ),
     )
     monkeypatch.setattr(
@@ -1233,7 +1236,7 @@ async def test_chat_agent_stabilizes_tool_order_and_keeps_gated_tools_at_tail(mo
     monkeypatch.setattr(cognitive_mod, "create_llm", lambda **_kwargs: object())
     monkeypatch.setattr(cognitive_mod, "provider_uses_responses_api", lambda *_args: False)
     monkeypatch.setattr(cognitive_mod, "provider_request_overrides", lambda *_args, **_kwargs: {})
-    monkeypatch.setattr(cognitive_mod, "model_supports_native_web_search", lambda *_args: False)
+    monkeypatch.setattr(cognitive_mod, "native_web_search_support", lambda *_args: (False, "test route"))
     monkeypatch.setattr(
         cognitive_mod,
         "filter_messages_for_model_capabilities",
@@ -1269,14 +1272,16 @@ async def test_chat_agent_stabilizes_tool_order_and_keeps_gated_tools_at_tail(mo
     tool_names = [item.name for item in captured["tools"]]
     assert tool_names == [
         "alpha",
-        "ens_normal",
-        "ens_professional",
         "query-a",
         "query-z",
         "zeta",
         "webpage_recording",
         "webpage_screenshot",
     ]
+    skill_middleware = next(
+        middleware for middleware in captured["middleware"] if isinstance(middleware, cognitive_mod.TurnSkillsMiddleware)
+    )
+    assert [tool.name for tool in skill_middleware.tools] == ["ens_normal", "get_china_earthquake"]
     assert [item["name"] for item in captured["subagents"][-2:]] == ["acp-a", "acp-z"]
 
 
@@ -1366,7 +1371,7 @@ async def _run_chat_agent_with_web_search(
         cognitive_mod, "filter_messages_for_model_capabilities", lambda messages, *_args, **_kwargs: messages
     )
     monkeypatch.setattr(cognitive_mod, "provider_uses_responses_api", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(cognitive_mod, "model_supports_native_web_search", lambda *_args, **_kwargs: supported)
+    monkeypatch.setattr(cognitive_mod, "native_web_search_support", lambda *_args: (supported, "test route"))
     if model is not None:
         monkeypatch.setattr(cognitive_mod.EnvConfig, "ADVAN_MODEL", model)
 
@@ -1403,7 +1408,7 @@ async def test_daily_news_graph_uses_json_prompt_without_qq_persona_or_memory(mo
     assert captured["payload"]["pinned_skills"] == ["daily-news"]
     assert captured["memory"] is None
     assert not any(isinstance(item, cognitive_mod.MemoryMiddleware) for item in captured["middleware"])
-    assert any(isinstance(item, cognitive_mod.NativeWebSearchMiddleware) for item in captured["middleware"]) is research
+    assert any(isinstance(item, NativeWebSearchMiddleware) for item in captured["middleware"]) is research
 
 
 @pytest.mark.asyncio
@@ -1425,11 +1430,11 @@ async def test_chat_agent_injects_native_web_search_when_supported(monkeypatch, 
     captured = await _run_chat_agent_with_web_search(monkeypatch, tmp_path, supported=True)
 
     assert {"type": "web_search"} not in captured["tools"]
-    assert any(isinstance(item, cognitive_mod.NativeWebSearchMiddleware) for item in captured["middleware"])
+    assert any(isinstance(item, NativeWebSearchMiddleware) for item in captured["middleware"])
     filesystem = next(item for item in captured["middleware"] if type(item).__name__ == "FilesystemMiddleware")
     assert filesystem.offload_binary_content is True
-    assert cognitive_mod.WEB_SEARCH_PROMPT_HINT not in captured["system_prompt"]
-    assert cognitive_mod.DEEPSEEK_WEB_SEARCH_PROMPT_HINT not in captured["system_prompt"]
+    assert WEB_SEARCH_PROMPT_HINT not in captured["system_prompt"]
+    assert deepseek_web.DEEPSEEK_WEB_SEARCH_PROMPT_HINT not in captured["system_prompt"]
 
 
 @pytest.mark.asyncio
@@ -1437,8 +1442,8 @@ async def test_chat_agent_skips_web_search_when_route_unsupported(monkeypatch, t
     captured = await _run_chat_agent_with_web_search(monkeypatch, tmp_path, supported=False)
 
     assert {"type": "web_search"} not in captured["tools"]
-    assert not any(isinstance(item, cognitive_mod.NativeWebSearchMiddleware) for item in captured["middleware"])
-    assert cognitive_mod.WEB_SEARCH_PROMPT_HINT not in captured["system_prompt"]
+    assert not any(isinstance(item, NativeWebSearchMiddleware) for item in captured["middleware"])
+    assert WEB_SEARCH_PROMPT_HINT not in captured["system_prompt"]
 
 
 @pytest.mark.asyncio
@@ -1447,19 +1452,39 @@ async def test_chat_agent_exposes_standalone_search_without_native_web_search(mo
     captured = await _run_chat_agent_with_web_search(monkeypatch, tmp_path, supported=False, tools=tools)
 
     assert {tool.name for tool in tools} <= {tool.name for tool in captured["tools"]}
-    assert cognitive_mod.SEARCH_PROMPT_HINT in captured["system_prompt"]
+    assert SEARCH_PROMPT_HINT in captured["system_prompt"]
 
 
 @pytest.mark.asyncio
 async def test_chat_agent_advertises_deepseek_hosted_tools(monkeypatch, tmp_path):
     hosted = ("deepseek_web_search", "deepseek_read_url")
-    monkeypatch.setattr(cognitive_mod, "native_web_search_tools", lambda *_: hosted)
+    monkeypatch.setattr(cognitive_mod.EnvConfig, "ADVAN_MODEL_PROVIDER", "deepseek_responses")
     captured = await _run_chat_agent_with_web_search(monkeypatch, tmp_path, supported=True, model="deepseek-flash")
-    assert cognitive_mod.SEARCH_PROMPT_HINT not in captured["system_prompt"]
-    middleware = next(item for item in captured["middleware"] if isinstance(item, cognitive_mod.NativeWebSearchMiddleware))
+    assert SEARCH_PROMPT_HINT not in captured["system_prompt"]
+    middleware = next(item for item in captured["middleware"] if isinstance(item, deepseek_web.DeepSeekWebSearchMiddleware))
     assert middleware.tool_types == hosted
-    assert cognitive_mod.DEEPSEEK_WEB_SEARCH_PROMPT_HINT not in captured["system_prompt"]
-    assert cognitive_mod.WEB_SEARCH_PROMPT_HINT not in captured["system_prompt"]
+    assert deepseek_web.DEEPSEEK_WEB_SEARCH_PROMPT_HINT not in captured["system_prompt"]
+    assert WEB_SEARCH_PROMPT_HINT not in captured["system_prompt"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("allow_local_tools", [False, True])
+async def test_chat_agent_pins_ens_for_explicit_vep_only_when_tools_are_allowed(monkeypatch, tmp_path, allow_local_tools):
+    monkeypatch.setattr(cognitive_mod, "agent_tools", types.SimpleNamespace(
+        restricted_tools=[],
+        skill_tools=[types.SimpleNamespace(name="ens_professional")],
+    ))
+    token = cognitive_mod._ens_prefix.set("vep")
+    try:
+        captured = await _run_chat_agent_with_web_search(
+            monkeypatch, tmp_path, supported=False, allow_local_tools=allow_local_tools,
+        )
+    finally:
+        cognitive_mod._ens_prefix.reset(token)
+
+    assert ("ens-weather" in captured["payload"].get("pinned_skills", [])) is allow_local_tools
+    assert "ens_professional" not in {item.name for item in captured["tools"]}
+    assert any(isinstance(item, cognitive_mod.TurnSkillsMiddleware) for item in captured["middleware"]) is allow_local_tools
 
 
 @pytest.mark.asyncio
@@ -1502,12 +1527,12 @@ def test_native_web_search_middleware_injects_provider_tool_at_model_boundary():
         captured["system_message"] = updated_request.system_message
         return "ok"
 
-    result = cognitive_mod.NativeWebSearchMiddleware().wrap_model_call(request, handler)
+    result = NativeWebSearchMiddleware().wrap_model_call(request, handler)
 
     assert result == "ok"
     assert captured["tools"][0].name == "local_tool"
     assert captured["tools"][1] == {"type": "web_search"}
-    assert cognitive_mod.WEB_SEARCH_PROMPT_HINT in captured["system_message"].text
+    assert WEB_SEARCH_PROMPT_HINT in captured["system_message"].text
 
 
 def test_native_web_search_middleware_injects_deepseek_chatbot_tools():
@@ -1524,13 +1549,13 @@ def test_native_web_search_middleware_injects_deepseek_chatbot_tools():
         captured["system_message"] = updated.system_message
         return types.SimpleNamespace(result=[AIMessage("ok")])
 
-    cognitive_mod.NativeWebSearchMiddleware(("deepseek_web_search", "deepseek_read_url")).wrap_model_call(request, handler)
+    deepseek_web.DeepSeekWebSearchMiddleware().wrap_model_call(request, handler)
 
     assert captured["tools"] == [
         {"type": "deepseek_web_search"},
         {"type": "deepseek_read_url"},
     ]
-    assert cognitive_mod.DEEPSEEK_WEB_SEARCH_PROMPT_HINT in captured["system_message"].text
+    assert deepseek_web.DEEPSEEK_WEB_SEARCH_PROMPT_HINT in captured["system_message"].text
 
 
 def test_deepseek_search_fallback_preserves_prompt_and_propagates_second_failure():
@@ -1540,7 +1565,7 @@ def test_deepseek_search_fallback_preserves_prompt_and_propagates_second_failure
 
     local = types.SimpleNamespace(name="local_lookup")
     request = Request(tools=[local], system_message=SystemMessage("Original system prompt"))
-    middleware = cognitive_mod.NativeWebSearchMiddleware(("deepseek_web_search", "deepseek_read_url"))
+    middleware = deepseek_web.DeepSeekWebSearchMiddleware()
     attempts = []
 
     def handler(updated):
@@ -1553,11 +1578,11 @@ def test_deepseek_search_fallback_preserves_prompt_and_propagates_second_failure
         middleware.wrap_model_call(request, handler)
 
     assert len(attempts) == 2
-    assert cognitive_mod.DEEPSEEK_WEB_SEARCH_PROMPT_HINT in attempts[0].system_message.text
+    assert deepseek_web.DEEPSEEK_WEB_SEARCH_PROMPT_HINT in attempts[0].system_message.text
     assert attempts[1].tools == [local]
     assert attempts[1].system_message.text.startswith("Original system prompt")
-    assert cognitive_mod.DEEPSEEK_WEB_SEARCH_PROMPT_HINT not in attempts[1].system_message.text
-    assert cognitive_mod._DEEPSEEK_WEB_FALLBACK_HINT in attempts[1].system_message.text
+    assert deepseek_web.DEEPSEEK_WEB_SEARCH_PROMPT_HINT not in attempts[1].system_message.text
+    assert deepseek_web._DEEPSEEK_WEB_FALLBACK_HINT in attempts[1].system_message.text
 
 
 @pytest.mark.parametrize("schema", ["frontier.qq_message.v1", "frontier.message_context.v1"])
@@ -1578,8 +1603,8 @@ def test_deepseek_search_followup_uses_same_sender_topic_without_changing_histor
             return Request(**(vars(self) | changes))
 
     request = Request(tools=[], messages=[*previous, current, pinned], system_message=None)
-    middleware = cognitive_mod.NativeWebSearchMiddleware(
-        ("deepseek_web_search", "deepseek_read_url"), lookup_user_id="123", bot_user_id="555",
+    middleware = deepseek_web.DeepSeekWebSearchMiddleware.for_turn(
+        user_text=current.content, user_id="123", bot_user_id="555",
     )
     captured = []
 
@@ -1602,7 +1627,7 @@ def test_deepseek_search_followup_uses_same_sender_topic_without_changing_histor
 
 @pytest.mark.parametrize(("message", "expected"), [("@555\n找一下！", "找一下"), ("@5551 找一下", "@5551 找一下")])
 def test_lookup_text_strips_only_current_qq_bot_mention(message, expected):
-    assert cognitive_mod._lookup_text(message, "555") == expected
+    assert deepseek_web._lookup_text(message, "555") == expected
 
 
 def test_skip_reply_updates_state_and_closes_model_loop():
@@ -1648,7 +1673,7 @@ async def test_chat_agent_can_finish_without_a_reply(monkeypatch, tmp_path):
         "filter_messages_for_model_capabilities",
         lambda messages, *_args, **_kwargs: messages,
     )
-    monkeypatch.setattr(cognitive_mod, "model_supports_native_web_search", lambda *_args: False)
+    monkeypatch.setattr(cognitive_mod, "native_web_search_support", lambda *_args: (False, "test route"))
 
     frontier = cognitive_mod.FrontierCognitive.__new__(cognitive_mod.FrontierCognitive)
     frontier.tools = []
@@ -2278,7 +2303,7 @@ async def test_main_agent_owns_network_tools_with_read_only_errors(monkeypatch, 
 
     monkeypatch.setattr(cognitive_mod, "create_deep_agent", create)
     monkeypatch.setattr(cognitive_mod, "create_llm", lambda **kwargs: object())
-    monkeypatch.setattr(cognitive_mod, "model_supports_native_web_search", lambda *_args: False)
+    monkeypatch.setattr(cognitive_mod, "native_web_search_support", lambda *_args: (False, "test route"))
     monkeypatch.setattr(cognitive_mod, "agent_tools", types.SimpleNamespace(
         restricted_tools=[], is_read_only_tool=lambda tool: tool is query_tool,
     ))

@@ -1,32 +1,4 @@
-"""NRC（洛克王国）工具与台风工具共享的常量、模板渲染与蛋组解析。
-
-这些模块原先各自复制了同一份浏览器 UA、请求头、模板目录、蛋组表与解析函数；
-这里收拢为唯一实现，各模块只保留自己的 API 端点、模板名和渲染上下文。
-
-跨模块契约：``tools/NRCmerchant_current._load_css`` 仍以同名零参薄别名存在，
-``plugins/clockwork/task_handlers.py`` 依赖该名字，不能删除或改签名。
-"""
-
-from pathlib import Path
-
-from jinja2 import Environment, FileSystemLoader
-
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/131.0.0.0 Safari/537.36"
-)
-
-API_HEADERS = {
-    "User-Agent": USER_AGENT,
-    "Accept": "application/json",
-}
-
-IMG_HEADERS = {
-    "User-Agent": USER_AGENT,
-}
-
-TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "templates"
+"""洛克王国精灵蛋组常量与解析。"""
 
 DANZU_GROUPS = {
     1: "巨灵组",
@@ -61,17 +33,6 @@ DANZU_COLORS = {
     13: "#F44336",
     14: "#607D8B",
 }
-
-
-def load_css(filename: str) -> str:
-    """读取 templates/ 下的 CSS 文件。"""
-    return (TEMPLATES_DIR / filename).read_text(encoding="utf-8")
-
-
-def render_template(name: str, **context) -> str:
-    """用 templates/ 下的 Jinja2 模板渲染 HTML 片段。"""
-    env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
-    return env.get_template(name).render(**context)
 
 
 def parse_danzu_ids(danzu_raw) -> list[int]:

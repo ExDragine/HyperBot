@@ -826,7 +826,7 @@ requires-dist = [
     { name = "agent-client-protocol", specifier = "==1.0.0rc1" },
     { name = "bcrypt" },
     { name = "beautifulsoup4" },
-    { name = "deepagents", specifier = ">=0.7.23,<0.8" },
+    { name = "deepagents", specifier = ">=0.7.36,<0.8" },
     { name = "filelock", specifier = ">=4.0.12" },
     { name = "gitpython" },
     { name = "httpx2", extras = ["http2"] },

@@ -21,7 +21,8 @@ sys.path.insert(0, sys.argv[1])
 from httpx2 import AsyncClient, ByteStream, MockTransport, Response
 from openai import AsyncOpenAI
 from PIL import Image
-from utils import paint_service as service
+from utils.paint_service import paint
+from utils.providers.openai import images as service
 from utils.configs import EnvConfig
 
 buffer = io.BytesIO()
@@ -106,7 +107,7 @@ async def main():
         service.AsyncOpenAI = build
         async with AsyncClient(transport=MockTransport(download)) as downloader:
             service.get_http_client = lambda name: downloader
-            result = await service.paint("a blue circle", [png, png] if case in {"edit", "responses_edit"} else [])
+            result = await paint("a blue circle", [png, png] if case in {"edit", "responses_edit"} else [])
         assert len(calls) == 1, (case, len(calls))
         assert all(client.is_closed() for client in clients)
         if case in {"404", "private_url", "bad_url_body"}:

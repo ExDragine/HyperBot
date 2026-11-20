@@ -47,7 +47,7 @@ _BAA_LEVEL_MEANING: dict[str, str] = {
 }
 
 
-_ENS_DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "ens"
+_ENS_DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "ens"
 
 
 def _load_ens_data(name: str) -> object:

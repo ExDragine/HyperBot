@@ -16,25 +16,31 @@ def test_http_client_uses_httpx2_backend_and_exports_compatibility_types():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("client_name", "client_attr"),
+    ("skill", "module_name", "client_name", "client_attr"),
     [
-        ("heavens_above", "httpx_client"),
-        ("satellite", "httpx_client"),
-        ("space_weather", "httpx_client"),
-        ("weather", "httpx_client"),
-        ("deepseek_balance", "httpx_client"),
-        ("rocket", "http_client"),
+        ("astronomy", "heavens_above", "heavens_above", "httpx_client"),
+        ("satellite-imagery", "satellite", "satellite", "httpx_client"),
+        ("space-weather", "space_weather", "space_weather", "httpx_client"),
+        ("space-weather", "mars_weather", "weather", "httpx_client"),
+        ("astronomy", "rocket", "rocket", "http_client"),
     ],
 )
-async def test_tool_module_http_clients_use_registry(load_tool_module, client_name, client_attr):
+async def test_tool_module_http_clients_use_registry(load_tool_module, skill, module_name, client_name, client_attr):
     """验证工具模块通过 http_client 注册表获取客户端而非各自创建。"""
     from utils import http_client as registry
 
-    mod = load_tool_module(client_name)
+    mod = load_tool_module(module_name, skill=skill)
     client = getattr(mod, client_attr, None)
 
     assert client is not None, f"{client_name}.{client_attr} is None"
     assert registry.get_http_client(client_name) is client
+
+
+def test_deepseek_balance_client_uses_registry():
+    from utils.http_client import get_http_client
+    from utils.providers.deepseek import balance
+
+    assert balance.httpx_client is get_http_client("deepseek_balance")
 
 
 @pytest.mark.asyncio

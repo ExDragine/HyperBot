@@ -90,5 +90,5 @@ async def china_static_radar(area: str):
 
 
 areas: dict[str, str] = json.loads(
-    (Path(__file__).resolve().parent.parent / "data" / "radar_areas.json").read_text(encoding="utf-8")
+    (Path(__file__).resolve().parents[3] / "data" / "radar_areas.json").read_text(encoding="utf-8")
 )

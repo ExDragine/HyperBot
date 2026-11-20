@@ -10,9 +10,9 @@ from pydantic import BaseModel, Field
 
 from utils.configs import EnvConfig
 from utils.decision_llm import DecisionLLM
+from utils.llm_factory import provider_native_decisions
 
 from .models import DecisionQuestions, DecisionResult, DecisionState
-from .openai import decide_with_openai, openai_decisions_route
 from .validation import validate_answers, validate_questions
 
 
@@ -60,17 +60,18 @@ class LLMDecisionProvider:
         self.max_retries = max_retries
         self.timeout = timeout
         self.method = method
-        self._native_route = None if method is not None else openai_decisions_route(self.model, self.provider)
+        self._native_backend = (
+            provider_native_decisions(self.model, self.provider, max_retries=max_retries, timeout=timeout)
+            if method is None else None
+        )
 
     @property
     def uses_native_decisions(self) -> bool:
-        return self._native_route is not None
+        return self._native_backend is not None
 
     async def decide(self, state: DecisionState, questions: DecisionQuestions) -> DecisionResult:
-        if self._native_route is not None:
-            return await decide_with_openai(
-                self._native_route, state, questions, max_retries=self.max_retries, timeout=self.timeout,
-            )
+        if self._native_backend is not None:
+            return await self._native_backend.decide(state, questions)
         validate_questions(questions)
         started = time.perf_counter()
         envelope: DecisionEnvelope = await DecisionLLM(

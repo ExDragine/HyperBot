@@ -89,9 +89,8 @@ from langchain_core.tools import tool
 from openai import AsyncOpenAI
 from tools.deepseek_search import deepseek_web_fetch, deepseek_web_search
 from utils.agent_context import FrontierRuntimeContext
-from utils.agents.cognitive import NativeWebSearchMiddleware
 from utils.configs import EnvConfig
-from utils.llm_factory import create_llm, native_web_search_tools
+from utils.llm_factory import create_llm, native_web_search_middleware, native_web_search_tools
 from utils.providers.deepseek import web
 
 EnvConfig.reload({"config_version": 2, "providers": {"deepseek_responses": {"api_key": "test-key"}}})
@@ -185,7 +184,9 @@ async def check(case):
         model.root_async_client = AsyncOpenAI(api_key="test-key", base_url="https://api.deepseek.com", http_client=client)
         agent = create_agent(model, tools=[local_action, deepseek_web_search, deepseek_web_fetch],
                              context_schema=FrontierRuntimeContext, system_prompt="Original system prompt",
-                             middleware=[NativeWebSearchMiddleware(HOSTED)])
+                             middleware=[native_web_search_middleware(
+                                 MODEL, PROVIDER, user_text="Complete the task", user_id="test-user", bot_user_id=None,
+                             )])
         try:
             result = await agent.ainvoke({"messages": [{"role": "user", "content": "Complete the task"}]},
                                          context=FrontierRuntimeContext("test-user", None, None, "."))

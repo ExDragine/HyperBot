@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from langchain_anthropic import ChatAnthropic
 
-from .base import MESSAGES, BaseChatAdapter, BaseVendor, Route, targets_https_api
+from ..base import MESSAGES, BaseChatAdapter, BaseVendor, Route, targets_https_api
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
@@ -15,6 +15,9 @@ if TYPE_CHECKING:
 
 class AnthropicAdapter(BaseChatAdapter):
     type = "anthropic"
+    api_modes = frozenset({MESSAGES})
+    default_api_mode = MESSAGES
+    tool_search_model_markers = ("claude",)
     default_profiles = {"anthropic": {"type": "anthropic", "api_mode": MESSAGES}}
     model_prefixes = ("claude-", "anthropic")
     valid_kwargs = frozenset({"streaming", "max_retries", "timeout", "temperature", "model_kwargs", "profile"})

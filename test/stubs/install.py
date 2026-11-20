@@ -89,6 +89,14 @@ def install_all_third_party_stubs():
     )
     install_stub("deepagents.graph", DeepAgentState=TypedDict("DeepAgentState", {}))
     install_stub(
+        "deepagents.middleware.skills",
+        SkillsMiddleware=type(
+            "SkillsMiddleware",
+            (),
+            {"__init__": lambda self, **kwargs: self.__dict__.update(kwargs)},
+        ),
+    )
+    install_stub(
         "deepagents.backends",
         CompositeBackend=DummyCompositeBackend,
         FilesystemBackend=DummyFilesystemBackend,
@@ -175,13 +183,11 @@ def install_all_third_party_stubs():
         direct_tools=[],
         mcp_tools=[],
         restricted_tools=[],
+        skill_tools=[],
         tool_metadata={},
         subagent_tools={
             "main": [],
-            "astro": [],
-            "earth": [],
-            "memory": [],
-            "divination": [],
+            "skills": [],
             "external": [],
             "restricted": [],
         },

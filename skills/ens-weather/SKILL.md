@@ -1,6 +1,8 @@
 ---
 name: ens-weather
-description: Use for ENS weather, ocean, coral bleaching, BAA, multi-location forecasts, and ENS video requests.
+description: 用于 ENS 气象、海洋、珊瑚白化、BAA、多地点预报和气象视频，也处理 vep 专业模式。
+metadata:
+  include_tools: ens_normal ens_professional
 ---
 
 # ENS weather workflow

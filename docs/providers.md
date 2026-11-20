@@ -1,6 +1,6 @@
 # Provider 协议
 
-`utils/providers/` 收拢所有供应商专属逻辑。`utils/llm_factory.py` 只负责解析路由并分发，代码里不含任何供应商名称的分支。
+`utils/providers/` 按供应商组织实现。`utils/llm_factory.py` 解析路由并通过注册表分发，主 Agent 使用对应路由提供的能力。
 
 ## 两个角色
 
@@ -19,8 +19,10 @@
 
 `ChatAdapter`：
 
-- `create_chat_model(route, kwargs, *, catalog_profile)`：过滤 SDK 不接受的参数并构造模型。
-- `structured_output_method(route, capabilities)`：没有厂商覆盖时的结构化输出策略。
+- `create_chat_model(route, kwargs, *, catalog_profile, vendor)` 过滤 SDK 参数、应用已匹配厂商的扩展并构造模型。
+- `structured_output_method(route, capabilities)` 选择适配器的默认结构化输出策略。
+- `structured_output_options(method)` 将策略映射到 SDK 参数。OpenAI 适配器在 JSON Schema 模式下启用 `strict`。
+- `api_modes` 和 `default_api_mode` 声明支持的协议和缺省协议，路由和配置校验读取同一份声明。
 
 `Vendor`：
 
@@ -29,23 +31,27 @@
 - `normalize_reasoning_effort(route, effort)`：把通用强度名映射为厂商取值。
 - `native_web_search(route)`：返回 `(是否支持, 原因)`；返回 `None` 表示走通用规则。
 - `structured_output_method(route, capabilities)`：返回 `None` 表示交给适配器决定。
-- `native_search_tools`：启用托管搜索时注入的工具类型。
+- `native_search_tools` 声明启用托管搜索后可注入的工具类型。
+- `prepare_chat_model(route, model_class, params)` 让官方端点按需扩展适配器。DeepSeek 在 Flash Responses 路由上用它保留原生联网工具的请求类型。
+- `web_search_middleware(...)` 可为官方路由提供专属联网中间件。DeepSeek 在这里处理同名工具、短追问和同一轮内的降级。
+- `standalone_web_search_hint(tool_names)` 根据实际暴露的独立工具提供提示。
+- `decision_backend(route, ...)` 提供已启用的官方原生决策接口。OpenAI Decisions 的 SDK 调用和负载转换位于 `openai/decisions.py`。
 - `profile_fields`：只有本厂商 API 理解的 profile 字段（值必须是 table），例如 DeepSeek 的 `safety_check` 和 `title`。
 
-`ChatAdapter.default_profiles` 声明该供应商自带的 `[providers.<name>]` 表。配置加载时由 `default_profiles()` 汇总为内置 profile，再合并用户配置；`utils/configs.py` 不再写任何供应商的默认值。
+`ChatAdapter.default_profiles` 声明该供应商自带的 `[providers.<name>]` 表。配置加载时由 `default_profiles()` 汇总内置 profile，再合并用户配置。
 
 `BaseChatAdapter` 和 `BaseVendor` 提供默认实现，子类只写与默认不同的部分。
 
 ## 新增供应商
 
-1. 在 `utils/providers/` 新建模块，继承 `BaseChatAdapter`，声明 `type`、`valid_kwargs`、`api_key_field`、`base_url_field`、`default_profiles` 和 `model_class()`。
-2. 在 `base.py` 的 `ADAPTER_API_MODES` 与 `DEFAULT_API_MODES` 登记它支持的协议；配置校验读取同一份表。
-3. 在 `utils/providers/__init__.py` 的 `_ADAPTERS` 登记。`_ADAPTERS` 的顺序就是按模型名推断的顺序。
-4. 只有需要发送官方专属字段时才实现 `Vendor`，并登记到 `_VENDORS`。`serves()` 必须校验主机名，不能只看适配器类型。
-5. 测试替换 SDK 类时 patch 供应商模块，例如 `utils.providers.openai.ChatOpenAI`。
+1. 在 `utils/providers/` 新建供应商包，实现 `BaseChatAdapter` 并声明其协议、内置 profile 和 SDK 参数。
+2. 在 `utils/providers/__init__.py` 的 `_ADAPTERS` 登记。`_ADAPTERS` 的顺序就是按模型名推断的顺序。
+3. 厂商提供官方端点扩展时实现 `Vendor`，并登记到 `_VENDORS`。`serves()` 根据协议和实际主机名识别官方端点。
+4. 测试替换 SDK 类时 patch 供应商模块，例如 `utils.providers.openai.ChatOpenAI`。
 
 ## 约束
 
 - `utils/providers/__init__.py` 与 `base.py` 在导入时不加载任何厂商 SDK；适配器在首次使用时加载（配置加载读取内置 profile 时会触发）。
-- `deepseek/media.py` 和 `deepseek/web.py` 读取应用配置，由调用方显式导入，不经包入口再导出。
+- DeepSeek 的余额和手动 OCR 工具放在 `deepseek/tools/`，由 Provider 注册表加入主 Agent 的直接工具。
+- DeepSeek 的余额、OCR、语音及独立联网接口由各服务模块实现。OpenAI 的 Images 和 Videos 协议分别位于 `openai/images.py` 和 `openai/videos.py`，共享绘图和视频服务仍是应用入口。
 - 托管媒体接口的 `credentials_profile` 只用于选择密钥；只有 `type = "deepseek"` 的 profile 在 `base_url` 为空时默认使用官方地址，其他 profile 必须显式填写 `base_url`，避免把别家的密钥发到 DeepSeek。

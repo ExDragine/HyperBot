@@ -25,25 +25,17 @@ from urllib.parse import urlsplit
 from pydantic import SecretStr
 
 if TYPE_CHECKING:
+    from langchain.agents.middleware import AgentMiddleware
     from langchain_core.language_models import BaseChatModel, ModelProfile
+
+    from utils.decision.models import DecisionProvider
 
 CHAT_COMPLETIONS = "chat_completions"
 RESPONSES = "responses"
 MESSAGES = "messages"
 GENERATE_CONTENT = "generate_content"
 
-ADAPTER_API_MODES: dict[str, frozenset[str]] = {
-    "openai": frozenset({CHAT_COMPLETIONS, RESPONSES}),
-    "google": frozenset({GENERATE_CONTENT}),
-    "anthropic": frozenset({MESSAGES}),
-    "deepseek": frozenset({CHAT_COMPLETIONS}),
-}
-DEFAULT_API_MODES: dict[str, str] = {
-    "openai": CHAT_COMPLETIONS,
-    "google": GENERATE_CONTENT,
-    "anthropic": MESSAGES,
-    "deepseek": CHAT_COMPLETIONS,
-}
+API_MODES = frozenset({CHAT_COMPLETIONS, RESPONSES, MESSAGES, GENERATE_CONTENT})
 
 
 def clean(value: object) -> str:
@@ -107,6 +99,9 @@ class ChatAdapter(Protocol):
     """Builds the LangChain chat model for one provider ``type``."""
 
     type: ClassVar[str]
+    api_modes: ClassVar[frozenset[str]]
+    default_api_mode: ClassVar[str]
+    tool_search_model_markers: ClassVar[tuple[str, ...]]
     model_prefixes: ClassVar[tuple[str, ...]]
     default_profiles: ClassVar[Mapping[str, Mapping[str, Any]]]
 
@@ -116,12 +111,17 @@ class ChatAdapter(Protocol):
         kwargs: Mapping[str, Any],
         *,
         catalog_profile: ModelProfile | None = None,
+        vendor: Vendor | None = None,
     ) -> BaseChatModel:
         """Construct the model, dropping parameters the SDK does not accept."""
         ...
 
     def structured_output_method(self, route: Route, capabilities: Mapping[str, Any]) -> str:
         """Return the schema strategy when no vendor has a stronger opinion."""
+        ...
+
+    def structured_output_options(self, method: str) -> dict[str, Any]:
+        """Return SDK-specific options for the selected schema strategy."""
         ...
 
 
@@ -152,11 +152,30 @@ class Vendor(Protocol):
         """Return a schema strategy, or ``None`` to defer to the adapter."""
         ...
 
+    def prepare_chat_model(self, route: Route, model_class: Any, params: dict[str, Any]) -> Any:
+        """Apply constructor extensions and return the SDK class to instantiate."""
+        ...
+
+    def web_search_middleware(
+        self, *, user_text: str, user_id: str, bot_user_id: str | None,
+    ) -> AgentMiddleware | None:
+        """Supply a vendor-specific middleware when generic hosted search is insufficient."""
+        ...
+
+    def standalone_web_search_hint(self, tool_names: set[str]) -> str:
+        ...
+
+    def decision_backend(self, route: Route, *, max_retries: int, timeout: int) -> DecisionProvider | None:
+        ...
+
 
 class BaseChatAdapter:
     """Table-driven :class:`ChatAdapter`; subclasses state only what differs."""
 
     type: ClassVar[str]
+    api_modes: ClassVar[frozenset[str]]
+    default_api_mode: ClassVar[str]
+    tool_search_model_markers: ClassVar[tuple[str, ...]] = ()
     model_prefixes: ClassVar[tuple[str, ...]] = ()
     #: Built-in ``[providers.<name>]`` tables this provider ships with.
     default_profiles: ClassVar[Mapping[str, Mapping[str, Any]]] = {}
@@ -168,9 +187,6 @@ class BaseChatAdapter:
     def model_class(self) -> Any:
         """Return the SDK class, read at call time so tests can replace it."""
         raise NotImplementedError
-
-    def model_class_for(self, route: Route) -> Any:
-        return self.model_class()
 
     def prepare(self, route: Route, params: dict[str, Any]) -> Any:
         """Adjust constructor parameters in place; the result goes to :meth:`finalize`."""
@@ -185,6 +201,7 @@ class BaseChatAdapter:
         kwargs: Mapping[str, Any],
         *,
         catalog_profile: ModelProfile | None = None,
+        vendor: Vendor | None = None,
     ) -> BaseChatModel:
         params: dict[str, Any] = {
             self.kwarg_names.get(key, key): value
@@ -198,12 +215,18 @@ class BaseChatAdapter:
             params[self.base_url_field] = route.base_url
 
         api_key = SecretStr(clean(route.profile.get("api_key")))
-        instance = self.model_class_for(route)(**{self.api_key_field: api_key, "model": route.model, **params})
+        model_class = self.model_class()
+        if vendor is not None:
+            model_class = vendor.prepare_chat_model(route, model_class, params)
+        instance = model_class(**{self.api_key_field: api_key, "model": route.model, **params})
         self.finalize(instance, state)
         return instance
 
     def structured_output_method(self, route: Route, capabilities: Mapping[str, Any]) -> str:
         return "function_calling" if capabilities.get("tool_calling") is True else "json_mode"
+
+    def structured_output_options(self, method: str) -> dict[str, Any]:
+        return {"method": method}
 
 
 class BaseVendor:
@@ -227,4 +250,18 @@ class BaseVendor:
         return None
 
     def structured_output_method(self, route: Route, capabilities: Mapping[str, Any]) -> str | None:
+        return None
+
+    def prepare_chat_model(self, route: Route, model_class: Any, params: dict[str, Any]) -> Any:
+        return model_class
+
+    def web_search_middleware(
+        self, *, user_text: str, user_id: str, bot_user_id: str | None,
+    ) -> AgentMiddleware | None:
+        return None
+
+    def standalone_web_search_hint(self, tool_names: set[str]) -> str:
+        return ""
+
+    def decision_backend(self, route: Route, *, max_retries: int, timeout: int) -> DecisionProvider | None:
         return None

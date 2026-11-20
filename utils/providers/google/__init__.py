@@ -7,11 +7,13 @@ from typing import Any
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from .base import GENERATE_CONTENT, BaseChatAdapter, Route
+from ..base import GENERATE_CONTENT, BaseChatAdapter, Route
 
 
 class GoogleAdapter(BaseChatAdapter):
     type = "google"
+    api_modes = frozenset({GENERATE_CONTENT})
+    default_api_mode = GENERATE_CONTENT
     default_profiles = {"google": {"type": "google", "api_mode": GENERATE_CONTENT}}
     model_prefixes = ("gemini-", "google")
     valid_kwargs = frozenset({"streaming", "max_retries", "timeout", "temperature", "profile"})

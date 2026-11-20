@@ -9,15 +9,16 @@ import pytest
 from PIL import Image
 
 from utils import paint_service
+from utils.providers.openai import images
 
 
 def _set_paint_config(monkeypatch, *, base_url: str = "https://media.example.com/v1", api_mode: str = "responses") -> None:
-    monkeypatch.setattr(paint_service.EnvConfig, "PAINT_MODEL", "gpt-image-test")
-    monkeypatch.setattr(paint_service.EnvConfig, "PAINT_MODEL_PROVIDER", "media")
-    monkeypatch.setattr(paint_service.EnvConfig, "PAINT_SIZE", "1536x1024")
-    monkeypatch.setattr(paint_service.EnvConfig, "PAINT_QUALITY", "high")
+    monkeypatch.setattr(images.EnvConfig, "PAINT_MODEL", "gpt-image-test")
+    monkeypatch.setattr(images.EnvConfig, "PAINT_MODEL_PROVIDER", "media")
+    monkeypatch.setattr(images.EnvConfig, "PAINT_SIZE", "1536x1024")
+    monkeypatch.setattr(images.EnvConfig, "PAINT_QUALITY", "high")
     monkeypatch.setattr(
-        paint_service,
+        images,
         "get_provider_profile",
         lambda name: {
             "type": "openai",
@@ -61,7 +62,7 @@ async def test_paint_generates_with_responses_image_tool(monkeypatch):
             calls["closed"] = True
 
     _set_paint_config(monkeypatch)
-    monkeypatch.setattr(paint_service, "AsyncOpenAI", DummyClient)
+    monkeypatch.setattr(images, "AsyncOpenAI", DummyClient)
 
     result = await paint_service.paint("a crystal fox")
 
@@ -117,7 +118,7 @@ async def test_paint_edits_multiple_reference_images(monkeypatch):
             return None
 
     _set_paint_config(monkeypatch)
-    monkeypatch.setattr(paint_service, "AsyncOpenAI", DummyClient)
+    monkeypatch.setattr(images, "AsyncOpenAI", DummyClient)
 
     result = await paint_service.paint("turn it into watercolor", [_tiny_png_bytes(), _tiny_png_bytes()])
 
@@ -156,7 +157,7 @@ async def test_paint_rejects_invalid_responses_base64(monkeypatch):
             return None
 
     _set_paint_config(monkeypatch)
-    monkeypatch.setattr(paint_service, "AsyncOpenAI", DummyClient)
+    monkeypatch.setattr(images, "AsyncOpenAI", DummyClient)
 
     assert await paint_service.paint("a landscape") is None
 
@@ -175,7 +176,7 @@ async def test_paint_returns_none_for_empty_response(monkeypatch):
             return None
 
     _set_paint_config(monkeypatch)
-    monkeypatch.setattr(paint_service, "AsyncOpenAI", DummyClient)
+    monkeypatch.setattr(images, "AsyncOpenAI", DummyClient)
 
     assert await paint_service.paint("a prompt") is None
 
@@ -196,7 +197,7 @@ async def test_paint_returns_none_on_client_error_and_closes(monkeypatch):
             calls["closed"] = True
 
     _set_paint_config(monkeypatch)
-    monkeypatch.setattr(paint_service, "AsyncOpenAI", DummyClient)
+    monkeypatch.setattr(images, "AsyncOpenAI", DummyClient)
 
     assert await paint_service.paint("a prompt") is None
     assert calls["closed"] is True
@@ -204,7 +205,7 @@ async def test_paint_returns_none_on_client_error_and_closes(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_paint_returns_none_when_model_empty(monkeypatch):
-    monkeypatch.setattr(paint_service.EnvConfig, "PAINT_MODEL", "")
+    monkeypatch.setattr(images.EnvConfig, "PAINT_MODEL", "")
 
     assert await paint_service.paint("a crystal fox") is None
 
@@ -260,7 +261,7 @@ def _install_images_client(monkeypatch, *, result=None, error=None):
             calls["closed"] = True
 
     _set_paint_config(monkeypatch, api_mode="chat_completions")
-    monkeypatch.setattr(paint_service, "AsyncOpenAI", Client)
+    monkeypatch.setattr(images, "AsyncOpenAI", Client)
     return calls
 
 
@@ -302,8 +303,8 @@ async def test_images_api_edits_all_references_as_png_files(monkeypatch):
 @pytest.mark.asyncio
 async def test_images_api_keeps_auto_size_with_blank_legacy_size_and_quality(monkeypatch):
     calls = _install_images_client(monkeypatch, result={"data": []})
-    monkeypatch.setattr(paint_service.EnvConfig, "PAINT_SIZE", " ")
-    monkeypatch.setattr(paint_service.EnvConfig, "PAINT_QUALITY", "")
+    monkeypatch.setattr(images.EnvConfig, "PAINT_SIZE", " ")
+    monkeypatch.setattr(images.EnvConfig, "PAINT_QUALITY", "")
 
     assert await paint_service.paint("a fox") is None
     assert calls["generate"]["size"] == "auto"
@@ -333,9 +334,9 @@ async def test_images_api_downloads_provider_url_with_public_fetcher(monkeypatch
             return _tiny_png_bytes(), "image/png"
 
     sentinel = object()
-    monkeypatch.setattr(paint_service, "PublicFetcher", Fetcher)
-    monkeypatch.setattr(paint_service, "get_http_client", lambda name: sentinel if name == "paint_service" else None)
-    monkeypatch.setattr(paint_service.EnvConfig, "MESSAGE_MEDIA_FAKE_IP_FALLBACK", True)
+    monkeypatch.setattr(images, "PublicFetcher", Fetcher)
+    monkeypatch.setattr(images, "get_http_client", lambda name: sentinel if name == "paint_service" else None)
+    monkeypatch.setattr(images.EnvConfig, "MESSAGE_MEDIA_FAKE_IP_FALLBACK", True)
 
     assert await paint_service.paint("a fox") == _tiny_png_bytes()
     assert calls["download"] == ("https://cdn.example/image.png?sig=private", 20_000_000)

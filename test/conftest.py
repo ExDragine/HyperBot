@@ -125,22 +125,30 @@ jwt_expire_hours = 1
 
 @pytest.fixture
 def load_tool_module(monkeypatch: pytest.MonkeyPatch):
-    """Load a single tools/*.py module without triggering tools/__init__.py discovery."""
+    """Load one tool module in isolation without running tool discovery."""
     tools_pkg = sys.modules.get("tools")
     if tools_pkg is None:
         tools_pkg = importlib.util.module_from_spec(importlib.machinery.ModuleSpec("tools", None))
         monkeypatch.setitem(sys.modules, "tools", tools_pkg)
     monkeypatch.setattr(tools_pkg, "__path__", [str(_tools_dir)], raising=False)
 
-    def _load(module_name: str):
-        qualified_name = f"tools.{module_name}"
-        module_path = _tools_dir / f"{module_name}.py"
+    def _load(module_name: str, *, skill: str | None = None):
+        if skill is None:
+            package_name = "tools"
+            package = tools_pkg
+            module_dir = _tools_dir
+        else:
+            package_name = f"skills.{skill}.tools"
+            package = importlib.import_module(package_name)
+            module_dir = _tools_dir.parent / "skills" / skill / "tools"
+        qualified_name = f"{package_name}.{module_name}"
+        module_path = module_dir / f"{module_name}.py"
         spec = importlib.util.spec_from_file_location(qualified_name, module_path)
         if spec is None or spec.loader is None:
             raise ImportError(f"Cannot load tool module {module_name!r} from {module_path}")
         module = importlib.util.module_from_spec(spec)
         monkeypatch.setitem(sys.modules, qualified_name, module)
-        monkeypatch.setattr(tools_pkg, module_name, module, raising=False)
+        monkeypatch.setattr(package, module_name, module, raising=False)
         spec.loader.exec_module(module)
         return module
 

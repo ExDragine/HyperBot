@@ -11,13 +11,11 @@ from nonebot import logger
 from utils.alconna import UniMessage
 from utils.http_client import get_http_client
 from utils.markdown_render import html_to_image
+from utils.tool_rendering import API_HEADERS, load_css, render_template
 
 from ._nrc_common import (
-    API_HEADERS,
     get_danzu_color,
-    load_css,
     parse_danzu_names,
-    render_template,
 )
 
 API_URL = "https://ap.xiaopidd.com/api.AppletXCX/getXcxfdcaijiListByZjzl"

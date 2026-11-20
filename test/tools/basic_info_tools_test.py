@@ -10,12 +10,15 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from utils.ens_gate import _ens_prefix
 from utils.http_client import ConnectError
+from utils.providers.deepseek import balance
+from utils.providers.deepseek.tools import balance as balance_tool
 
 
 @pytest.mark.asyncio
-async def test_deepseek_balance_tool_formats_balance(load_tool_module, monkeypatch):
-    mod = load_tool_module("deepseek_balance")
+async def test_deepseek_balance_tool_formats_balance(monkeypatch):
+    mod = balance_tool
     monkeypatch.setattr(mod, "get_provider_profile", lambda _name: {"api_key": "sk-test", "base_url": ""})
 
     captured = {}
@@ -43,7 +46,7 @@ async def test_deepseek_balance_tool_formats_balance(load_tool_module, monkeypat
             captured["headers"] = headers
             return DummyResponse()
 
-    monkeypatch.setattr(mod, "httpx_client", DummyClient())
+    monkeypatch.setattr(balance, "httpx_client", DummyClient())
 
     result = await mod.get_deepseek_api_balance()
 
@@ -54,8 +57,8 @@ async def test_deepseek_balance_tool_formats_balance(load_tool_module, monkeypat
 
 
 @pytest.mark.asyncio
-async def test_deepseek_balance_tool_reports_missing_key(load_tool_module, monkeypatch):
-    mod = load_tool_module("deepseek_balance")
+async def test_deepseek_balance_tool_reports_missing_key(monkeypatch):
+    mod = balance_tool
     monkeypatch.setattr(mod, "get_provider_profile", lambda _name: {"api_key": "", "base_url": ""})
 
     result = await mod.get_deepseek_api_balance()
@@ -64,8 +67,8 @@ async def test_deepseek_balance_tool_reports_missing_key(load_tool_module, monke
 
 
 @pytest.mark.asyncio
-async def test_deepseek_balance_tool_normalizes_configured_base_url(load_tool_module, monkeypatch):
-    mod = load_tool_module("deepseek_balance")
+async def test_deepseek_balance_tool_normalizes_configured_base_url(monkeypatch):
+    mod = balance_tool
     monkeypatch.setattr(
         mod,
         "get_provider_profile",
@@ -86,7 +89,7 @@ async def test_deepseek_balance_tool_normalizes_configured_base_url(load_tool_mo
             captured["url"] = url
             return DummyResponse()
 
-    monkeypatch.setattr(mod, "httpx_client", DummyClient())
+    monkeypatch.setattr(balance, "httpx_client", DummyClient())
 
     result = await mod.get_deepseek_api_balance()
 
@@ -95,15 +98,15 @@ async def test_deepseek_balance_tool_normalizes_configured_base_url(load_tool_mo
 
 
 @pytest.mark.asyncio
-async def test_deepseek_balance_tool_reports_http_error(load_tool_module, monkeypatch):
-    mod = load_tool_module("deepseek_balance")
+async def test_deepseek_balance_tool_reports_http_error(monkeypatch):
+    mod = balance_tool
     monkeypatch.setattr(mod, "get_provider_profile", lambda _name: {"api_key": "sk-test", "base_url": ""})
 
     class DummyClient:
         async def get(self, url, headers):
             raise ConnectError("network down")
 
-    monkeypatch.setattr(mod, "httpx_client", DummyClient())
+    monkeypatch.setattr(balance, "httpx_client", DummyClient())
 
     result = await mod.get_deepseek_api_balance()
 
@@ -159,7 +162,7 @@ def test_mcp_example_only_uses_http_endpoints():
 
 
 @pytest.mark.asyncio
-async def test_module_tools_groups_tools_by_domain(monkeypatch):
+async def test_module_tools_keeps_domain_tools_in_skills(monkeypatch):
     class FakeBaseTool:
         def __init__(self, name: str, response_format: str | None = None):
             self.name = name
@@ -180,14 +183,15 @@ async def test_module_tools_groups_tools_by_domain(monkeypatch):
         "milky_group": types.SimpleNamespace(set_group_name=FakeBaseTool("set_group_name")),
         "milky_message": types.SimpleNamespace(get_message=FakeBaseTool("get_message", "content")),
         "milky_system": types.SimpleNamespace(get_login_info=FakeBaseTool("get_login_info", "content")),
-        "deepseek_balance": types.SimpleNamespace(
-            get_deepseek_api_balance=FakeBaseTool("get_deepseek_api_balance", "content")
-        ),
         "deepseek_search": types.SimpleNamespace(
             search=FakeBaseTool("deepseek_web_search", "content"),
             fetch=FakeBaseTool("deepseek_web_fetch", "content"),
         ),
         "aurora": types.SimpleNamespace(aurora_live=FakeBaseTool("aurora_live")),
+        "ens_normal": types.SimpleNamespace(ens_normal=FakeBaseTool("ens_normal")),
+        "ens_professional": types.SimpleNamespace(ens_professional=FakeBaseTool("ens_professional")),
+        "NRCevent_calendar": types.SimpleNamespace(calendar=FakeBaseTool("get_nrc_event_calendar")),
+        "webpage_screenshot": types.SimpleNamespace(capture=FakeBaseTool("webpage_screenshot")),
         "satellite": types.SimpleNamespace(
             get_fy4b_satellite_image=FakeBaseTool("get_fy4b_satellite_image"),
         ),
@@ -210,14 +214,28 @@ async def test_module_tools_groups_tools_by_domain(monkeypatch):
         "unknown_local": types.SimpleNamespace(mystery_tool=FakeBaseTool("mystery_tool", "content")),
     }
 
-    def fake_iter_modules(_paths):
-        return [types.SimpleNamespace(name=name) for name in fake_modules]
+    skill_modules = {
+        "divination": {"iching": fake_modules.pop("iching")},
+        "ens-weather": {name: fake_modules.pop(name) for name in ("ens_normal", "ens_professional")},
+        "nrc-game": {"NRCevent_calendar": fake_modules.pop("NRCevent_calendar")},
+        "satellite-imagery": {"satellite": fake_modules.pop("satellite")},
+        "space-weather": {"aurora": fake_modules.pop("aurora")},
+        "weather-hazards": {name: fake_modules.pop(name) for name in ("earthquake", "radar")},
+    }
+
+    def fake_iter_modules(paths):
+        directory = Path(paths[0])
+        modules = fake_modules if directory == tools_dir else skill_modules.get(directory.parent.name, {})
+        return [types.SimpleNamespace(name=name) for name in modules]
 
     original_import_module = importlib.import_module
 
     def fake_import_module(name, package=None):
         if package == package_name and name.startswith("."):
             return fake_modules[name[1:]]
+        if name.startswith("skills."):
+            _, skill, _, module = name.split(".")
+            return skill_modules[skill][module]
         return original_import_module(name, package)
 
     monkeypatch.setattr("pkgutil.iter_modules", fake_iter_modules)
@@ -244,6 +262,10 @@ async def test_module_tools_groups_tools_by_domain(monkeypatch):
     assert spec.loader is not None
     spec.loader.exec_module(module)
 
+    monkeypatch.setattr(module, "provider_tools", lambda: (
+        (FakeBaseTool("get_deepseek_api_balance", "content"), True),
+        (FakeBaseTool("deepseek_ocr", "content"), True),
+    ))
     monkeypatch.setattr(module, "deepseek_search_available", lambda: True)
     assert module.agent_tools.mcp_tools == []
     assert module.agent_tools.direct_tools
@@ -251,83 +273,28 @@ async def test_module_tools_groups_tools_by_domain(monkeypatch):
     await module.agent_tools.initialize()
     groups = module.agent_tools.subagent_tools
 
-    assert {tool.name for tool in module.agent_tools.direct_tools} == {
-        "send_image",
-        "upload_group_file",
-        "send_friend_nudge",
-        "set_group_name",
-        "get_message",
-        "get_login_info",
-        "get_deepseek_api_balance",
-        "deepseek_web_search", "deepseek_web_fetch",
-        "get_paint",
-        "get_video",
-        "get_recent_conversation",
-        "search_messages",
-        "get_history_messages",
-        "mcp_tool",
-        "tavily_extract",
-        "tavily_search",
-        "web_search_exa",
-        "web_fetch_exa",
-        "mystery_tool",
-        "aurora_live",
-        "get_fy4b_satellite_image",
-        "get_static_china_radar",
-        "get_china_earthquake",
-        "get_usgs_significant_earthquakes",
-        "get_available_china_radar_areas",
-        "iching_divination",
-    }
-    assert "research" not in groups
-    assert {tool.name for tool in groups["astro"]} == {
-        "aurora_live",
-        "get_fy4b_satellite_image",
-    }
-    assert {tool.name for tool in groups["earth"]} == {
-        "get_china_earthquake",
-        "get_usgs_significant_earthquakes",
-        "get_available_china_radar_areas",
-        "get_static_china_radar",
-    }
-    assert {tool.name for tool in groups["deepseek"]} == {
-        "get_deepseek_api_balance",
-        "deepseek_web_search",
-        "deepseek_web_fetch",
-    }
     direct_names = {tool.name for tool in module.agent_tools.direct_tools}
     assert direct_names == {
-        "get_message",
-        "get_login_info",
-        "get_deepseek_api_balance",
-        "deepseek_web_search", "deepseek_web_fetch",
-        "get_china_earthquake",
-        "get_usgs_significant_earthquakes",
-        "get_available_china_radar_areas",
-        "iching_divination",
-        "tavily_extract", "tavily_search", "web_search_exa", "web_fetch_exa",
-        "send_image",
-        "upload_group_file",
-        "send_friend_nudge",
-        "set_group_name",
-        "get_paint",
-        "get_video",
-        "mcp_tool",
-        "mystery_tool",
-        "aurora_live",
-        "get_fy4b_satellite_image",
-        "get_static_china_radar",
-        "get_recent_conversation",
-        "search_messages",
-        "get_history_messages",
+        "send_image", "upload_group_file", "send_friend_nudge", "set_group_name",
+        "get_message", "get_login_info", "deepseek_web_search", "deepseek_web_fetch",
+        "get_deepseek_api_balance", "deepseek_ocr",
+        "get_paint", "get_video", "get_recent_conversation", "search_messages",
+        "get_history_messages", "mcp_tool", "tavily_extract", "tavily_search",
+        "web_search_exa", "web_fetch_exa", "mystery_tool",
     }
-    assert direct_names == {tool.name for tool in module.agent_tools.direct_tools}
-    assert {tool.name for tool in groups["memory"]} == {
-        "get_recent_conversation",
-        "search_messages",
-        "get_history_messages",
+    skill_names = {
+        "aurora_live", "get_fy4b_satellite_image",
+        "get_static_china_radar", "get_china_earthquake", "get_usgs_significant_earthquakes",
+        "get_available_china_radar_areas", "iching_divination", "ens_normal",
+        "get_nrc_event_calendar",
     }
-    assert {tool.name for tool in groups["divination"]} == {"iching_divination"}
+    assert {tool.name for tool in module.agent_tools.skill_tools} == skill_names
+    token = _ens_prefix.set("vep")
+    try:
+        assert {tool.name for tool in module.agent_tools.skill_tools} == skill_names | {"ens_professional"}
+    finally:
+        _ens_prefix.reset(token)
+    assert {tool.name for tool in module.agent_tools.restricted_tools} == {"webpage_screenshot"}
     assert {tool.name for tool in groups["external"]} == {
         "mcp_tool",
         "tavily_extract",
@@ -337,12 +304,14 @@ async def test_module_tools_groups_tools_by_domain(monkeypatch):
     }
 
     registry = module.agent_tools
-    queries = {
-        "get_china_earthquake", "get_usgs_significant_earthquakes",
-        "get_available_china_radar_areas", "get_deepseek_api_balance",
-        "get_message", "get_login_info", "iching_divination", "deepseek_web_search", "deepseek_web_fetch",
+    assert {tool.name for tool in registry.direct_tools if registry.is_read_only_tool(tool)} == {
+        "get_message", "get_login_info", "deepseek_web_search", "deepseek_web_fetch",
+        "get_deepseek_api_balance", "deepseek_ocr",
     }
-    assert {tool.name for tool in registry.direct_tools if registry.is_read_only_tool(tool)} == queries
+    assert {tool.name for tool in registry.skill_tools if registry.is_read_only_tool(tool)} == {
+        "get_china_earthquake", "get_usgs_significant_earthquakes",
+        "get_available_china_radar_areas", "iching_divination",
+    }
     assert not registry.is_read_only_tool(FakeBaseTool("get_china_earthquake", "content"))
     previous = registry.direct_tools
     recovered = FakeBaseTool("web_search_exa", "content")

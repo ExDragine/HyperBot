@@ -9,16 +9,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, TypedDict
 
-from jinja2 import Environment, FileSystemLoader
 from langchain_core.tools import tool
 from nonebot import logger
 
 from utils.alconna import UniMessage
 from utils.http_client import get_http_client
-from utils.markdown_render import _get_browser
+from utils.markdown_render import TEMPLATES_DIR, _get_browser
 from utils.reverse_geocode import reverse_geocode
-
-from ._nrc_common import API_HEADERS, IMG_HEADERS, TEMPLATES_DIR, load_css
+from utils.tool_rendering import API_HEADERS, IMG_HEADERS, load_css, render_template
 
 IMAGES_DIR = TEMPLATES_DIR / "images"
 
@@ -290,9 +288,7 @@ def _build_template_data(typhoon: dict, pos_desc: str, overlay_data: dict[str, A
 
 
 def _render_html(template_data: dict) -> str:
-    env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
-    template = env.get_template("typhoon.html")
-    return template.render(**template_data)
+    return render_template("typhoon.html", **template_data)
 
 
 async def _screenshot_card(html: str) -> bytes:

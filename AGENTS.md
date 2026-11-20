@@ -88,7 +88,7 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 | 文件 | 职责 |
 |------|------|
 | `agents/` | Agent 包：主 Deep Agent 装配（`cognitive.py`）、中性桥接（`neutral_core.py`）、运行时入口（`runtime_gateway.py`）、消息信封（`message_envelope.py`）、执行与超时（`execution.py`）、用量统计（`usage.py`）、工具错误（`tool_errors.py`）、进度流（`progress.py`）、浏览器意图（`capture.py`）、Prompt、workspace 与 Subagent |
-| `providers/` | Provider 协议与实现：`base.py` 定义 `Route`、`ChatAdapter`（按 `type` 构造模型）和 `Vendor`（官方端点的请求语义）；`openai.py` / `anthropic.py` / `google.py` / `deepseek/`（`chat.py`、托管 `media.py`）各自实现；详见 `docs/providers.md` |
+| `providers/` | Provider 协议与实现：`base.py` 定义 `Route`、`ChatAdapter`（按 `type` 构造模型）和 `Vendor`（官方端点的请求语义）；`openai/`、`anthropic/`、`google/` 和 `deepseek/` 各自实现；详见 `docs/providers.md` |
 | `agent_protocol/` | 平台无关契约：`models.py` 值对象（消息段、参与者、会话、请求/响应、投递回执）、`ports.py` 的 `AgentCore`/`ReplyPolicy`/`HistoryStore`/`DeliveryPort`/`PlatformToolProvider`、`identity.py` 的 workspace key 归一化 |
 | `agent_orchestration.py` | `ConversationOrchestrator`：历史 → 门控 → Agent → 投递的平台中性单轮生命周期；QQ 生产入口已接入 |
 | `decision/` | 平台无关 Decision provider：`llm.py`（LLM 决策）、`laya.py`（Laya 候选预筛，默认关闭）、`reply_gate.py`（回复门控打分）、`models.py`；导入不加载 torch/transformers 权重 |
@@ -118,22 +118,19 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 
 ### `tools/` — Agent 可调用工具
 
-`tools/__init__.py` 会扫描 `tools/*.py` 中的 LangChain `BaseTool` 对象。当前源码静态统计约 128 个 `@tool` 入口，按模块分到以下组：
+`tools/__init__.py` 从 `tools/*.py` 发现普通和受控工具，从 `skills/<name>/tools/` 发现领域工具，并合并 Provider 注册的工具。
 
 | 分组 | 代表模块 | 说明 |
 |------|----------|------|
-| `main` | `adapter`, `milky_*`, `paint`, `video`, `reminder`, `scheduled_task`, `deepseek_balance`, `NRC*`, `typhoon` | QQ 平台操作、媒体生成、提醒/自动任务、游戏/业务工具 |
-| `astro` | `aurora`, `comet`, `heavens_above`, `rocket`, `satellite`, `space_weather` | 天文、卫星、空间天气 |
-| `earth` | `earthquake`, `radar`, `weather` | 地震、雷达、天气 |
-| `memory` | `memory` | 当前会话最近对话、聊天记录搜索和平台历史读取，由主 Agent 按需调用 |
-| `divination` | `iching`, `tarot` | 易经、塔罗 |
-| `restricted` | `ens_normal`, `ens_professional`, `webpage_screenshot`, `webpage_recording` | 受控工具：ENS 在 Agent 中显式追加；网页截图/录屏需 Decision LLM 判断用户明确要求 |
-| `external` | MCP tools | `mcp.json` 定义的外部工具，首次 Agent 执行通过 `agent_tools.initialize()` 异步加载 |
+| `main` | `adapter`、`milky_*`、`memory`、`deepseek_search`、`paint`、`video`、`speech`、`reminder`、`scheduled_task` 及 Provider 工具 | QQ 平台、聊天历史、通用联网、媒体生成、提醒、余额查询和 OCR |
+| `skills` | `comet`、`space_weather`、`satellite`、`earthquake`、`radar`、`typhoon`、`ens_*`、`iching`、`tarot`、`NRC*` | 读取或固定加载相应技能后才向主模型公开的领域工具 |
+| `restricted` | `webpage_screenshot`、`webpage_recording` | Decision LLM 判断用户明确请求截图或录屏后才公开 |
+| `external` | MCP tools | `mcp.json` 定义的外部工具由 `agent_tools.initialize()` 异步加载 |
 
-工具注册约定：
-- 新工具模块要放在 `tools/` 下，用 `@tool` 装饰函数。
-- 如需指定分组，更新 `tools/__init__.py` 的 `_TOOL_MODULE_GROUPS`。
-- `response_format="content_and_artifact"` 的工具可返回 `UniMessage` 工件，最终由 `extract_uni_messages()` 和 `send_artifacts()` 发送。
+- 新工具使用 `@tool` 装饰。领域工具的实现放在 `skills/<name>/tools/`，工具名在同一技能 `SKILL.md` 的 `metadata.include_tools` 中以空格分隔列出。仅供内部使用的模块名以 `_` 开头。
+- Provider 可在自己的 `tools/` 包中注册直连工具，例如 DeepSeek 的余额查询和手动 OCR。
+- `TurnSkillsMiddleware` 只认当轮成功的技能读取或固定加载。读取记录可以保存在 QQ 会话历史中，工具权限随轮次结束。
+- `response_format="content_and_artifact"` 的工具可返回 `UniMessage`，由 `extract_uni_messages()` 与 `send_artifacts()` 投递。
 
 ---
 
@@ -145,7 +142,7 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 - 使用 `EnvConfig.ADVAN_MODEL` 创建主对话模型；`assistant_agent()` 默认使用 `EnvConfig.BASIC_MODEL`，决策判断使用 `EnvConfig.DECISION_MODEL`。
 - 当模型引用的供应商 `api_mode` 为 `responses` 时，主 Agent 会传 `reasoning_effort` 和 `verbosity`；其他协议路径会跳过这些参数。
 - 根据模型自身的 `capabilities` 判断是否保留视觉输入；不支持 vision 时会移除图片并追加“图片已省略”提示。
-- 主 Agent 默认接收当前消息以及 `[storage].query_message_numbers` 控制的最近历史，并直接持有当前会话的最近对话、聊天搜索和平台历史工具；超出窗口的前文按需调用工具获取。所有本地/API 只读查询工具、Exa / Tavily 联网搜索、网页读取、多来源核验、媒体工件与平台写操作都由主 Agent 直接调用（原 PTC 执行通道已随 quickjs 解释器移除），共享主图调用预算；`document-agent` 继承当前 backend 并仅读分析 workspace / memory 文件。
+- 主 Agent 默认接收当前消息以及 `[storage].query_message_numbers` 控制的最近历史，并直接持有当前会话的最近对话、聊天搜索和平台历史工具；超出窗口的前文按需调用工具获取。通用搜索和平台能力直接可用，领域工具由相应技能按需公开。两者均通过主图调用，共享模型和工具预算；`document-agent` 继承当前 backend 并仅读分析 workspace / memory 文件。
 - 文档子代理定义位于 `utils/agents/subagents/`，以声明式配置继承当前 backend，只读访问 workspace / memory 文件；不反向依赖工具注册器。
 - HyperBot 为四类模型 provider 注册统一 Harness Profile，关闭 Deep Agents 自动添加且工具面重复的 `general-purpose` subagent。
 - 模型目录会转换为 LangChain `ModelProfile` 注入模型实例，为 Deep Agents 提供上下文窗口、输出上限和能力元数据；目录外模型继续按未知模型降级。
@@ -155,7 +152,7 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
   - `/skills/`: 仓库内置 `skills/`，Agent 只读
   - `/memory/{workspace_key}/`: `cache/sandbox/memory/{workspace_key}`
 - 对每个 workspace，如果缺少 memory `SOUL.md`，会创建零字节空文件；群聊按 `group_id` 共享，私聊按 `user_id` 隔离。
-- 核心 middleware 顺序是 `PII → ToolError → ModelCallLimit → ToolCallLimit → ModelRetry → Filesystem → FilesystemFileSearch → Memory`；随后按需追加 `SilentReply`（仅 frontier 档）、`ProviderToolSearch`（主模型名含 `gpt`/`claude` 时）、`NativeWebSearch`（供应商原生 web_search 可用时）和 `SessionHistory`（会话缓存开启时），最后总是追加 `MediaInput`（每次模型调用前做媒体能力检查与预算限制）。没有独立的 `ToolRetryMiddleware` 层。
+- 核心 middleware 顺序是 `PII → ToolError → ModelCallLimit → ToolCallLimit → ModelRetry → Filesystem → FilesystemFileSearch → Memory`；随后按需追加 `SilentReply`（仅 frontier 档）、`ProviderToolSearch`（模型名匹配适配器声明时）、`SessionHistory`（会话缓存开启时）和供应商的原生联网中间件，最后总是追加 `MediaInput`（每次模型调用前做媒体能力检查与预算限制）。没有独立的 `ToolRetryMiddleware` 层。
 - 主模型 SDK 重试关闭，由 ModelRetry 控制模型重试。图工具错误由 ToolError 统一处理：已确认的只读工具异常转换为脱敏的可读结果，写入或未分类工具异常结束当前轮次。平台写操作或未分类工具异常不会自动重复。
 - 主图模型/工具预算由 `[limits].agent_model_call_limit / agent_tool_call_limit` 控制；子代理保留独立预算。
 - QQ 的 `[sessions]` 开关开启后，同一机器人同一群共享 checkpoint，图仍按请求构建；配置修订不兼容、快照冲突、过期或容量轮换后从 DB 重建。ACP 和定时任务不接入该缓存。运行与投递租约不能被清理器回收，最终内容按实际送达文本校准；媒体轮次结算后释放整代。详见 `docs/agent-sessions.md`。
@@ -165,12 +162,12 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 Prompt 加载链：
 - `FrontierCognitive.load_system_prompt()` 组合 `prompts/AGENTS.md` 的全局规范与入口专属说明。QQ 使用 `[bot].system_prompt` 基础人设、`prompts/qq.md` 和当前会话风格；`{name}` 按唤醒词注入。ACP、定时任务和日报归档使用各自的任务说明。
 - 自定义 `MemoryMiddleware` 从当前 workspace 的 `/memory/{workspace_key}/SOUL.md` 注入动态人设及其写入约束。日报归档不注入 SOUL。
-- QQ 主回复与兼容 QQ 入口每轮在输入状态中传 `pinned_skills=["rich-markdown"]`（Deep Agents >= 0.7.23），由 Skills middleware 在首个模型调用前注入精简的排版决策正文，无需模型先调用 `read_file`。本轮后续工具循环不重复注入；ACP 档与显式非 QQ 平台不固定加载该技能。
+- QQ 主回复与兼容 QQ 入口每轮在输入状态中传 `pinned_skills=["rich-markdown"]`（Deep Agents >= 0.7.36），由 Skills middleware 在首个模型调用前注入精简的排版决策正文，无需模型先调用 `read_file`。本轮后续工具循环不重复注入；ACP 档与显式非 QQ 平台不固定加载该技能。
 - 框架注入的技能 HumanMessage 带 `lc_source=pinned_skill`，属于当轮操作说明。会话缓存向模型提供历史时省略旧轮的技能正文，保留原始用户问题、工具交换和回复。
 - `/skills/rich-markdown/SKILL.md` 定义内容关系与基本 Markdown 组件语法；正文直接写 Markdown，按需插入 `::card`、分区、分栏、步骤或媒体，基本卡片无需先读取参考文件。详细字段、数据与媒体契约位于其 `references/`；旧 ui JSON 契约位于 `references/legacy-ui.md`。短聊天与需要复制的回复保持文字，500 字转图规则只控制发送方式。
 - `plugins/agent/prompts/reply_check.md` 用于群聊是否应主动回复的 Decision LLM 判断。
 - 每日新闻技能位于 `/skills/daily-news/SKILL.md`。主 Agent 可按聊天请求加载，定时和预览入口固定加载同一技能。`plugins/news/editor.py` 根据主模型返回的搜索摘要校验 `NewsPayload` 引证。模板位于 `plugins/news/templates/`。
-- ENS 详细工作流位于只读内置 Skill `/skills/ens-weather/SKILL.md`；主提示词只保留加载入口。
+- ENS 工作流位于 `/skills/ens-weather/SKILL.md`。QQ 的 `vep` 请求会固定加载该技能，专业工具仍由原始消息前缀门控。
 
 ---
 

@@ -13,16 +13,15 @@ import dotenv
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from utils.event_policy import EventConfig
-from utils.providers import default_profiles, validate_profile_fields
-from utils.providers.base import ADAPTER_API_MODES, DEFAULT_API_MODES
+from utils.providers import adapter_protocol, default_profiles, validate_profile_fields
+from utils.providers.base import API_MODES
+from utils.providers.deepseek.constants import DEFAULT_BASE_URL as DEEPSEEK_BASE_URL
 
 dotenv.load_dotenv()
 
 CONFIG_VERSION = 2
 CONFIG_PATH = Path(os.getenv("FRONTIER_CONFIG", "env.toml"))
 _DEFAULT_DASHBOARD_JWT_SECRET = "frontier-dashboard-default-secret"  # noqa: S105
-_DEEPSEEK_RESPONSES_BASE_URL = "https://api.deepseek.com"
-_VALID_API_MODES = frozenset().union(*ADAPTER_API_MODES.values())
 
 
 class _FrozenConfig(BaseModel):
@@ -127,7 +126,7 @@ class AgentConfig(_FrozenConfig):
 class SearchConfig(_FrozenConfig):
     enabled: bool = True
     provider: str = Field(default="deepseek_responses", min_length=1)
-    base_url: str = _DEEPSEEK_RESPONSES_BASE_URL
+    base_url: str = DEEPSEEK_BASE_URL
     model: str = Field(default="deepseek-flash", min_length=1)
     timeout_seconds: float = Field(default=30.0, gt=0, le=120)
     content_preview_chars: int = Field(default=6000, ge=256, le=20000)
@@ -342,7 +341,7 @@ def _validate_model_provider_sections(
         if "capabilities" in raw_profile:
             raise ValueError(f"[providers.{name}] 不再接受 capabilities，请配置到对应模型")
         api_mode = raw_profile.get("api_mode")
-        if api_mode is not None and (not isinstance(api_mode, str) or api_mode.strip().lower() not in _VALID_API_MODES):
+        if api_mode is not None and (not isinstance(api_mode, str) or api_mode.strip().lower() not in API_MODES):
             raise ValueError(f"[providers.{name}].api_mode 无效: {api_mode!r}")
         removed = {"provider", "use_responses_api"} & raw_profile.keys()
         if removed:
@@ -351,18 +350,14 @@ def _validate_model_provider_sections(
             )
 
 
-def _default_api_mode(provider_type: str) -> str:
-    return DEFAULT_API_MODES.get(provider_type, "")
-
-
 def _validate_normalized_provider_protocols(provider_profiles: dict[str, dict[str, Any]]) -> None:
     for name, profile in provider_profiles.items():
         provider_type = str(profile.get("type", "")).strip().lower()
         api_mode = str(profile.get("api_mode", "")).strip().lower()
         profile["type"] = provider_type
         profile["api_mode"] = api_mode
-        supported_modes = ADAPTER_API_MODES.get(provider_type)
-        if supported_modes is None:
+        _, supported_modes = adapter_protocol(provider_type)
+        if not supported_modes:
             raise ValueError(f"[providers.{name}].type 无效: {provider_type!r}")
         if api_mode not in supported_modes:
             raise ValueError(
@@ -381,7 +376,7 @@ def _normalize_provider_profile(
         profile["api_mode"] = (
             existing["api_mode"]
             if existing and provider_type == existing.get("type")
-            else _default_api_mode(provider_type)
+            else adapter_protocol(provider_type)[0]
         )
     merged = {**existing, **profile}
     old_payload = merged.get("signal_extra_body")

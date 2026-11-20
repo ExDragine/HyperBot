@@ -1,28 +1,12 @@
-from urllib.parse import urlparse, urlunparse
-
 from langchain_core.tools import tool
 from nonebot import logger
 
 from utils.configs import get_provider_profile
-from utils.http_client import get_http_client
 
-DEFAULT_BALANCE_URL = "https://api.deepseek.com/user/balance"
-
-httpx_client = get_http_client("deepseek_balance")
+from ..balance import fetch_balance
 
 
-def _balance_url() -> str:
-    raw_base = str(get_provider_profile("deepseek").get("base_url", "")).strip()
-    if not raw_base:
-        return DEFAULT_BALANCE_URL
-
-    parsed = urlparse(raw_base)
-    if not parsed.scheme or not parsed.netloc:
-        return DEFAULT_BALANCE_URL
-    return urlunparse((parsed.scheme, parsed.netloc, "/user/balance", "", "", ""))
-
-
-def _format_balance(data: dict) -> str:
+def _format_balance(data: object) -> str:
     if not isinstance(data, dict):
         raise ValueError("响应不是 JSON 对象")
 
@@ -48,14 +32,13 @@ def _format_balance(data: dict) -> str:
 @tool(response_format="content")
 async def get_deepseek_api_balance() -> str:
     """查询 DeepSeek API 账户余额。"""
-    api_key = str(get_provider_profile("deepseek").get("api_key", "")).strip()
+    profile = get_provider_profile("deepseek")
+    api_key = str(profile.get("api_key", "")).strip()
     if not api_key:
         return "未配置 DeepSeek API Key：请在 env.toml 的 [providers.deepseek].api_key 中填写。"
 
     try:
-        response = await httpx_client.get(_balance_url(), headers={"Authorization": f"Bearer {api_key}"})
-        response.raise_for_status()
-        return _format_balance(response.json())
+        return _format_balance(await fetch_balance(str(profile.get("base_url", "")), api_key))
     except Exception as e:
         logger.error("DeepSeek balance query error", exc_info=e)
         return f"获取 DeepSeek API 余额失败: {e}"

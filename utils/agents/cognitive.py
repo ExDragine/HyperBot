@@ -2,7 +2,6 @@
 
 import asyncio
 import hashlib
-import json
 import logging
 import os
 import time
@@ -29,38 +28,32 @@ from langchain.agents.middleware import (
 )
 from langchain.messages import AIMessage, ToolMessage
 from langchain.tools import ToolRuntime
-from langchain_core.exceptions import ModelAPIError, ModelInvalidRequestError
-from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.types import Command
-from openai import UnprocessableEntityError
 
 import tools as _tool_registry
 from plugins.acp.subagent import build_acp_subagents
 from utils.agent_context import FrontierRuntimeContext
 from utils.agent_protocol import AgentArtifact, ConversationRef, Participant
 from utils.configs import EnvConfig
+from utils.ens_gate import _ens_prefix
 from utils.harness_profiles import register_frontier_harness_profiles
 from utils.llm_factory import (
     create_llm,
-    model_supports_native_web_search,
+    native_web_search_middleware,
     native_web_search_support,
-    native_web_search_tools,
     normalize_reasoning_effort,
     provider_request_overrides,
     provider_uses_responses_api,
 )
 from utils.media import detect_mime_type, inline_media_bytes, media_block_kind
-from utils.providers.deepseek.chat import DEEPSEEK_WEB_TOOLS
-from utils.providers.deepseek.web import SEARCH_PROMPT_HINT
-from utils.providers.deepseek.web import TOOL_NAMES as DEEPSEEK_SEARCH_TOOLS
+from utils.providers import model_supports_tool_search, standalone_web_search_hint
 
 from .capture import detect_browser_capture_intent
 from .execution import current_run_id, managed_agent_turn
 from .inputs import filter_messages_for_model_capabilities
 from .media_inputs import MediaInputMiddleware
-from .message_envelope import AGENT_MESSAGE_SCHEMA, DIRECT_MENTION_CONTEXT_MARKER
 from .progress import (
     ProgressEvent,
     ProgressReporter,
@@ -74,6 +67,7 @@ from .runtime import agent_thread_id, conversation_workspace_key, normalize_work
 from .session_context import SessionHistoryMiddleware, history_budget, messages_contain_media, recent_complete_turns
 from .session_errors import SessionInterruptedError
 from .sessions import TurnLease
+from .skill_tools import TurnSkillsMiddleware
 from .subagents import build_document_subagent
 from .tool_errors import WEB_SEARCH_TOOL_NAMES, tool_error_middleware
 from .workspace import SKILLS_BACKEND_PATH, build_agent_backend
@@ -274,58 +268,7 @@ def skip_reply(
     )
 
 
-WEB_SEARCH_PROMPT_HINT = (
-    "\n\n本轮可用原生 `web_search` 查询公开网页和实时信息。"
-)
-
-DEEPSEEK_WEB_SEARCH_PROMPT_HINT = (
-    "\n\n本轮可用 DeepSeek 服务端联网，通过 `deepseek_web_search` 搜索，通过 `deepseek_read_url` 阅读链接。"
-    "前文有待核实的公开事实时，用户说「找一下」「查一下」「搜一下」或「帮我确认」就是在请求搜索核实。"
-    "短追问从最近对话确定完整主题，带上对象名称和待核实的细节主动搜索。"
-)
-
-_DEEPSEEK_WEB_FALLBACK_HINT = (
-    "\n\n本轮 DeepSeek 服务端搜索和网页读取暂不可用。请基于现有上下文和仍可用的工具继续原任务。"
-)
-
-_LOOKUP_FOLLOWUPS = frozenset({"找一下", "查一下", "搜一下", "帮我找一下", "帮我查一下", "帮我确认", "再找一下", "再查一下"})
-
-
-def _lookup_text(text: str, bot_user_id: str | None) -> str:
-    text = text.strip().removeprefix(DIRECT_MENTION_CONTEXT_MARKER).strip()
-    if bot_user_id and text.startswith(mention := f"@{bot_user_id}"):
-        remaining = text[len(mention):]
-        if not remaining or remaining[0] in " \t\r\n：:，,":
-            text = remaining
-    return text.strip(" \t\r\n：:。！？?!，,")
-
-
-def _lookup_topic(message_text: str, user_id: str, bot_user_id: str | None) -> str | None:
-    try:
-        envelope, end = json.JSONDecoder().raw_decode(message_text)
-    except ValueError:
-        return None
-    if not isinstance(envelope, dict) or not isinstance(sender := envelope.get("sender"), dict):
-        return None
-    if str(sender.get("user_id")) != user_id:
-        return None
-    schema = envelope.get("schema")
-    if schema == AGENT_MESSAGE_SCHEMA:
-        text = envelope.get("content")
-    elif schema == "frontier.message_context.v1":
-        text = message_text[end:]
-    else:
-        return None
-    if not isinstance(text, str):
-        return None
-    topic = _lookup_text(text, bot_user_id)
-    if not topic or topic in _LOOKUP_FOLLOWUPS or topic.startswith("["):
-        return None
-    return topic[:240]
-
-
 _PROMPT_CACHE_NAMESPACE = "frontier-agent-v1"
-_ALWAYS_AVAILABLE_RESTRICTED_TOOLS = frozenset({"ens_normal", "ens_professional"})
 
 
 def _named_item_key(item: Any) -> tuple[str, str]:
@@ -387,149 +330,6 @@ def _provider_request_overrides(
         user_id=_provider_user_id(workspace_key=workspace_key, access_profile=access_profile),
         cache_key=_prompt_cache_key(model=model, workspace_key=workspace_key, access_profile=access_profile),
     )
-
-
-def _deepseek_web_request_failed(exc: Exception) -> bool:
-    if isinstance(exc, (ModelInvalidRequestError, UnprocessableEntityError)):
-        # DeepSeek also uses HTTP 400 for content review. Keep those refusals.
-        return (
-            getattr(exc, "code", None) not in {"content_filter", "content_policy_violation"}
-            and "content exists risk" not in str(exc).lower()
-        )
-    if isinstance(exc, ModelAPIError):
-        return True
-    # ChatOpenAI raises ValueError(ResponseError) for a failed Responses body.
-    detail = exc.args[0] if exc.args else None
-    return getattr(detail, "code", None) == "server_error"
-
-
-def _deepseek_web_result_unusable(response) -> bool:
-    message = response.result[-1]
-    return (
-        message.response_metadata.get("status") == "completed"
-        and not (message.text.strip() or message.tool_calls)
-        and isinstance(message.content, list)
-        and any(
-            isinstance(block, dict) and block.get("type") == "web_search_call" and block.get("status") == "failed"
-            and isinstance(error := block.get("error"), dict) and error.get("code") == "unavailable"
-            for block in message.content
-        )
-    )
-
-
-class NativeWebSearchMiddleware(AgentMiddleware):
-    """Inject provider-native web search only after local-tool middleware.
-
-    Provider tool specs are dictionaries. Keeping them out of the agent's base
-    tool list prevents local-tool middleware from dereferencing ``tool.name``
-    on a dict.
-    """
-
-    def __init__(
-        self, tool_types: tuple[str, ...] = ("web_search",), *,
-        lookup_user_id: str | None = None, bot_user_id: str | None = None,
-    ):
-        self.tool_types = tool_types
-        self.lookup_user_id = lookup_user_id
-        self.bot_user_id = bot_user_id
-        self._can_fallback = bool(set(tool_types).intersection(DEEPSEEK_WEB_TOOLS))
-        # chat_agent creates a fresh middleware instance for every Agent turn.
-        self._deepseek_web_disabled = False
-
-    def _with_lookup_context(self, request):
-        user_id = self.lookup_user_id
-        if user_id is None:
-            return request
-        turns = [
-            (index, message) for index, message in enumerate(request.messages)
-            if message.type == "human" and message.additional_kwargs.get("lc_source") != "pinned_skill"
-        ]
-        if len(turns) < 2:
-            return request
-        topic = next((
-            topic for _, message in reversed(turns[:-1])
-            if (topic := _lookup_topic(message.text, user_id, self.bot_user_id))
-        ), None)
-        if topic is None:
-            return request
-
-        index, current = turns[-1]
-        note = f"\n承接前文要核实的问题「{topic}」。本轮可联网时，请搜索这个完整主题。"
-        content = current.content
-        content = [*content, {"type": "text", "text": note}] if isinstance(content, list) else content + note
-        current = current.model_copy(update={"content": content})
-        end = index + 1
-        while end < len(request.messages) and request.messages[end].additional_kwargs.get("lc_source") == "pinned_skill":
-            end += 1
-        return request.override(messages=[
-            *request.messages[:index], *request.messages[index + 1:end], current, *request.messages[end:],
-        ])
-
-    @staticmethod
-    def _with_tools_and_hint(request, tools, hint):
-        system = request.system_message or SystemMessage(content="")
-        content = [*system.content_blocks, {"type": "text", "text": hint}]
-        return request.override(tools=tools, system_message=system.model_copy(update={"content": content}))
-
-    def _request_with_web_search(self, request):
-        existing = {tool.get("type") for tool in request.tools if isinstance(tool, dict)}
-        missing = [{"type": tool_type} for tool_type in self.tool_types if tool_type not in existing]
-        tools = request.tools
-        if self._can_fallback:
-            # Keep the standalone tools registered in the graph. Only advertise them
-            # after dropping the hosted tools, including the identically named search.
-            tools = [tool for tool in tools if _named_item_key(tool)[0] not in DEEPSEEK_SEARCH_TOOLS]
-        hint = DEEPSEEK_WEB_SEARCH_PROMPT_HINT if self._can_fallback else WEB_SEARCH_PROMPT_HINT
-        return self._with_tools_and_hint(request, [*tools, *missing], hint)
-
-    def _request_without_deepseek_web(self, request):
-        tools = [
-            tool for tool in request.tools
-            if not isinstance(tool, dict) or tool.get("type") not in DEEPSEEK_WEB_TOOLS
-        ]
-        hint = _DEEPSEEK_WEB_FALLBACK_HINT
-        if DEEPSEEK_SEARCH_TOOLS <= {_named_item_key(tool)[0] for tool in tools}:
-            hint += SEARCH_PROMPT_HINT
-        return self._with_tools_and_hint(request, tools, hint)
-
-    def _fallback_request(self, request):
-        logger.warning("DeepSeek web tools failed. Continuing the current Agent turn without them.")
-        self._deepseek_web_disabled = True
-        return self._request_without_deepseek_web(request)
-
-    def wrap_model_call(self, request, handler):
-        request = self._with_lookup_context(request)
-        if self._deepseek_web_disabled:
-            return handler(self._request_without_deepseek_web(request))
-        primary = self._request_with_web_search(request)
-        if not self._can_fallback:
-            return handler(primary)
-        try:
-            response = handler(primary)
-        except (ModelAPIError, ModelInvalidRequestError, UnprocessableEntityError, ValueError) as exc:
-            if not _deepseek_web_request_failed(exc):
-                raise
-        else:
-            if not _deepseek_web_result_unusable(response):
-                return response
-        return handler(self._fallback_request(request))
-
-    async def awrap_model_call(self, request, handler):
-        request = self._with_lookup_context(request)
-        if self._deepseek_web_disabled:
-            return await handler(self._request_without_deepseek_web(request))
-        primary = self._request_with_web_search(request)
-        if not self._can_fallback:
-            return await handler(primary)
-        try:
-            response = await handler(primary)
-        except (ModelAPIError, ModelInvalidRequestError, UnprocessableEntityError, ValueError) as exc:
-            if not _deepseek_web_request_failed(exc):
-                raise
-        else:
-            if not _deepseek_web_result_unusable(response):
-                return response
-        return await handler(self._fallback_request(request))
 
 
 class SilentReplyMiddleware(AgentMiddleware):
@@ -750,57 +550,43 @@ class FrontierCognitive:
             profile = "qq" if conversation is None or conversation.platform == "qq" else "chat"
         system_prompt = self.load_system_prompt(group_id) if profile == "qq" else self.load_system_prompt(profile=profile)
 
-        restricted_tools = _stable_named_items(agent_tools.restricted_tools) if allow_local_tools else []
         effective_tools = []
+        skill_tools = []
         if access_profile == "frontier" and allow_local_tools:
-            always_available = [
-                tool
-                for tool in restricted_tools
-                if tool.name in _ALWAYS_AVAILABLE_RESTRICTED_TOOLS
-            ]
-            effective_tools = _stable_named_items([*selected_tools, *always_available])
+            effective_tools = _stable_named_items(selected_tools)
             if profile == "scheduled-task":
                 effective_tools = [tool for tool in effective_tools if tool.name != "send_plain_text"]
             if allow_silent_reply:
                 effective_tools = _stable_named_items([*effective_tools, skip_reply])
+            direct_tool_names = {tool.name for tool in effective_tools}
+            skill_tools = _merge_named_items(
+                tool for tool in getattr(agent_tools, "skill_tools", ()) if tool.name not in direct_tool_names
+            )
         if allowed_capture_tools:
-            for restricted_tool in restricted_tools:
-                if (
-                    restricted_tool.name in allowed_capture_tools
-                    and restricted_tool.name not in _ALWAYS_AVAILABLE_RESTRICTED_TOOLS
-                ):
+            for restricted_tool in _stable_named_items(agent_tools.restricted_tools):
+                if restricted_tool.name in allowed_capture_tools:
                     effective_tools.append(restricted_tool)
                     logger.info(f"用户明确请求浏览器捕获工具，已暴露: {restricted_tool.name}")
         else:
             logger.debug("用户未请求截图/录屏，restricted 工具未暴露")
 
-        native_web_search = allow_native_web_search and model_supports_native_web_search(
-            EnvConfig.ADVAN_MODEL,
-            EnvConfig.ADVAN_MODEL_PROVIDER,
+        supported, search_reason = native_web_search_support(
+            EnvConfig.ADVAN_MODEL, EnvConfig.ADVAN_MODEL_PROVIDER,
         )
-        _supported, native_web_search_reason = native_web_search_support(
-            EnvConfig.ADVAN_MODEL,
-            EnvConfig.ADVAN_MODEL_PROVIDER,
-        )
-        native_tools = (
-            native_web_search_tools(EnvConfig.ADVAN_MODEL, EnvConfig.ADVAN_MODEL_PROVIDER)
-            if native_web_search else ()
-        )
-        if native_tools:
-            logger.info(
-                f"主 Agent 已挂载服务端联网工具: {native_web_search_reason}"
+        search_middleware = None
+        if allow_native_web_search and supported:
+            bot_user_id = conversation.account_id if conversation and conversation.platform == "qq" else None
+            search_middleware = native_web_search_middleware(
+                EnvConfig.ADVAN_MODEL, EnvConfig.ADVAN_MODEL_PROVIDER,
+                user_text=user_text or "", user_id=str(user_id), bot_user_id=bot_user_id,
             )
-        elif uses_responses_api and allow_native_web_search:
-            logger.warning(
-                "主 Agent 使用 Responses API，但未挂载服务端原生 web_search: "
-                f"{native_web_search_reason}"
-            )
+            logger.info("主 Agent 已挂载服务端联网工具: %s", search_reason)
         else:
-            logger.debug(
-                f"当前模型路由不支持服务端原生 web_search: {native_web_search_reason}"
-            )
-        if not native_tools and DEEPSEEK_SEARCH_TOOLS <= {tool.name for tool in effective_tools}:
-            system_prompt += SEARCH_PROMPT_HINT
+            system_prompt += standalone_web_search_hint({tool.name for tool in effective_tools})
+            if uses_responses_api and allow_native_web_search:
+                logger.warning("主 Agent 使用 Responses API，但未挂载服务端原生联网工具: %s", search_reason)
+            else:
+                logger.debug("当前请求未挂载服务端原生联网工具: %s", search_reason)
         subagents = []
         if allow_local_tools:
             if document_subagent := getattr(self, "document_subagent", None):
@@ -826,9 +612,10 @@ class FrontierCognitive:
                 mode="deny",
             )
         ]
-        is_read_only_tool = getattr(agent_tools, "is_read_only_tool", None) if effective_tools else None
+        available_tools = [*effective_tools, *skill_tools]
+        is_read_only_tool = getattr(agent_tools, "is_read_only_tool", None) if available_tools else None
         read_only_tools = [
-            tool for tool in effective_tools
+            tool for tool in available_tools
             if callable(is_read_only_tool) and is_read_only_tool(tool)
         ]
         middleware: list[Any] = [
@@ -861,7 +648,7 @@ class FrontierCognitive:
             ))
         if allow_silent_reply and access_profile == "frontier":
             middleware.append(SilentReplyMiddleware())
-        if allow_local_tools and any(name in EnvConfig.ADVAN_MODEL.lower() for name in ("gpt", "claude")):
+        if allow_local_tools and model_supports_tool_search(EnvConfig.ADVAN_MODEL):
             middleware.append(
                 ProviderToolSearchMiddleware(
                     searchable_tools=[tool for tool in effective_tools if tool is not skip_reply]
@@ -869,19 +656,14 @@ class FrontierCognitive:
             )
         if session_turn is not None:
             middleware.append(SessionHistoryMiddleware(session_turn, model.profile))
-        if native_tools:
-            bot_user_id = conversation.account_id if conversation and conversation.platform == "qq" else None
-            lookup_followup = (
-                "deepseek_read_url" in native_tools
-                and _lookup_text(user_text or "", bot_user_id) in _LOOKUP_FOLLOWUPS
-            )
-            middleware.append(NativeWebSearchMiddleware(
-                native_tools, lookup_user_id=str(user_id) if lookup_followup else None, bot_user_id=bot_user_id,
-            ))
+        if search_middleware is not None:
+            middleware.append(search_middleware)
         middleware.append(MediaInputMiddleware(
             EnvConfig.ADVAN_MODEL, role="advanced",
             max_images=EnvConfig.MAX_INLINE_IMAGES, max_bytes=EnvConfig.MAX_INLINE_MEDIA_BYTES,
         ))
+        if skill_tools:
+            middleware.append(TurnSkillsMiddleware(backend=backend, sources=[SKILLS_BACKEND_PATH], tools=skill_tools))
         agent = create_deep_agent(
             name=EnvConfig.BOT_NAME,
             model=model,
@@ -934,6 +716,8 @@ class FrontierCognitive:
             "suppress_reply": False,
         }
         skill_names = list(pinned_skills)
+        if skill_tools and _ens_prefix.get() == "vep":
+            skill_names.append("ens-weather")
         if allow_local_tools and profile == "qq":
             skill_names.append("rich-markdown")
         if skill_names:

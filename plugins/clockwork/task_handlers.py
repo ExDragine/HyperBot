@@ -2,6 +2,7 @@
 
 import asyncio
 import datetime
+from importlib import import_module
 from io import BytesIO
 
 from nonebot import get_bot, logger
@@ -179,12 +180,7 @@ async def nrc_merchant_alert(**kwargs):
     每个时段（4小时）内若两个 API 均返回无效商品数据，每30分钟重试直至时段结束。
     首次判定双 API 均无效时向配置群发送失联提示，后续重试失败静默。
     """
-    from tools.NRCmerchant_current import (
-        ALERT_TARGET_ITEMS,
-        _load_css,
-        _render_html,
-        fetch_merchant_data_with_fallback,
-    )
+    merchant = import_module("skills.nrc-game.tools.NRCmerchant_current")
 
     now = datetime.datetime.now(SHANGHAI)
 
@@ -201,15 +197,15 @@ async def nrc_merchant_alert(**kwargs):
             logger.debug(f"NRC 商人提醒：已超出时段 {period_end.strftime('%H:%M')}，停止重试")
             break
 
-        data, source = await fetch_merchant_data_with_fallback()
+        data, source = await merchant.fetch_merchant_data_with_fallback()
 
         if data and data.get("items"):
             items = data.get("items", [])
-            hits = [item for item in items if item.get("name") in ALERT_TARGET_ITEMS]
+            hits = [item for item in items if item.get("name") in merchant.ALERT_TARGET_ITEMS]
             hit_names = "、".join(item["name"] for item in hits) if hits else ""
 
-            html = _render_html(data)
-            css = _load_css()
+            html = merchant._render_html(data)
+            css = merchant._load_css()
             image = await html_to_image(html, css=css, width=480)
 
             groups_sent = await _send_merchant_alert(image, hit_names)

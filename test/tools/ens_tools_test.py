@@ -17,7 +17,7 @@ def vep_prefix():
 
 @pytest.mark.asyncio
 async def test_ens_normal_scenario_not_found(load_tool_module):
-    mod = load_tool_module("ens_normal")
+    mod = load_tool_module("ens_normal", skill="ens-weather")
     text, artifact = await mod.ens_normal(scenario="不存在的场景", location="北京")
     assert "未知场景" in text
     assert artifact is None
@@ -26,7 +26,7 @@ async def test_ens_normal_scenario_not_found(load_tool_module):
 @pytest.mark.asyncio
 async def test_ens_normal_video_path(load_tool_module, monkeypatch):
     """普通场景（风速+北京）→ 字典命中 → 录屏。"""
-    mod = load_tool_module("ens_normal")
+    mod = load_tool_module("ens_normal", skill="ens-weather")
     captured_url = {}
 
     async def fake_record_video(
@@ -58,7 +58,7 @@ async def test_ens_normal_video_path(load_tool_module, monkeypatch):
 @pytest.mark.asyncio
 async def test_ens_normal_space_mode_plays_video(load_tool_module, monkeypatch):
     """空间天气（极光）→ 默认播放 → 录屏（不再截图）。"""
-    mod = load_tool_module("ens_normal")
+    mod = load_tool_module("ens_normal", skill="ens-weather")
     captured_url = {}
 
     async def fake_record_video(
@@ -90,7 +90,7 @@ async def test_ens_normal_space_mode_plays_video(load_tool_module, monkeypatch):
 @pytest.mark.asyncio
 async def test_ens_normal_explicit_coordinates(load_tool_module, monkeypatch):
     """传入 lon/lat → 跳过字典查找。"""
-    mod = load_tool_module("ens_normal")
+    mod = load_tool_module("ens_normal", skill="ens-weather")
 
     async def fake_record_video(
         url, *, duration, width, height, wait_until, timeout, wait_selector=None, post_wait_ms=0, hard_wait=False, ready_timeout=15000, wait_function=None, page_data_out=None
@@ -107,7 +107,7 @@ async def test_ens_normal_explicit_coordinates(load_tool_module, monkeypatch):
 @pytest.mark.asyncio
 async def test_ens_normal_unknown_location(load_tool_module, monkeypatch):
     """未知位置且未传坐标 → 返回错误。"""
-    mod = load_tool_module("ens_normal")
+    mod = load_tool_module("ens_normal", skill="ens-weather")
     text, artifact = await mod.ens_normal(scenario="风速", location="火星基地")
     assert "获取失败" in text
 
@@ -115,7 +115,7 @@ async def test_ens_normal_unknown_location(load_tool_module, monkeypatch):
 @pytest.mark.asyncio
 async def test_ens_normal_record_video_failure(load_tool_module, monkeypatch):
     """录屏失败 → 返回错误信息。"""
-    mod = load_tool_module("ens_normal")
+    mod = load_tool_module("ens_normal", skill="ens-weather")
 
     async def fake_record_video(
         url, *, duration, width, height, wait_until, timeout, wait_selector=None, post_wait_ms=0, hard_wait=False, ready_timeout=15000, wait_function=None, page_data_out=None
@@ -132,7 +132,7 @@ async def test_ens_normal_record_video_failure(load_tool_module, monkeypatch):
 @pytest.mark.asyncio
 async def test_ens_professional_video_path(load_tool_module, monkeypatch, vep_prefix):
     """数字参数 → 录屏。"""
-    mod = load_tool_module("ens_professional")
+    mod = load_tool_module("ens_professional", skill="ens-weather")
     captured_url = {}
 
     async def fake_record_video(
@@ -176,7 +176,7 @@ async def test_ens_professional_video_path(load_tool_module, monkeypatch, vep_pr
 @pytest.mark.asyncio
 async def test_ens_professional_pause_screenshot(load_tool_module, monkeypatch, vep_prefix):
     """p10=animoff → 截图。"""
-    mod = load_tool_module("ens_professional")
+    mod = load_tool_module("ens_professional", skill="ens-weather")
     captured_url = {}
 
     async def fake_record_video(
@@ -215,7 +215,7 @@ async def test_ens_professional_pause_screenshot(load_tool_module, monkeypatch, 
 @pytest.mark.asyncio
 async def test_ens_professional_bio_fires(load_tool_module, monkeypatch, vep_prefix):
     """生物模式 + 火点注释 → URL 包含 annot=fires。"""
-    mod = load_tool_module("ens_professional")
+    mod = load_tool_module("ens_professional", skill="ens-weather")
     captured_url = {}
 
     async def fake_record_video(
@@ -253,7 +253,7 @@ async def test_ens_professional_bio_fires(load_tool_module, monkeypatch, vep_pre
 @pytest.mark.asyncio
 async def test_ens_professional_time_parse(load_tool_module, monkeypatch, vep_prefix):
     """时间格式转换 YYYYMMDD.HHMM → #YYYY/MM/DD/HHMMZ。"""
-    mod = load_tool_module("ens_professional")
+    mod = load_tool_module("ens_professional", skill="ens-weather")
     captured_url = {}
 
     async def fake_record_video(
@@ -290,7 +290,7 @@ async def test_ens_professional_time_parse(load_tool_module, monkeypatch, vep_pr
 @pytest.mark.asyncio
 async def test_ens_professional_failure(load_tool_module, monkeypatch, vep_prefix):
     """record_video 失败 → 返回错误信息。"""
-    mod = load_tool_module("ens_professional")
+    mod = load_tool_module("ens_professional", skill="ens-weather")
 
     async def fake_record_video(
         url, *, duration, width, height, wait_until, timeout, wait_selector=None, post_wait_ms=0, hard_wait=False, ready_timeout=15000, wait_function=None, page_data_out=None
@@ -319,7 +319,7 @@ async def test_ens_professional_failure(load_tool_module, monkeypatch, vep_prefi
 @pytest.mark.asyncio
 async def test_all_scenarios_have_required_keys(load_tool_module):
     """28 个场景的映射表结构完整性。"""
-    mod = load_tool_module("ens_normal")
+    mod = load_tool_module("ens_normal", skill="ens-weather")
     required_keys = {"mode", "animation", "projection", "zoom"}
     for name, params in mod.SCENARIO_MAP.items():
         missing = required_keys - params.keys()

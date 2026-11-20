@@ -8,7 +8,7 @@ from pathlib import Path
 from langchain_core.tools import tool
 from nonebot import logger
 
-TAROT_DATA_PATH = Path(__file__).parent.parent / "data" / "tarot_cards.json"
+TAROT_DATA_PATH = Path(__file__).resolve().parents[3] / "data" / "tarot_cards.json"
 
 
 def load_tarot_data() -> dict:

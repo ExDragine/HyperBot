@@ -7,7 +7,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_aurora_live_success_and_failure(load_tool_module, monkeypatch):
-    mod = load_tool_module("aurora")
+    mod = load_tool_module("aurora", skill="space-weather")
 
     text, artifact = await mod.aurora_live()
     assert "成功获取北极光实时图像" in text
@@ -24,7 +24,7 @@ async def test_aurora_live_success_and_failure(load_tool_module, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_comet_tool_info_and_list(load_tool_module, monkeypatch):
-    mod = load_tool_module("comet")
+    mod = load_tool_module("comet", skill="astronomy")
 
     class DummyResp:
         def __init__(self, payload):
@@ -46,7 +46,7 @@ async def test_comet_tool_info_and_list(load_tool_module, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_comet_tool_error(load_tool_module, monkeypatch):
-    mod = load_tool_module("comet")
+    mod = load_tool_module("comet", skill="astronomy")
 
     class BadClient:
         async def get(self, *_args, **_kwargs):
@@ -59,7 +59,7 @@ async def test_comet_tool_error(load_tool_module, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_station_location(load_tool_module, monkeypatch):
-    mod = load_tool_module("heavens_above")
+    mod = load_tool_module("heavens_above", skill="astronomy")
 
     class DummyResp:
         content = b"img"
@@ -76,7 +76,7 @@ async def test_station_location(load_tool_module, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_station_location_empty_content(load_tool_module, monkeypatch):
-    mod = load_tool_module("heavens_above")
+    mod = load_tool_module("heavens_above", skill="astronomy")
 
     class DummyResp:
         content = b""
@@ -93,7 +93,7 @@ async def test_station_location_empty_content(load_tool_module, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_launches_success(load_tool_module, monkeypatch):
-    mod = load_tool_module("rocket")
+    mod = load_tool_module("rocket", skill="astronomy")
     launch_time = datetime.now(UTC) + timedelta(hours=1)
 
     class DummyResp:
@@ -124,7 +124,7 @@ async def test_get_launches_success(load_tool_module, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_launches_http_error(load_tool_module, monkeypatch):
-    mod = load_tool_module("rocket")
+    mod = load_tool_module("rocket", skill="astronomy")
 
     class DummyResp:
         status_code = 503

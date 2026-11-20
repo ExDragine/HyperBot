@@ -1,9 +1,12 @@
 import importlib
 import pkgutil
+from collections.abc import Iterator
 from pathlib import Path
 
 from langchain_core.tools import BaseTool
 
+from utils.ens_gate import _ens_prefix
+from utils.providers import provider_tools
 from utils.providers.deepseek.web import TOOL_NAMES as DEEPSEEK_SEARCH_TOOLS
 from utils.providers.deepseek.web import deepseek_search_available
 
@@ -11,13 +14,13 @@ from .mcp_client import mcp_get_tools_async
 
 _EXCLUDED_MODULES = {"__init__", "mcp_client"}
 
-_DOMAIN_GROUPS = ("astro", "earth", "deepseek", "memory", "divination", "external")
-_RESTRICTED_GROUPS = ("restricted",)
-_ALL_TOOL_GROUPS = ("main", *_DOMAIN_GROUPS, *_RESTRICTED_GROUPS)
+_ALL_TOOL_GROUPS = ("main", "skills", "external", "restricted")
+
+_RESTRICTED_TOOL_MODULES = frozenset({"webpage_screenshot", "webpage_recording"})
 
 _READ_ONLY_MODULES = {
-    "comet", "deepseek_balance", "deepseek_ocr", "deepseek_search", "earthquake", "iching", "radar",
-    "rocket", "space_weather", "tarot", "weather",
+    "comet", "deepseek_search", "earthquake", "iching", "radar",
+    "mars_weather", "rocket", "space_weather", "tarot",
 }
 _READ_ONLY_PREFIXES = {
     "milky_file": ("get_",),
@@ -38,51 +41,29 @@ _MODULE_REQUIRED_CAPABILITIES: dict[str, frozenset[str]] = {
 }
 _BROAD_QQ_CAPABILITIES = frozenset({"qq", "platform:qq", "qq:tools"})
 
-_TOOL_MODULE_GROUPS = {
-    "adapter": "main",
-    "milky_file": "main",
-    "milky_friend": "main",
-    "milky_group": "main",
-    "milky_message": "main",
-    "milky_system": "main",
-    "deepseek_balance": "deepseek",
-    "deepseek_ocr": "deepseek",
-    "deepseek_search": "deepseek",
-    "reminder": "main",
-    "scheduled_task": "main",
-    "aurora": "astro",
-    "comet": "astro",
-    "heavens_above": "astro",
-    "rocket": "astro",
-    "satellite": "astro",
-    "space_weather": "astro",
-    "earthquake": "earth",
-    "ens_normal": "restricted",
-    "ens_professional": "restricted",
 
-    "radar": "earth",
-    "weather": "earth",
-    "paint": "main",
-    "video": "main",
-    "speech": "main",
-    "memory": "memory",
-    "NRCmerchant_current": "main",
-    "webpage_screenshot": "restricted",
-    "webpage_recording": "restricted",
-    "NRCeggs_details": "main",
-    "NRCeggs_groups": "main",
-    "NRCevent_calendar": "main",
-    "typhoon": "main",
-    "iching": "divination",
-    "tarot": "divination",
-}
+def _module_tools(name: str, package: str | None = None) -> Iterator[BaseTool]:
+    module = importlib.import_module(name, package=package)
+    return (item for item in vars(module).values() if isinstance(item, BaseTool))
+
+
+def _discover_skill_tools(skills_dir: Path) -> Iterator[tuple[str, str, BaseTool]]:
+    for tools_dir in sorted(skills_dir.glob("*/tools")):
+        if not tools_dir.with_name("SKILL.md").is_file():
+            continue
+        skill = tools_dir.parent.name
+        for module in pkgutil.iter_modules([str(tools_dir)]):
+            if module.name.startswith("_"):
+                continue
+            for tool in _module_tools(f"skills.{skill}.tools.{module.name}"):
+                yield skill, module.name, tool
 
 
 def _discover_tools() -> tuple[
     dict[str, list[BaseTool]],
     dict[str, dict[str, object]],
 ]:
-    """扫描 tools 包，收集所有被 @tool 装饰的函数。"""
+    """收集普通工具、领域技能工具和 Provider 工具。"""
     tools_dir = Path(__file__).parent
     grouped_tools: dict[str, list[BaseTool]] = {group: [] for group in _ALL_TOOL_GROUPS}
     tool_metadata: dict[str, dict[str, object]] = {}
@@ -90,17 +71,23 @@ def _discover_tools() -> tuple[
     for mod_info in pkgutil.iter_modules([str(tools_dir)]):
         if mod_info.name in _EXCLUDED_MODULES:
             continue
-        module = importlib.import_module(f".{mod_info.name}", package=__package__)
-        found = [obj for obj in vars(module).values() if isinstance(obj, BaseTool)]
-        group = _TOOL_MODULE_GROUPS.get(mod_info.name, "main")
-        grouped_tools[group].extend(found)
-        for tool_obj in found:
-            tool_metadata[tool_obj.name] = {
+        group = "restricted" if mod_info.name in _RESTRICTED_TOOL_MODULES else "main"
+        for tool in _module_tools(f".{mod_info.name}", __package__):
+            grouped_tools[group].append(tool)
+            tool_metadata[tool.name] = {
                 "module": mod_info.name,
                 "group": group,
                 "platform": "qq" if mod_info.name in _MODULE_REQUIRED_CAPABILITIES else None,
                 "required_capabilities": _MODULE_REQUIRED_CAPABILITIES.get(mod_info.name, frozenset()),
             }
+
+    for skill, module, tool in _discover_skill_tools(tools_dir.parent / "skills"):
+        grouped_tools["skills"].append(tool)
+        tool_metadata[tool.name] = {"group": "skills", "module": module, "skill": skill}
+
+    for tool, read_only in provider_tools():
+        grouped_tools["main"].append(tool)
+        tool_metadata[tool.name] = {"group": "main", "read_only": read_only}
 
     return grouped_tools, tool_metadata
 
@@ -112,8 +99,9 @@ class ModuleTools:
             self.tool_metadata,
         ) = _discover_tools()
 
-        for group in ("astro", "earth", "deepseek", "memory", "divination"):
-            self.subagent_tools["main"].extend(self.subagent_tools[group])
+        self._registered_tool_ids = {
+            id(tool) for group in ("main", "skills") for tool in self.subagent_tools[group]
+        }
 
     @property
     def mcp_tools(self):
@@ -125,6 +113,15 @@ class ModuleTools:
     @property
     def restricted_tools(self):
         return self.subagent_tools.get("restricted", [])
+
+    @property
+    def skill_tools(self) -> list[BaseTool]:
+        """Return domain tools eligible for disclosure in the current turn."""
+        professional_ens = _ens_prefix.get() == "vep"
+        return [
+            tool for tool in self.subagent_tools["skills"]
+            if tool.name != "ens_professional" or professional_ens
+        ]
 
     def _capability_allows(self, tool: BaseTool, capabilities: frozenset[str]) -> bool:
         """Return whether a tool is available to an explicit adapter context.
@@ -166,12 +163,17 @@ class ModuleTools:
 
     def is_read_only_tool(self, tool: BaseTool) -> bool:
         """Classify registered query objects without trusting name prefixes alone."""
-        if not any(tool is registered for registered in self.subagent_tools["main"]):
+        if id(tool) not in self._registered_tool_ids:
             return False
         if getattr(tool, "response_format", None) != "content":
             return False
-        module = self.tool_metadata.get(tool.name, {}).get("module", "")
-        return module in _READ_ONLY_MODULES or tool.name.startswith(_READ_ONLY_PREFIXES.get(module, ()))
+        metadata = self.tool_metadata.get(tool.name, {})
+        module = metadata.get("module", "")
+        return (
+            metadata.get("read_only") is True
+            or module in _READ_ONLY_MODULES
+            or tool.name.startswith(_READ_ONLY_PREFIXES.get(module, ()))
+        )
 
 
 _AGENT_TOOLS = None

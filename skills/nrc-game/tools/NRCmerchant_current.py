@@ -13,14 +13,8 @@ from nonebot import logger
 from utils.alconna import UniMessage
 from utils.http_client import get_http_client
 from utils.markdown_render import html_to_image
-
-from ._nrc_common import (
-    API_HEADERS as _COMMON_API_HEADERS,
-)
-from ._nrc_common import (
-    load_css,
-    render_template,
-)
+from utils.tool_rendering import API_HEADERS as _COMMON_API_HEADERS
+from utils.tool_rendering import load_css, render_template
 
 API_URL = "https://roco-eggs.tsuki-world.com/api/merchant/current"
 BACKUP_API_URL = "https://rocokingdomworld.org/api/merchant/live"

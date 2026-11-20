@@ -30,7 +30,10 @@
 | [模型目录](../models/README.md) | `models/` 模型元数据：模型卡字段、能力与生命周期、LobeHub 名称同步、更新流程。 |
 | [渲染器开发说明](../renderer/README.md) | Markdown 渲染器的 React/TypeScript 组件、构建、类型生成与截图验证。 |
 | [富文本排版技能](../skills/rich-markdown/SKILL.md) | QQ 回复的 Markdown 与轻量组件语法；详细字段契约位于其 `references/` 目录。 |
-| 其他内置技能 | [eli5](../skills/eli5/SKILL.md)（分层通俗解释）、[ens-weather](../skills/ens-weather/SKILL.md)（ENS 气象工作流）、[qq-operation-safety](../skills/qq-operation-safety/SKILL.md)（QQ 平台写操作前检查）。 |
+| 按需加载工具的技能 | [地面气象与地震](../skills/weather-hazards/SKILL.md)、[天文观测与发射](../skills/astronomy/SKILL.md)、[空间天气](../skills/space-weather/SKILL.md)、[气象卫星](../skills/satellite-imagery/SKILL.md)、[ENS](../skills/ens-weather/SKILL.md)、[易经与塔罗](../skills/divination/SKILL.md)、[洛克王国](../skills/nrc-game/SKILL.md) |
+| 其他内置技能 | [eli5](../skills/eli5/SKILL.md)（分层通俗解释）、[qq-operation-safety](../skills/qq-operation-safety/SKILL.md)（QQ 平台写操作前检查）。 |
+
+领域技能的工具实现与 `SKILL.md` 位于同一技能目录下。模型读取或预加载技能后，该技能的工具会在当轮公开。
 
 ## 平台与集成
 

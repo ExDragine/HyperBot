@@ -13,8 +13,8 @@ from typing import Any
 from langchain_deepseek import ChatDeepSeek
 
 from ..base import CHAT_COMPLETIONS, MESSAGES, RESPONSES, BaseChatAdapter, BaseVendor, Route, targets_https_api
+from .constants import API_HOST, DEFAULT_BASE_URL
 
-_HOST = "api.deepseek.com"
 _SAFETY = {"level": "high"}
 _EFFORT_ALIASES = {"medium": "high", "xhigh": "max"}
 _WEB_MODELS = frozenset({"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp"})
@@ -23,19 +23,21 @@ DEEPSEEK_WEB_TOOLS = ("deepseek_web_search", "deepseek_read_url")
 
 class DeepSeekAdapter(BaseChatAdapter):
     type = "deepseek"
+    api_modes = frozenset({CHAT_COMPLETIONS})
+    default_api_mode = CHAT_COMPLETIONS
     # One profile per protocol DeepSeek serves; the last two reuse other adapters.
     default_profiles = {
         "deepseek": {"type": "deepseek", "api_mode": CHAT_COMPLETIONS, "safety_check": _SAFETY},
         "deepseek_responses": {
             "type": "openai",
             "api_mode": RESPONSES,
-            "base_url": f"https://{_HOST}",
+            "base_url": DEFAULT_BASE_URL,
             "safety_check": _SAFETY,
         },
         "deepseek_anthropic": {
             "type": "anthropic",
             "api_mode": MESSAGES,
-            "base_url": f"https://{_HOST}/anthropic",
+            "base_url": f"{DEFAULT_BASE_URL}/anthropic",
             "safety_check": _SAFETY,
         },
     }
@@ -70,11 +72,11 @@ class DeepSeekVendor(BaseVendor):
             return None
 
         if route.adapter == "deepseek" and route.api_mode == CHAT_COMPLETIONS:
-            official = targets_https_api(route, _HOST, allow_default=True)
+            official = targets_https_api(route, API_HOST, allow_default=True)
         elif route.adapter == "openai" and route.api_mode == RESPONSES:
-            official = targets_https_api(route, _HOST, allow_default=False)
+            official = targets_https_api(route, API_HOST, allow_default=False)
         elif route.adapter == "anthropic" and route.api_mode == MESSAGES:
-            official = targets_https_api(route, _HOST, paths=frozenset({"/anthropic"}), allow_default=False)
+            official = targets_https_api(route, API_HOST, paths=frozenset({"/anthropic"}), allow_default=False)
         else:
             official = False
         return route.api_mode if official else None
@@ -114,3 +116,23 @@ class DeepSeekVendor(BaseVendor):
 
     def structured_output_method(self, route: Route, capabilities: Mapping[str, Any]) -> str:
         return "text_json"
+
+    def prepare_chat_model(self, route: Route, model_class: Any, params: dict[str, Any]) -> Any:
+        if not self.native_web_search(route)[0]:
+            return model_class
+
+        from .responses import DeepSeekWebChatOpenAI
+
+        params["output_version"] = "responses/v1"
+        params["store"] = False
+        return DeepSeekWebChatOpenAI
+
+    def web_search_middleware(self, *, user_text: str, user_id: str, bot_user_id: str | None):
+        from .agent_web import DeepSeekWebSearchMiddleware
+
+        return DeepSeekWebSearchMiddleware.for_turn(user_text=user_text, user_id=user_id, bot_user_id=bot_user_id)
+
+    def standalone_web_search_hint(self, tool_names: set[str]) -> str:
+        from .web import SEARCH_PROMPT_HINT, TOOL_NAMES
+
+        return SEARCH_PROMPT_HINT if TOOL_NAMES <= tool_names else ""

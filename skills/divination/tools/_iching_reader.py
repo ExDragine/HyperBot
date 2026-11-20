@@ -1,8 +1,4 @@
-"""周易占卜核心实现：数据加载与 IChingReader。
-
-从 tools/iching.py 拆出，只保留与 @tool 无关的加载、起卦与渲染逻辑；
-tools/iching.py 通过 re-export 保持 ``tools.iching.IChingReader`` 可导入。
-"""
+"""周易数据加载、起卦与解读。"""
 
 import json
 import secrets
@@ -12,7 +8,7 @@ from typing import Any
 
 from nonebot import logger
 
-ICHING_DATA_DIR = Path(__file__).parent.parent / "data" / "iching"
+ICHING_DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "iching"
 ICHING_INDEX_PATH = ICHING_DATA_DIR / "index.json"
 ICHING_TRIGRAMS_PATH = ICHING_DATA_DIR / "trigrams.json"
 ICHING_HEXAGRAMS_DIR = ICHING_DATA_DIR / "hexagrams"

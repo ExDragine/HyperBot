@@ -211,10 +211,9 @@ from utils.agents import cognitive
 from utils.agents.runtime_gateway import FrontierAgentRuntime
 from utils.configs import EnvConfig
 
-EnvConfig.ADVAN_MODEL = "contract-model"
+EnvConfig.ADVAN_MODEL = "deepseek-flash"
+EnvConfig.ADVAN_MODEL_PROVIDER = "deepseek_responses"
 EnvConfig.SYSTEM_PROMPT = "QQ-only persona for {name}"
-cognitive.model_supports_native_web_search = lambda *_: True
-cognitive.native_web_search_tools = lambda *_: ("deepseek_web_search", "deepseek_read_url")
 agent = object.__new__(cognitive.FrontierCognitive)
 agent.working_dir = str(Path.cwd() / "sandbox")
 editor.FrontierAgentRuntime = lambda: FrontierAgentRuntime(agent)

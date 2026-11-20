@@ -5,6 +5,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from importlib import import_module
 from pathlib import Path
 from typing import Any, cast
 
@@ -565,9 +566,7 @@ async def _run_agent_turn(
 @driver.on_shutdown
 async def on_shutdown():
     await session_manager.close()
-    from tools.ens_professional import clear_ens_cache as clear_ens_professional_cache
-
-    clear_ens_professional_cache()
+    import_module("skills.ens-weather.tools.ens_professional").clear_ens_cache()
     from utils.browser_capture import close_browser
     from utils.http_client import aclose_all
 

@@ -8,7 +8,7 @@ import pytest
 from utils.agents.capture import detect_browser_capture_intent
 from utils.configs import EnvConfig, parse_config
 from utils.decision import LLMDecisionProvider
-from utils.decision import openai as decisions
+from utils.providers.openai import decisions
 
 
 @pytest.fixture
@@ -124,7 +124,7 @@ async def test_browser_capture_uses_native_decisions_and_rejects_duplicate_answe
 def test_native_decisions_rejects_proxy_profile(native_decisions):
     native_decisions["base_url"] = "https://example.com/v1"
 
-    with pytest.raises(ValueError, match="官方 OpenAI provider"):
+    with pytest.raises(ValueError, match="native_decisions 需要支持该功能的官方 provider"):
         LLMDecisionProvider()
 
 

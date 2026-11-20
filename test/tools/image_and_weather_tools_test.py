@@ -234,7 +234,7 @@ def test_get_paint_tool_schema_hides_injected_state(load_tool_module):
 
 @pytest.mark.asyncio
 async def test_china_earthquake_tool_returns_plain_text(load_tool_module, monkeypatch):
-    mod = load_tool_module("earthquake")
+    mod = load_tool_module("earthquake", skill="weather-hazards")
 
     class FixedDateTime(mod.datetime):
         @classmethod
@@ -294,7 +294,7 @@ async def test_china_earthquake_tool_returns_plain_text(load_tool_module, monkey
 
 @pytest.mark.asyncio
 async def test_usgs_significant_earthquakes_returns_plain_text(load_tool_module, monkeypatch):
-    mod = load_tool_module("earthquake")
+    mod = load_tool_module("earthquake", skill="weather-hazards")
 
     class Response:
         def raise_for_status(self):
@@ -348,7 +348,7 @@ async def test_usgs_significant_earthquakes_returns_plain_text(load_tool_module,
 
 
 def test_available_china_radar_areas(load_tool_module):
-    mod = load_tool_module("radar")
+    mod = load_tool_module("radar", skill="weather-hazards")
 
     result = mod.get_available_china_radar_areas()
 
@@ -360,7 +360,7 @@ def test_available_china_radar_areas(load_tool_module):
 
 @pytest.mark.asyncio
 async def test_radar_tool(load_tool_module, monkeypatch):
-    mod = load_tool_module("radar")
+    mod = load_tool_module("radar", skill="weather-hazards")
 
     async def ok(_area):
         return "https://img/radar.png"
@@ -381,7 +381,7 @@ async def test_radar_tool(load_tool_module, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_satellite_tools(load_tool_module, monkeypatch):
-    mod = load_tool_module("satellite")
+    mod = load_tool_module("satellite", skill="satellite-imagery")
 
     class DummyResp:
         content = b"video"
@@ -422,7 +422,7 @@ async def test_satellite_tools(load_tool_module, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_weather_tools(load_tool_module, monkeypatch):
-    mod = load_tool_module("weather")
+    mod = load_tool_module("mars_weather", skill="space-weather")
 
     class MarsResp:
         def raise_for_status(self):
@@ -439,6 +439,7 @@ async def test_weather_tools(load_tool_module, monkeypatch):
     mars = await mod.mars_weather()
     assert "火星天气" in mars
 
-    text, artifact = await mod.get_wind_map("wind_shear")
+    wind_map = load_tool_module("wind_map", skill="weather-hazards")
+    text, artifact = await wind_map.get_wind_map("wind_shear")
     assert text.startswith("获取成功")
     assert artifact[0].type == "image"

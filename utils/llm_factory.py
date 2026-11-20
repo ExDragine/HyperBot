@@ -4,11 +4,13 @@ from langchain_core.language_models import ModelProfile
 
 from models import ApiMode, ModelFeature, ModelInput, ModelOutput, get_model, load_catalog
 from utils.configs import EnvConfig
-from utils.providers import Route, get_adapter, infer_adapter, vendor_for
-from utils.providers.base import ADAPTER_API_MODES, DEFAULT_API_MODES
+from utils.providers import Route, adapter_protocol, get_adapter, infer_adapter, vendor_for
 
 if TYPE_CHECKING:
+    from langchain.agents.middleware import AgentMiddleware
     from langchain_core.language_models import BaseChatModel
+
+    from utils.decision.models import DecisionProvider
 
 
 def _clean_optional(value: object) -> str:
@@ -94,13 +96,10 @@ def model_supports(model: str, capability: str, *, role: str | None = None) -> b
 
 def _provider_protocol(model: str, profile: dict) -> tuple[str, str]:
     provider_type = (_clean_optional(profile.get("type")) or _infer_provider(model)).lower()
-    api_mode = _clean_optional(profile.get("api_mode")).lower()
+    default_mode, supported_modes = adapter_protocol(provider_type)
+    api_mode = _clean_optional(profile.get("api_mode")).lower() or default_mode
 
-    if not api_mode:
-        api_mode = DEFAULT_API_MODES.get(provider_type, "")
-
-    supported_modes = ADAPTER_API_MODES.get(provider_type)
-    if supported_modes is None:
+    if not supported_modes:
         raise ValueError(f"未知 LLM provider type: {provider_type!r}")
     if api_mode not in supported_modes:
         raise ValueError(f"provider type {provider_type!r} 不支持 api_mode {api_mode!r}")
@@ -168,7 +167,7 @@ def native_web_search_support(
     if route.api_mode != ApiMode.RESPONSES.value:
         return False, f"api_mode={route.api_mode or 'unknown'} is not Responses"
 
-    if route.profile.get("native_web_search") is True and route.adapter == "openai":
+    if route.profile.get("native_web_search") is True:
         return True, "Responses-compatible provider explicitly opted in"
 
     return (
@@ -188,6 +187,37 @@ def native_web_search_tools(model: str, provider: str | None = None) -> tuple[st
     """Return the hosted tool types to inject when native search is enabled."""
     vendor = vendor_for(_route(model, provider))
     return vendor.native_search_tools if vendor else ("web_search",)
+
+
+def native_web_search_middleware(
+    model: str, provider: str | None, *, user_text: str, user_id: str, bot_user_id: str | None,
+) -> AgentMiddleware:
+    """Build the middleware for a route whose native search is enabled."""
+    from utils.providers.web_search import NativeWebSearchMiddleware
+
+    vendor = vendor_for(_route(model, provider))
+    if vendor is not None:
+        middleware = vendor.web_search_middleware(user_text=user_text, user_id=user_id, bot_user_id=bot_user_id)
+        if middleware is not None:
+            return middleware
+    return NativeWebSearchMiddleware(vendor.native_search_tools if vendor else ("web_search",))
+
+
+def provider_native_decisions(
+    model: str, provider: str | None, *, max_retries: int, timeout: int,
+) -> DecisionProvider | None:
+    try:
+        _, profile = _provider_profile(model, provider)
+    except ValueError:
+        return None
+    if not profile.get("native_decisions"):
+        return None
+    route = _route(model, provider)
+    vendor = vendor_for(route)
+    backend = vendor.decision_backend(route, max_retries=max_retries, timeout=timeout) if vendor else None
+    if backend is None:
+        raise ValueError("native_decisions 需要支持该功能的官方 provider")
+    return backend
 
 
 def get_langchain_model_profile(model: str, provider_type: str) -> ModelProfile | None:
@@ -269,9 +299,7 @@ def structured_output_options(
 ) -> dict[str, Any]:
     """Select schema enforcement without silently changing API endpoints.
 
-    A first-party vendor may override its adapter's default: official OpenAI
-    and Anthropic use native JSON Schema, while every DeepSeek route keeps the
-    schema in the prompt because thinking mode rejects a forced tool choice.
+    The first-party vendor can override the strategy selected by the adapter.
     """
     route = _route(model, provider)
     selected = method or route.profile.get("structured_output_method", "auto")
@@ -283,10 +311,7 @@ def structured_output_options(
         selected = (vendor.structured_output_method(route, capabilities) if vendor else None) or get_adapter(
             route.adapter
         ).structured_output_method(route, capabilities)
-    options: dict[str, Any] = {"method": selected}
-    if selected == "json_schema" and route.adapter == "openai":
-        options["strict"] = True
-    return options
+    return get_adapter(route.adapter).structured_output_options(selected)
 
 
 def create_llm(model: str, provider: str | None = None, **kwargs) -> BaseChatModel:
@@ -301,4 +326,6 @@ def create_llm(model: str, provider: str | None = None, **kwargs) -> BaseChatMod
         raise TypeError("create_llm() 不再接受 use_responses_api，请在供应商 profile 中配置 api_mode")
     route = _route(model, provider)
     catalog_profile = None if "profile" in kwargs else get_langchain_model_profile(model, route.model_family)
-    return get_adapter(route.adapter).create_chat_model(route, kwargs, catalog_profile=catalog_profile)
+    return get_adapter(route.adapter).create_chat_model(
+        route, kwargs, catalog_profile=catalog_profile, vendor=vendor_for(route),
+    )

@@ -17,7 +17,7 @@ import pytest
 async def test_egg_comparison_retains_text_when_rendering_fails(
     load_tool_module, monkeypatch, breedable, groups, expected,
 ):
-    module = load_tool_module("NRCeggs_groups")
+    module = load_tool_module("NRCeggs_groups", skill="nrc-game")
     pets = {
         name: {"name": name, "isfudan": can_breed, "danzu": group}
         for name, can_breed, group in zip(("甲", "乙"), breedable, groups, strict=True)
@@ -37,7 +37,7 @@ async def test_egg_comparison_retains_text_when_rendering_fails(
 
 
 async def test_egg_matches_deduplicate_groups_and_preserve_breedable_order(load_tool_module, monkeypatch):
-    module = load_tool_module("NRCeggs_groups")
+    module = load_tool_module("NRCeggs_groups", skill="nrc-game")
     own_pet = {"name": "自己", "isfudan": 1, "danzu": "1,2"}
     one = {"name": "不能孵", "isfudan": 2, "danzu": "1"}
     two = {"name": "能孵", "isfudan": 1, "danzu": "1,2"}
@@ -67,7 +67,7 @@ async def test_egg_matches_deduplicate_groups_and_preserve_breedable_order(load_
 
 
 async def test_typhoon_partial_render_failure_preserves_order_and_overlay(load_tool_module, monkeypatch):
-    module = load_tool_module("typhoon")
+    module = load_tool_module("typhoon", skill="weather-hazards")
     typhoons = [{"name": name, "is_current": 1} for name in ("甲", "乙", "丙")]
 
     async def fetch():
@@ -94,7 +94,7 @@ async def test_typhoon_partial_render_failure_preserves_order_and_overlay(load_t
 async def test_professional_ens_rejects_invalid_options_before_browser(load_tool_module, parameters):
     from utils.ens_gate import _ens_prefix
 
-    module = load_tool_module("ens_professional")
+    module = load_tool_module("ens_professional", skill="ens-weather")
     token = _ens_prefix.set("vep")
     try:
         text, artifact = await module.run_ens_professional(**parameters)
@@ -105,7 +105,7 @@ async def test_professional_ens_rejects_invalid_options_before_browser(load_tool
 
 
 def test_professional_ens_uses_full_city_catalog(load_tool_module):
-    module = load_tool_module("ens_professional")
+    module = load_tool_module("ens_professional", skill="ens-weather")
     lon, lat, name = module._resolve_professional_location("南京市", "0")
     assert name == "南京市"
     assert 118 < lon < 120
@@ -113,7 +113,7 @@ def test_professional_ens_uses_full_city_catalog(load_tool_module):
 
 
 def test_sea_lookup_prefers_exact_global_name_before_fuzzy_coastal_match(load_tool_module, monkeypatch):
-    module = load_tool_module("ens_normal")
+    module = load_tool_module("ens_normal", skill="ens-weather")
     monkeypatch.setattr(module, "_COASTAL_SEA_COORDS", {"北海市": (109.0, 21.0)})
     monkeypatch.setattr(module, "_GLOBAL_SEA_COORDS", {"北海": (3.0, 56.0)})
     assert module._resolve_sea_coords("北海") == (3.0, 56.0)
@@ -121,7 +121,7 @@ def test_sea_lookup_prefers_exact_global_name_before_fuzzy_coastal_match(load_to
 
 
 async def test_ens_batch_keeps_successful_media_when_another_query_fails(load_tool_module, monkeypatch):
-    module = load_tool_module("ens_normal")
+    module = load_tool_module("ens_normal", skill="ens-weather")
 
     async def execute(scenario, location, time, **kwargs):
         if location == "未知":
@@ -141,7 +141,7 @@ async def test_ens_batch_keeps_successful_media_when_another_query_fails(load_to
 
 @pytest.mark.parametrize("batch", [False, True])
 async def test_fire_query_retains_required_visual_even_when_text_only_requested(load_tool_module, monkeypatch, batch):
-    module = load_tool_module("ens_normal")
+    module = load_tool_module("ens_normal", skill="ens-weather")
 
     async def capture(**kwargs):
         return b"fire-map"

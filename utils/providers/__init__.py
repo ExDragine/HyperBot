@@ -10,9 +10,12 @@ from collections.abc import Mapping
 from copy import deepcopy
 from functools import cache
 from importlib import import_module
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .base import ChatAdapter, Route, Vendor
+
+if TYPE_CHECKING:
+    from langchain_core.tools import BaseTool
 
 # Order is the model-name inference order; ``openai`` is the fallback.
 _ADAPTERS: dict[str, tuple[str, str]] = {
@@ -28,6 +31,7 @@ _VENDORS: dict[str, tuple[str, str]] = {
 }
 _FALLBACK_ADAPTER = "openai"
 _PROFILE_ORDER = ("openai", "google", "anthropic", "deepseek")
+_TOOL_PACKAGES = ("utils.providers.deepseek.tools",)
 
 
 def _load(entry: tuple[str, str]):
@@ -62,6 +66,31 @@ def infer_adapter(model: str) -> str:
     return _FALLBACK_ADAPTER
 
 
+def adapter_protocol(adapter_type: str) -> tuple[str, frozenset[str]]:
+    if adapter_type not in _ADAPTERS:
+        return "", frozenset()
+    adapter = get_adapter(adapter_type)
+    return adapter.default_api_mode, adapter.api_modes
+
+
+def model_supports_tool_search(model: str) -> bool:
+    model = model.lower()
+    return any(
+        marker in model
+        for adapter_type in _ADAPTERS
+        for marker in get_adapter(adapter_type).tool_search_model_markers
+    )
+
+
+def provider_tools() -> tuple[tuple[BaseTool, bool], ...]:
+    """Collect direct tools and their read-only flags from provider packages."""
+    return tuple(entry for package in _TOOL_PACKAGES for entry in import_module(package).direct_tools())
+
+
+def standalone_web_search_hint(tool_names: set[str]) -> str:
+    return "".join(get_vendor(name).standalone_web_search_hint(tool_names) for name in _VENDORS)
+
+
 def default_profiles() -> dict[str, dict[str, Any]]:
     """Return fresh copies of every provider's built-in profiles."""
     profiles: dict[str, dict[str, Any]] = {}
@@ -90,11 +119,15 @@ def vendor_for(route: Route) -> Vendor | None:
 
 __all__ = [
     "Route",
+    "adapter_protocol",
     "adapter_types",
     "default_profiles",
     "get_adapter",
     "get_vendor",
     "infer_adapter",
+    "model_supports_tool_search",
+    "provider_tools",
+    "standalone_web_search_hint",
     "validate_profile_fields",
     "vendor_for",
 ]

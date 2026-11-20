@@ -5,7 +5,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_solar_flare(load_tool_module, monkeypatch):
-    mod = load_tool_module("space_weather")
+    mod = load_tool_module("space_weather", skill="space-weather")
 
     class DummyResp:
         def json(self):
@@ -25,7 +25,7 @@ async def test_solar_flare(load_tool_module, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_realtime_solarwind(load_tool_module, monkeypatch):
-    mod = load_tool_module("space_weather")
+    mod = load_tool_module("space_weather", skill="space-weather")
 
     class DummyResp:
         def __init__(self, payload):
@@ -50,7 +50,7 @@ async def test_realtime_solarwind(load_tool_module, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_soho_realtime_solarwind(load_tool_module, monkeypatch):
-    mod = load_tool_module("space_weather")
+    mod = load_tool_module("space_weather", skill="space-weather")
 
     class DummyResp:
         content = b"2026 010:12:34:56 420 5 33 45 1 2"
@@ -67,7 +67,7 @@ async def test_soho_realtime_solarwind(load_tool_module, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_geospace(load_tool_module):
-    mod = load_tool_module("space_weather")
+    mod = load_tool_module("space_weather", skill="space-weather")
     text, artifact = await mod.geospace()
     assert "地磁场" in text
     assert len(artifact) == 3
@@ -75,7 +75,7 @@ async def test_geospace(load_tool_module):
 
 @pytest.mark.asyncio
 async def test_noaa_enlil_predict(load_tool_module, monkeypatch):
-    mod = load_tool_module("space_weather")
+    mod = load_tool_module("space_weather", skill="space-weather")
 
     class DummyResp:
         content = b"<html></html>"
@@ -103,7 +103,7 @@ async def test_noaa_enlil_predict(load_tool_module, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_solar_image_and_goes_suvi(load_tool_module):
-    mod = load_tool_module("space_weather")
+    mod = load_tool_module("space_weather", skill="space-weather")
 
     text, artifact = await mod.solar_image("SN")
     assert text.startswith("获取成功")
@@ -124,7 +124,7 @@ async def test_solar_image_and_goes_suvi(load_tool_module):
 
 @pytest.mark.asyncio
 async def test_sunspot(load_tool_module, monkeypatch):
-    mod = load_tool_module("space_weather")
+    mod = load_tool_module("space_weather", skill="space-weather")
 
     class DummyResp:
         def __init__(self, content=None, payload=None):
@@ -156,7 +156,7 @@ async def test_sunspot(load_tool_module, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_swpc_page(load_tool_module, monkeypatch):
-    mod = load_tool_module("space_weather")
+    mod = load_tool_module("space_weather", skill="space-weather")
 
     class DummyElement:
         async def screenshot(self):
@@ -202,7 +202,7 @@ async def test_swpc_page(load_tool_module, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_planets_weather(load_tool_module):
-    mod = load_tool_module("space_weather")
+    mod = load_tool_module("space_weather", skill="space-weather")
     text, artifact = await mod.planets_weather("火星")
     assert "火星天气" in text
     assert artifact is not None

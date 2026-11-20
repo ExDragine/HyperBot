@@ -8,7 +8,8 @@ from langchain_core.tools import tool
 from pydantic import Field
 
 from utils.milky_tools import configurable, resolve_virtual_path
-from utils.providers.deepseek.media import DeepSeekMediaError, ocr_file
+
+from ..media import DeepSeekMediaError, ocr_file
 
 _DEFAULT_CONFIG = cast(RunnableConfig, None)
 
