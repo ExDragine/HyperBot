@@ -381,7 +381,7 @@ async def test_radar_tool(load_tool_module, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_satellite_tools(load_tool_module, monkeypatch):
-    mod = load_tool_module("satellite", skill="satellite-imagery")
+    mod = load_tool_module("satellite", skill="weather-hazards")
 
     class DummyResp:
         content = b"video"

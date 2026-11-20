@@ -19,7 +19,7 @@ def test_http_client_uses_httpx2_backend_and_exports_compatibility_types():
     ("skill", "module_name", "client_name", "client_attr"),
     [
         ("astronomy", "heavens_above", "heavens_above", "httpx_client"),
-        ("satellite-imagery", "satellite", "satellite", "httpx_client"),
+        ("weather-hazards", "satellite", "satellite", "httpx_client"),
         ("space-weather", "space_weather", "space_weather", "httpx_client"),
         ("space-weather", "mars_weather", "weather", "httpx_client"),
         ("astronomy", "rocket", "rocket", "http_client"),

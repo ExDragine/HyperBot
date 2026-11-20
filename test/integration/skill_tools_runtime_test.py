@@ -69,6 +69,10 @@ registered = {item.name for item in registry.subagent_tools["skills"]}
 declared = set().union(*manifests.values())
 assert declared == registered, (declared - registered, registered - declared)
 assert sum(len(names) for names in manifests.values()) == len(registered)
+assert {
+    "get_static_china_radar", "get_fy4b_satellite_image", "get_fy4b_cloud_map",
+    "get_fy4b_geos_cloud_map", "get_himawari_satellite_image",
+} <= manifests[SKILL]
 assert all(registry.tool_metadata[name]["skill"] == skill for skill, names in manifests.items() for name in names)
 assert not declared.intersection(tool.name for tool in registry.direct_tools)
 assert not declared.intersection(tool.name for tool in registry.restricted_tools)

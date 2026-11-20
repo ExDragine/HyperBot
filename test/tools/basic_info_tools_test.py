@@ -218,9 +218,8 @@ async def test_module_tools_keeps_domain_tools_in_skills(monkeypatch):
         "divination": {"iching": fake_modules.pop("iching")},
         "ens-weather": {name: fake_modules.pop(name) for name in ("ens_normal", "ens_professional")},
         "nrc-game": {"NRCevent_calendar": fake_modules.pop("NRCevent_calendar")},
-        "satellite-imagery": {"satellite": fake_modules.pop("satellite")},
         "space-weather": {"aurora": fake_modules.pop("aurora")},
-        "weather-hazards": {name: fake_modules.pop(name) for name in ("earthquake", "radar")},
+        "weather-hazards": {name: fake_modules.pop(name) for name in ("earthquake", "radar", "satellite")},
     }
 
     def fake_iter_modules(paths):
