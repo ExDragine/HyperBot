@@ -3,11 +3,11 @@ name: rich-markdown
 description: Compose longer QQ replies, comparisons, guides and data or media with Markdown and static components.
 ---
 
-# Write content first
+# 先判断是否需要排版
 
-用 Markdown 段落、小标题、列表和表格组织详细说明。组件用于展示清楚的关系、数据或媒体。普通文字默认达到 500 字符也会转图；QQ 用户可点开、放大查看完整细节。
+简单聊天和需要原样复制的内容直接写正文。需要解释、比较、组织数据或展示媒体时，再使用 Markdown 和下方组件。普通文本默认达到 500 字符时由系统转图，回复篇幅由任务需要决定。
 
-## Use the small component syntax
+## 基本组件语法
 
 组件打开行为 `::名称{属性}`，结束行为独立的 `::`，正文直接写 Markdown。文字属性加引号，数字直接写；无属性时省略花括号。
 
@@ -19,7 +19,7 @@ description: Compose longer QQ replies, comparisons, guides and data or media wi
 
 `card` 默认柔和底色，可选 color：neutral/blue/emerald/violet/amber/rose/cyan；variant：muted/outline/ghost。`section` 是无边框分区，可填 title；`grid{columns=2}` 放两列短内容，窄图自动纵向排列。组件可嵌套，每个打开行都要有对应关闭行。基本卡片和分区按上述写法直接输出，无需先读取额外文件。
 
-## Match information relationships
+## 按内容关系选形式
 
 - **解释概念或原因**：沿因果写连贯正文，按机制与应用分区；关键判断可用单张卡片强调，关系确实需要图时加 Mermaid。
 - **比较对象**：少量对象的短概览可用一个 grid 组合卡片。共同维度多或对象多时，用 Markdown 表格对齐比较项，选择依据写在正文。
@@ -30,7 +30,7 @@ description: Compose longer QQ replies, comparisons, guides and data or media wi
 
 不要为所有回答规定同一套模块或顺序。段落承担完整论证，卡片承载独立对象或重点，不包住每段文字。让标题说明信息关系，避免空泛的“概述／详情／总结”。长说明、宽表格、步骤和媒体纵向占整行，两列只放短内容。颜色用于区分主题，不暗示不存在的好坏。
 
-## Read details only when needed
+## 按需阅读契约
 
 以下路径相对 `/skills/rich-markdown/`：
 

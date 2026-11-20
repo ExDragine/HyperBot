@@ -91,6 +91,21 @@ def test_frontier_load_system_prompt_missing(monkeypatch):
     assert "配置错误" in prompt
 
 
+@pytest.mark.parametrize(
+    ("template", "expected"),
+    [
+        ('{name}。示例 {"style": {"tone": "brief"}}', 'HyperBot。示例 {"style": {"tone": "brief"}}'),
+        ("{name}。保留左花括号 `{`。", "HyperBot。保留左花括号 `{`。"),
+        ('{name}。示例 {{"tone": "brief"}}', 'HyperBot。示例 {"tone": "brief"}'),
+    ],
+)
+def test_qq_persona_preserves_literal_and_escaped_braces(monkeypatch, template, expected):
+    monkeypatch.setattr(prompts_mod.EnvConfig, "SYSTEM_PROMPT", template)
+    monkeypatch.setattr(prompts_mod.EnvConfig, "BOT_NAME", "HyperBot")
+
+    assert prompts_mod.load_base_system_prompt(None) == expected
+
+
 def test_qq_system_prompt_composes_shared_and_chat_rules_once(monkeypatch):
     monkeypatch.setattr(prompts_mod.EnvConfig, "SYSTEM_PROMPT", "You are {name}.")
     monkeypatch.setattr(prompts_mod.EnvConfig, "BOT_NAME", "HyperBot")

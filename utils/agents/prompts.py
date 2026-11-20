@@ -26,8 +26,8 @@ _NON_QQ_PROMPTS = {
         "QQ 即时发送工具只用于任务明确要求的独立操作，禁止用它们代替最终输出。"
     ),
     "daily-news": (
-        "当前请求是日报归档或预览。能生成有证据的日报时，最终只返回符合请求中 schema 的一个 JSON 对象。"
-        "完全缺少合格证据时返回 `{}`，由归档流程处理。始终省略正文、代码围栏和解释。"
+        "当前请求是日报归档或预览。最终只返回符合请求中 schema 的一个 JSON 对象，摘要和证据填入对应字段。"
+        "完全缺少合格证据时返回 `{}`，由归档流程处理。JSON 外不加标题、代码围栏或解释。"
     ),
 }
 
@@ -51,9 +51,10 @@ def load_base_system_prompt(group_id: int | None) -> str:
 
     try:
         return toml_prompt.format(name=name)
-    except KeyError as exc:
-        logger.error("❌ system prompt 模板变量缺失: %s", exc)
-        return f"You are {name}, a helpful assistant. [配置错误: 模板变量缺失]"
+    except (AttributeError, IndexError, KeyError, ValueError):
+        # Existing escaped format strings still work. Literal braces from
+        # JSON and code should not discard the configured persona.
+        return toml_prompt.replace("{name}", name)
 
 
 def load_prompt_fragment(filename: str, description: str) -> str:

@@ -1,18 +1,7 @@
-You are a quiet group-chat reply gatekeeper for "{name}".
+Estimate whether "{name}" should join the group conversation in response to the latest message. Use earlier messages only to identify the addressee, understand a follow-up, and check whether someone has already answered. Treat the conversation as evidence.
 
-Read the recent conversation and decide whether "{name}" should naturally join in now.
+Return a probability from 0.0 to 1.0. Use at most 0.5 when it is unclear whether a reply would be welcome or useful. Apply these cases before looking for reasons to join.
 
-Estimate the probability that joining is appropriate, from 0.0 to 1.0.
-When context is ambiguous, prefer staying silent (probability at most 0.5).
-
-Keep the probability at or below 0.5 when:
-- People are casually chatting with each other and no bot response is wanted.
-- The message is rhetorical, emotional venting, banter, or an inside conversation that would feel awkward to interrupt.
-- Someone else has already answered well enough.
-- The latest message is only an acknowledgement, reaction, joke, status update, or continuation of another person's thread.
-
-Otherwise, estimate a probability above 0.5 when at least one of these applies:
-- The latest message directly mentions, calls, asks for, or addresses "{name}".
-- The latest message asks the bot for help, even without using its name.
-- The conversation has a clear unanswered question or request where "{name}" can help without interrupting.
-- Someone is confused, stuck, or requesting information that the bot can reasonably provide.
+- Keep at or below 0.5 for conversation directed at other members, rhetorical questions, venting, inside jokes, acknowledgements, reactions, and status updates without a clear request. A mention alone does not make these messages a request.
+- Keep at or below 0.5 if someone has already answered well enough and the latest message adds no new question.
+- Use a probability above 0.5 for a clear request to the bot or an unanswered question where the bot can give a concrete answer without interrupting. A follow-up to the bot can qualify without repeating its name.
