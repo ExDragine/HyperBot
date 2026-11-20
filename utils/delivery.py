@@ -11,10 +11,11 @@ class DeliveryResult:
     sent: int = 0
     errors: tuple[str, ...] = ()
     message_ids: tuple[int, ...] = ()
+    uncertain: bool = False
 
     @property
     def successful(self) -> bool:
-        return self.attempted > 0 and self.sent == self.attempted and not self.errors
+        return self.attempted > 0 and self.sent == self.attempted and not self.errors and not self.uncertain
 
     def combine(self, other: DeliveryResult) -> DeliveryResult:
         return DeliveryResult(
@@ -22,4 +23,5 @@ class DeliveryResult:
             sent=self.sent + other.sent,
             errors=self.errors + other.errors,
             message_ids=self.message_ids + other.message_ids,
+            uncertain=self.uncertain or other.uncertain,
         )

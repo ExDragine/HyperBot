@@ -2,19 +2,27 @@
 
 import asyncio
 import os
+import re
 import time
+from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from importlib import import_module
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from langchain.messages import AIMessage
 from nonebot import get_bot, get_driver, logger, on_message, on_notice
-from nonebot.adapters.milky.event import GroupDisbandEvent, MessageEvent
+from nonebot.adapters.milky.event import (
+    GroupDisbandEvent,
+    GroupMemberDecreaseEvent,
+    GroupMemberIncreaseEvent,
+    MessageEvent,
+    MessageRecallEvent,
+)
 from nonebot_plugin_apscheduler import scheduler
 
-from utils.agent_orchestration import ConversationOrchestrator, TurnStatus
+from utils.agent_orchestration import ConversationOrchestrator, TurnOutcome, TurnStatus
 from utils.agent_protocol import (
     AgentRequest,
     AgentResponse,
@@ -36,9 +44,10 @@ from utils.agents.message_envelope import (
 from utils.agents.message_envelope import content_for_persisted_images as _remove_attached_image_placeholders
 from utils.agents.neutral_core import FrontierAgentCore
 from utils.agents.runtime_gateway import FrontierAgentRuntime
-from utils.agents.sessions import HistoryBoundary, SessionKey, TurnLease, session_manager
 from utils.configs import EnvConfig
 from utils.database import MessageDatabase
+from utils.database.qq_sessions import QqSessionKey, QqTurnContext
+from utils.database.schema import platform_message_key
 from utils.media import resolve_media
 from utils.message import (
     download_media,
@@ -61,7 +70,7 @@ from .adapters import (
 from .attachments import cleanup_staged_message_files, extract_message_files, stage_message_files
 from .document_parsing import parse_staged_files
 from .gateway import message_gateway
-from .message_normalizer import NORMALIZED_VERSION, normalize_segments
+from .message_normalizer import NORMALIZED_VERSION, normalize_segments, segments_to_raw_json
 from .reply_context import (
     build_reply_context,
     hydrate_recent_media_context,
@@ -70,20 +79,39 @@ from .reply_context import (
     segments_directly_mention_user,
     sender_names_from_milky_message,
 )
+from .session_admission import QQ_REQUEST_CANCELLED, QqAdmission, cancel_group_work, find_pending, reserve
 
 messages_db = MessageDatabase()
 
 
-async def _is_group_disband(event) -> bool:
-    return isinstance(event, GroupDisbandEvent)
+async def _is_session_notice(event) -> bool:
+    return isinstance(event, (GroupDisbandEvent, GroupMemberDecreaseEvent, GroupMemberIncreaseEvent, MessageRecallEvent))
 
 
-group_disband = on_notice(rule=_is_group_disband, priority=10, block=False)
+session_notice = on_notice(rule=_is_session_notice, priority=10, block=False)
 
 
-@group_disband.handle()
-async def handle_group_disband(event: GroupDisbandEvent):
-    logger.info("Milky 群已解散: group_id={} operator_id={}", event.data.group_id, event.data.operator_id)
+@session_notice.handle()
+async def handle_session_notice(
+    event: GroupDisbandEvent | GroupMemberDecreaseEvent | GroupMemberIncreaseEvent | MessageRecallEvent,
+):
+    bot_id = int(event.self_id)
+    if isinstance(event, MessageRecallEvent):
+        if event.data.message_scene == "group":
+            await messages_db.qq_lifecycle.recall(bot_id, event.data.peer_id, event.data.message_seq)
+            cancel_group_work(bot_id, event.data.peer_id, sequence=event.data.message_seq)
+        return
+    group_id = event.data.group_id
+    user_id = bot_id if isinstance(event, GroupDisbandEvent) else event.data.user_id
+    active = isinstance(event, GroupMemberIncreaseEvent)
+
+    async def apply_notice():
+        whole_group = user_id == bot_id
+        changed = await messages_db.qq_lifecycle.membership(bot_id, group_id, 0 if whole_group else user_id, event.time, active=active)
+        if changed and not active:
+            cancel_group_work(bot_id, group_id, user_id=None if whole_group else user_id)
+
+    await run_serialized(f"qq-membership:{bot_id}:{group_id}", apply_notice)
 f_cognitive = FrontierCognitive()
 driver = get_driver()
 
@@ -91,6 +119,7 @@ common = on_message(priority=10)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CACHE_CLEANUP_JOB_ID = "frontier_daily_cache_cleanup"
+_CANCEL_COMMAND = re.compile(r"^/cancel(?:\s+(\d{1,19}))?$", re.IGNORECASE)
 
 
 @dataclass(slots=True)
@@ -116,6 +145,8 @@ class AgentRequestContext:
     reply_seq: int | None = None
     direct_mention: bool = False
     message_id: int | None = None
+    admission: QqAdmission | None = None
+    delivery_started: bool = False
 
 
 def _agent_workspace_key(user_id: str, group_id: int | None) -> str:
@@ -186,19 +217,59 @@ def _remove_structured_reply_marker(text: str, reply_seq: int | None) -> str:
     if reply_seq is None or not text:
         return text
     marker = f"[回复消息:{reply_seq}]"
-    lines = text.splitlines()
-    if lines and lines[0].strip() == marker:
-        return "\n".join(lines[1:]).strip()
-    return text
+    return text.removeprefix(marker).strip()
 
 
-async def _settle_session(lease: TurnLease | None, **kwargs) -> None:
-    if lease is None or lease.finished:
-        return
+def _with_media_placeholders(text, audio_downloaders, video_downloaders) -> str:
+    if video_downloaders and "[视频" not in text:
+        text += "\n" + " ".join("[视频]" for _ in video_downloaders)
+    if audio_downloaders and "[语音" not in text:
+        text += "\n" + " ".join("[语音]" for _ in audio_downloaders)
+    return text.strip()
+
+
+async def _cancel_qq_request(key: QqSessionKey, sequence: int | None) -> None:
+    if sequence is None:
+        await common.finish("请引用你的触发消息发送 /cancel，或使用 /cancel <消息序号>。")
+    pending = find_pending(key, sequence)
+    if pending is None:
+        await common.finish("这条消息没有可取消的本人请求。")
+    platform_key = platform_message_key(msg_id=sequence, user_id=key.user_id, group_id=key.group_id, bot_user_id=key.bot_id)
+    await messages_db.qq_lifecycle.cancel_ingress(platform_key)
+    pending.cancel()
+    await common.finish("已请求停止处理这条消息。")
+
+
+def _read_cancel_command(segments):
+    if any(segment.get("type") not in {"reply", "mention", "text"} for segment in segments):
+        return None
+    text = "".join(str(segment.get("data", {}).get("text", "")) for segment in segments if segment.get("type") == "text")
+    return _CANCEL_COMMAND.fullmatch(text.strip())
+
+
+async def _close_qq_turn(trigger_id: int, enqueue: asyncio.Task[bool]) -> None:
     try:
-        await session_manager.finish(lease, **kwargs)
+        if await asyncio.shield(enqueue):
+            await messages_db.qq_sessions.interrupt(trigger_id)
     except Exception as exc:
         logger.warning("会话状态结算失败: {}", type(exc).__name__)
+
+
+async def _may_continue(context: AgentRequestContext) -> bool:
+    if context.admission is None:
+        return True
+    if context.admission.cancelled:
+        return False
+    if context.group_id is None or context.message_id is None:
+        return True
+    key = context.admission.key
+    store = getattr(messages_db, "qq_lifecycle", None)
+    if store is None:
+        return True
+    if not await store.permits(key.bot_id, context.group_id, key.user_id, context.message_id, context.event_id):
+        return False
+    sources = context.admission.sources
+    return not sources or not await store.recalled(key.bot_id, context.group_id, sources)
 
 
 def _qq_neutral_eligible(context: AgentRequestContext) -> bool:
@@ -253,10 +324,30 @@ class _QqNeutralCore:
 class _QqNeutralDelivery(QqDelivery):
     """Reject empty turns before they reach the QQ delivery port."""
 
+    def __init__(self, *, context: AgentRequestContext, trigger_id: int | None, text_sender):
+        super().__init__(text_sender=text_sender)
+        self.context = context
+        self.trigger_id = trigger_id
+
     async def send(self, target: ConversationRef, response: AgentResponse) -> DeliveryReceipt:
         if not response.text.strip() and not response.artifacts:
             return DeliveryReceipt(DeliveryStatus.FAILED, errors=("empty_response",))
+        if not await _may_continue(self.context):
+            return DeliveryReceipt(DeliveryStatus.FAILED, errors=("cancelled",))
+        if self.trigger_id is not None:
+            await messages_db.qq_sessions.begin_delivery(self.trigger_id)
+        self.context.delivery_started = True
         return await super().send(target, response)
+
+    async def settle(self, outcome: TurnOutcome) -> None:
+        if self.trigger_id is None:
+            return
+        if outcome.status in {TurnStatus.SILENT, TurnStatus.GATED}:
+            await messages_db.qq_sessions.silent(self.trigger_id)
+        elif self.context.delivery_started and outcome.receipt is not None and not outcome.receipt.delivered_text:
+            await messages_db.qq_sessions.finish_without_text(
+                self.trigger_id, outcome.receipt.status.value, time.time_ns() // 1_000_000,
+            )
 
 
 async def _qq_reply_id_for_context(context: AgentRequestContext) -> int | None:
@@ -281,6 +372,8 @@ async def _send_qq_neutral_notice(context: AgentRequestContext, text: str) -> bo
     """Send one bounded neutral-path failure notice without rerunning the Agent."""
 
     try:
+        if not await _may_continue(context):
+            return False
         reply_id = await _qq_reply_id_for_context(context)
         delivery = await send_messages(
             context.group_id,
@@ -293,40 +386,10 @@ async def _send_qq_neutral_notice(context: AgentRequestContext, text: str) -> bo
     return delivery.sent > 0
 
 
-async def _settle_qq_neutral_session(lease: TurnLease | None, outcome) -> None:
-    """Settle a session lease after the neutral orchestrator owns delivery."""
-
-    if lease is None:
-        return
-    if outcome.status == TurnStatus.SILENT:
-        await _settle_session(lease, silent=True)
-        return
-    receipt = outcome.receipt
-    if receipt is None or receipt.status != DeliveryStatus.DELIVERED:
-        return
-    # Platform sequences in the delivery receipt are not database primary keys.
-    message_id = None
-    persisted = outcome.persisted_message
-    if persisted is not None and persisted.state_id is not None:
-        prefix = f"qq:{lease.entry.key.bot_id}:message:"
-        if persisted.state_id.startswith(prefix):
-            try:
-                message_id = int(persisted.state_id.removeprefix(prefix))
-            except ValueError:
-                pass
-    await _settle_session(
-        lease,
-        delivered=True,
-        delivered_at=int(time.time() * 1000),
-        message_id=message_id,
-        content=outcome.response.text if outcome.response is not None else "",
-    )
-
-
 async def _run_qq_neutral(
     context: AgentRequestContext,
     history_messages: list[dict[str, Any]],
-    session_turn: TurnLease | None = None,
+    turn: QqTurnContext | None = None,
 ) -> bool:
     """Run one QQ turn through the platform-neutral application boundary.
 
@@ -336,6 +399,15 @@ async def _run_qq_neutral(
 
     adapter = QqMessageAdapter(getattr(context.event, "self_id", ""))
     conversation = adapter.conversation(group_id=context.group_id, user_id=context.user_id)
+    trigger_id = context.message_id if turn is not None else None
+    metadata = None if turn is None else {
+        "qq_trigger_id": trigger_id,
+        "qq_session_context": {
+            "own_messages": turn.own_messages,
+            "group_background": turn.group_background,
+            "replies_delivered_after_trigger": turn.later_replies,
+        },
+    }
     message = adapter.text_message(
         message_id=context.event_id,
         group_id=context.group_id,
@@ -354,10 +426,11 @@ async def _run_qq_neutral(
         reply_to=_qq_reply_ref(context, conversation),
         quoted_payload=context.reply_to,
         quoted_images=context.quoted_images,
+        metadata=metadata,
     )
 
     async def load_history(_query):
-        return history_messages
+        return turn.history if turn is not None else history_messages
 
     async def allow_gateway_result(_message, _history):
         return GateDecision(True, reason="legacy_gateway_passed")
@@ -370,30 +443,28 @@ async def _run_qq_neutral(
             {"messages": [AIMessage(content=text)]},
         )
 
+    delivery = _QqNeutralDelivery(context=context, trigger_id=trigger_id, text_sender=send_text)
     outcome = await ConversationOrchestrator(
         _QqNeutralCore(FrontierAgentCore(FrontierAgentRuntime(cognitive=f_cognitive))),
         history_limit=EnvConfig.QUERY_MESSAGE_NUMBERS,
     ).handle(
         message,
         policy=QqReplyPolicy(allow_gateway_result),
-        history=QqHistoryStore(database=messages_db, loader=load_history),
-        delivery=_QqNeutralDelivery(text_sender=send_text),
+        history=QqHistoryStore(database=messages_db, loader=load_history, session_trigger_id=trigger_id),
+        delivery=delivery,
         tools=QqToolProvider(),
         workspace_key=_agent_workspace_key(context.user_id, context.group_id),
         capabilities=frozenset({"platform:qq", "qq:tools"}),
         execution_profile=EnvConfig.AGENT_CAPABILITY,
         allow_silent_reply=_allows_silent_reply(context),
-        session_turn=session_turn,
     )
+    await delivery.settle(outcome)
     if outcome.status in {TurnStatus.DELIVERED, TurnStatus.HISTORY_APPEND_FAILED}:
-        await _settle_qq_neutral_session(session_turn, outcome)
+        if outcome.status == TurnStatus.HISTORY_APPEND_FAILED:
+            logger.warning("QQ 回复已送达但历史写入失败: trigger_id={}", trigger_id)
         return outcome.receipt is not None and outcome.receipt.status == DeliveryStatus.DELIVERED
-    if outcome.status == TurnStatus.SILENT:
-        await _settle_qq_neutral_session(session_turn, outcome)
+    if outcome.status in {TurnStatus.SILENT, TurnStatus.GATED}:
         return False
-    if outcome.status == TurnStatus.GATED:
-        await _settle_session(session_turn, silent=True)
-        return outcome.status == TurnStatus.DELIVERED
     if outcome.status in {TurnStatus.HISTORY_FAILED, TurnStatus.GATE_FAILED}:
         logger.warning("QQ 中立路径前置阶段失败: {}", outcome.error or outcome.status)
         return await _send_qq_neutral_notice(context, "本轮上下文准备失败，请稍后重试。")
@@ -415,58 +486,47 @@ async def _process_agent_request(
     context: AgentRequestContext,
     history_messages: list[dict[str, Any]] | None = None,
 ) -> bool:
-    lease = None
-    bot_id = getattr(context.event, "self_id", None)
-    use_session_history = EnvConfig.SESSIONS.enabled and context.message_id is not None and bot_id is not None
-    if use_session_history:
-        async def begin():
-            return session_manager.begin(
-                SessionKey(str(bot_id), str(context.user_id), context.group_id),
-                HistoryBoundary(cast(int, context.message_id), context.msg_time),
-                EnvConfig.SESSIONS, EnvConfig.REVISION,
-            )
-        try:
-            lease = await run_serialized(f"workspace:{_agent_workspace_key(context.user_id, context.group_id)}", begin)
-        except Exception as exc:
-            session_manager.metrics["initialization_fallback"] += 1
-            logger.warning("会话缓存初始化失败，使用历史上下文: {}", type(exc).__name__)
-    try:
-        if use_session_history:
-            started = time.monotonic()
-            history_messages = await messages_db.prepare_session_history(
-                bot_user_id=int(bot_id), user_id=int(context.user_id), group_id=context.group_id,
-                before_time=context.msg_time, before_message_id=context.message_id,
-                query_numbers=EnvConfig.QUERY_MESSAGE_NUMBERS,
-                after_message_id=lease.entry.history_cursor if lease is not None and lease.hot else None,
-            )
-            if lease is not None:
-                lease.rebuild_seconds = time.monotonic() - started
-        return await _execute_agent_request(context, history_messages, lease)
-    finally:
-        await _settle_session(lease)
-
-
-async def _execute_agent_request(
-    context: AgentRequestContext,
-    history_messages: list[dict[str, Any]] | None = None,
-    session_turn: TurnLease | None = None,
-) -> bool:
-    """Execute every QQ turn through the neutral application boundary.
-
-    The neutral runner owns the request as soon as it is called: no path
-    reruns a graph after a model or tool call, so one message can never be
-    executed twice.
-    """
-
+    if not await _may_continue(context):
+        return False
     if not _qq_neutral_eligible(context):
         logger.info("忽略没有文本、引用或直接提及的 QQ 消息: event_id={}", context.event_id)
-        await _settle_session(session_turn, silent=True)
         return False
-    return await _run_qq_neutral(
-        context,
-        list(history_messages or []),
-        session_turn=session_turn,
-    )
+    if context.admission is not None:
+        context.admission.running = True
+    turn = None
+    if context.admission is not None and context.message_id is not None:
+        try:
+            turn = await messages_db.qq_sessions.start(
+                context.admission.key, context.message_id, context.msg_time, _turn_trigger(context),
+                limit=EnvConfig.QUERY_MESSAGE_NUMBERS,
+            )
+        except Exception as exc:
+            logger.warning("QQ 会话历史准备失败: {}", type(exc).__name__)
+            return await _send_qq_neutral_notice(context, "本轮上下文准备失败，请稍后重试。")
+        sequences = turn.source_sequences
+        if quote := (context.reply_to or {}).get("message_id"):
+            sequences = sequences | {str(quote)}
+        context.admission.sources = sequences
+        key = context.admission.key
+        if key.group_id is not None and sequences and await messages_db.qq_lifecycle.recalled(key.bot_id, key.group_id, sequences):
+            return False
+    return await _run_qq_neutral(context, list(history_messages or []), turn)
+
+
+def _turn_trigger(context: AgentRequestContext) -> dict[str, object]:
+    trigger = {
+        "message_id": str(context.event_id),
+        "time_ms": context.msg_time,
+        "sender": {"user_id": context.user_id, "display_name": context.user_name},
+        "content": (context.text or "[用户叫了你一声]")[:8_000],
+        "attachments": context.current_attachments[:12],
+    }
+    if context.reply_to:
+        trigger["quote"] = {
+            "message_id": context.reply_to.get("message_id"),
+            "content": str(context.reply_to.get("content") or "")[:2_000],
+        }
+    return trigger
 
 
 async def _set_group_processing_reaction(bot: Any, group_id: int, message_seq: int, *, is_add: bool) -> None:
@@ -507,16 +567,17 @@ async def _process_queued_agent_request(
     try:
         try:
             delivery_key = f"delivery:{_agent_workspace_key(context.user_id, group_id)}"
-            await run_serialized(
-                delivery_key,
-                process,
-                timeout=EnvConfig.AGENT_JOB_TIMEOUT_SECONDS,
-            )
+            async with asyncio.timeout(EnvConfig.AGENT_JOB_TIMEOUT_SECONDS):
+                if context.admission is not None:
+                    await context.admission.wait()
+                await run_serialized(delivery_key, process)
         finally:
             if group_id is not None and reaction_started:
                 await _set_group_processing_reaction(bot, group_id, context.event_id, is_add=False)
     except TimeoutError:
         logger.warning("会话回复超时: group_id={} user_id={} started={}", context.group_id, context.user_id, started)
+        if context.delivery_started or not await _may_continue(context):
+            return
         notice = "本轮处理超时，请稍后重试。" if started else "等待处理超时，本轮请求尚未开始，请稍后重试。"
         try:
             async with asyncio.timeout(15):
@@ -565,7 +626,6 @@ async def _run_agent_turn(
 
 @driver.on_shutdown
 async def on_shutdown():
-    await session_manager.close()
     import_module("skills.ens-weather.tools.ens_professional").clear_ens_cache()
     from utils.browser_capture import close_browser
     from utils.http_client import aclose_all
@@ -576,7 +636,7 @@ async def on_shutdown():
 
 @driver.on_startup
 async def on_startup():
-    session_manager.start()
+    await messages_db.qq_sessions.interrupt()
     if EnvConfig.IMAGE_AUTO_CLEANUP:
         try:
             cleaned_attachments = await messages_db.cleanup_expired_attachments()
@@ -600,7 +660,17 @@ async def run_daily_cache_cleanup() -> None:
 
 
 @common.handle()
-async def handle_common(event: MessageEvent):  # noqa: C901
+async def handle_common(event: MessageEvent):
+    try:
+        async with AsyncExitStack() as scope:
+            await _handle_common(event, scope)
+    except asyncio.CancelledError as exc:
+        if exc.args != (QQ_REQUEST_CANCELLED,):
+            raise
+
+
+async def _handle_common(event: MessageEvent, scope: AsyncExitStack):  # noqa: C901
+    msg_time = time.time_ns() // 1_000_000
     if EnvConfig.AGENT_MODULE_ENABLED is False:
         await common.finish(f"{EnvConfig.BOT_NAME}飞升了,暂时不可用")
 
@@ -618,12 +688,68 @@ async def handle_common(event: MessageEvent):  # noqa: C901
 
     text, image_downloaders, audio_downloaders, video_downloaders = await message_extract(event.data.segments)
     file_items = extract_message_files(event.data.segments)
-    normalized_message = await normalize_segments(bot, event.data.segments)
-    if normalized_message.content:
-        text = normalized_message.content
-    current_text = text
-
     reply_seq = reply_seq_from_segments(event.data.segments)
+    key = QqSessionKey(int(event.self_id), group_id, int(user_id))
+    cancel = _read_cancel_command(event.data.segments)
+    if find_pending(key, event_id) is not None:
+        await common.finish()
+    admission = reserve(key, event_id) if cancel is None and key.user_id != key.bot_id else None
+    if admission is not None:
+        scope.callback(admission.release)
+
+    raw_text = _with_media_placeholders(_remove_structured_reply_marker(text, reply_seq), audio_downloaders, video_downloaders)
+    raw_segments = segments_to_raw_json(event.data.segments)
+    needs_forward = any(segment.get("type") == "forward" for segment in event.data.segments)
+    lifecycle = getattr(messages_db, "qq_lifecycle", None)
+    platform_key = platform_message_key(
+        msg_id=event_id, user_id=key.user_id, group_id=key.group_id, bot_user_id=key.bot_id,
+    )
+
+    async def store_incoming():
+        result = await messages_db.insert(
+            time=msg_time,
+            msg_id=event_id,
+            user_id=key.user_id,
+            sender_user_id=key.user_id,
+            group_id=group_id,
+            user_name=user_name,
+            user_nickname=user_nickname,
+            user_card=user_card,
+            role="user" if key.user_id != key.bot_id else "assistant",
+            content=raw_text,
+            bot_user_id=key.bot_id,
+            directly_mentions_bot=direct_mention,
+            raw_segments_json=raw_segments,
+            normalized_version=NORMALIZED_VERSION,
+            normalized_status="partial" if needs_forward else "complete",
+            track_qq_ingress=admission is not None,
+        )
+        if lifecycle is not None and platform_key is not None and result is not None and admission is not None:
+            if result.inserted or result.resume_ingress:
+                scope.push_async_callback(lifecycle.finish_ingress, platform_key)
+        return result
+
+    workspace = _agent_workspace_key(user_id, group_id)
+    inserted = await run_serialized(f"qq-ingress:{key.bot_id}:{workspace}", store_incoming)
+    if inserted is not None and not inserted.inserted and not getattr(inserted, "resume_ingress", False):
+        logger.info("忽略已处理的平台消息: group_id={} message_seq={}", group_id, event_id)
+        await common.finish()
+    if key.user_id == key.bot_id:
+        await common.finish()
+    if cancel is not None:
+        sequence = int(cancel[1]) if cancel[1] else reply_seq
+        await _cancel_qq_request(key, sequence)
+        return
+    if admission is None:
+        await common.finish()
+    message_id = inserted.message_id if inserted is not None else None
+    if group_id is not None and message_id is not None and lifecycle is not None:
+        if not await lifecycle.permits(key.bot_id, group_id, key.user_id, message_id, event_id):
+            await common.finish()
+    preparation_deadline = await scope.enter_async_context(asyncio.timeout(EnvConfig.AGENT_JOB_TIMEOUT_SECONDS))
+
+    normalized_message = await normalize_segments(bot, event.data.segments)
+    current_text = normalized_message.content or text
     reply_payload = None
     if reply_seq:
         reply_payload, _ = await build_reply_context(
@@ -633,47 +759,32 @@ async def handle_common(event: MessageEvent):  # noqa: C901
             group_id,
             messages_db,
             load_images=False,
-            workspace_key=_agent_workspace_key(user_id, group_id),
+            workspace_key=workspace,
             memory_dir=_agent_memory_dir(user_id, group_id),
         )
         if reply_payload:
             current_text = _remove_structured_reply_marker(current_text, reply_seq)
-    if video_downloaders and "[视频" not in current_text:
-        current_text = f"{current_text}\n{' '.join('[视频]' for _ in video_downloaders)}".strip()
-    if audio_downloaders and "[语音" not in current_text:
-        current_text = f"{current_text}\n{' '.join('[语音]' for _ in audio_downloaders)}".strip()
-    if not current_text and not reply_payload:
-        if not event.is_tome():
-            await common.finish()
-        else:
-            current_text = ""
-
-    msg_time = int(time.time() * 1000)
-    text = current_text.strip()
-
-    inserted = await messages_db.insert(
-        time=msg_time,
-        msg_id=event_id,
-        user_id=int(user_id),
-        sender_user_id=int(user_id),
-        group_id=group_id,
-        user_name=user_name,
-        user_nickname=user_nickname,
-        user_card=user_card,
-        role="user" if user_id != str(event.self_id) else "assistant",
-        content=text,
-        bot_user_id=int(event.self_id),
-        directly_mentions_bot=direct_mention,
-        reply_context_json=serialize_agent_payload(reply_payload) if reply_payload else None,
-        raw_segments_json=normalized_message.raw_segments_json,
-        normalized_version=normalized_message.normalized_version,
-        normalized_status=normalized_message.status,
-    )
-    if inserted is not None and not inserted.inserted:
-        logger.info("忽略已处理的平台消息: group_id={} message_seq={}", group_id, event_id)
+    current_text = _with_media_placeholders(current_text, audio_downloaders, video_downloaders)
+    text = current_text
+    if not text and not reply_payload and not event.is_tome():
         await common.finish()
-    message_id = inserted.message_id if inserted is not None else None
     message_identity = {"message_id": message_id} if message_id is not None else {}
+    update_normalization = getattr(messages_db, "update_message_normalization", None)
+    if callable(update_normalization) and (text != raw_text or needs_forward):
+        await update_normalization(
+            time=inserted.time if hasattr(inserted, "time") else msg_time,
+            **message_identity,
+            content=text,
+            raw_segments_json=normalized_message.raw_segments_json,
+            normalized_version=normalized_message.normalized_version,
+            normalized_status=normalized_message.status,
+        )
+    finalize = getattr(messages_db, "finalize_message_context", None)
+    if reply_payload and callable(finalize):
+        await finalize(
+            time=inserted.time if hasattr(inserted, "time") else msg_time, **message_identity,
+            reply_context_json=serialize_agent_payload(reply_payload),
+        )
     if normalized_message.derived_messages:
         await messages_db.replace_derived_messages(
             **({"parent_message_id": message_id} if message_id is not None else {}),
@@ -696,6 +807,13 @@ async def handle_common(event: MessageEvent):  # noqa: C901
 
     if not await message_gateway(event, gateway_messages):
         await common.finish()
+
+    if message_id is not None:
+        trigger_id = message_id
+        enqueue = asyncio.create_task(messages_db.qq_sessions.enqueue(key, trigger_id))
+        scope.push_async_callback(_close_qq_turn, trigger_id, enqueue)
+        if not await asyncio.shield(enqueue):
+            await common.finish()
 
     media_task = download_media(image_downloaders, audio_downloaders, video_downloaders)
     files_task = stage_message_files(
@@ -905,7 +1023,9 @@ async def handle_common(event: MessageEvent):  # noqa: C901
             reply_seq=reply_seq,
             direct_mention=direct_mention,
             message_id=message_id,
+            admission=admission if message_id is not None else None,
         )
+        preparation_deadline.reschedule(None)
         await _run_agent_turn(
             bot=bot,
             context=context,

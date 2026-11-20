@@ -82,33 +82,6 @@ def test_new_database_schema_has_no_conversation_compression_state(memory_engine
 
 
 @pytest.mark.asyncio
-async def test_session_history_uses_bot_scope_time_and_arrival_id_bounds(memory_engine):
-    database = MessageDatabase()
-    database.engine = memory_engine
-    Message.metadata.create_all(memory_engine)
-    first = await database.insert(1000, 1, 10, 20, "Alice", "user", "visible", bot_user_id=99)
-    await database.insert(1001, 2, 10, 20, "Alice", "user", "other bot", bot_user_id=98)
-    await database.insert(1002, 3, 10, 20, "Alice", "user", "unknown owner")
-    await database.insert(1003, 4, 10, 21, "Alice", "user", "other group", bot_user_id=99)
-    await database.insert(1004, 5, 10, None, "Alice", "user", "private", bot_user_id=99)
-    background = await database.insert(1500, 6, 11, 20, "Bob", "user", "background", bot_user_id=99)
-    await database.insert(2000, 7, 11, 20, "Bob", "user", "same millisecond", bot_user_id=99)
-    current = await database.insert(2000, 8, 10, 20, "Alice", "user", "current", bot_user_id=99)
-    await database.insert(1200, 9, 11, 20, "Bob", "user", "late backdated insert", bot_user_id=99)
-    history = await database.prepare_session_history(
-        bot_user_id=99, user_id=10, group_id=20, before_time=2000,
-        before_message_id=current.message_id, query_numbers=100,
-    )
-    assert [message["id"] for message in history] == [f"qq:99:message:{first.message_id}", f"qq:99:message:{background.message_id}"]
-    assert [_wire_payload(message)["content"] for message in history] == ["visible", "background"]
-    incremental = await database.prepare_session_history(
-        bot_user_id=99, user_id=10, group_id=20, before_time=2000,
-        before_message_id=current.message_id, after_message_id=first.message_id, query_numbers=100,
-    )
-    assert incremental == history[1:]
-
-
-@pytest.mark.asyncio
 async def test_conversation_context_queries_are_scope_isolated(memory_engine):
     database = MessageDatabase()
     database.engine = memory_engine

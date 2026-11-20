@@ -40,7 +40,7 @@ def resolve_local_path(source: str, root_dir: str | None = None) -> Path | None:
     return None
 
 
-def resolve_virtual_path(source: str, virtual_roots: dict[str, str]) -> Path | None:
+def resolve_virtual_path(source: str, virtual_roots: dict[str, str], *, blocked_paths=()) -> Path | None:
     """Resolve an agent virtual path against its explicitly mounted roots.
 
     Routes use the same virtual prefixes as ``CompositeBackend``. The longest
@@ -71,8 +71,10 @@ def resolve_virtual_path(source: str, virtual_roots: dict[str, str]) -> Path | N
 
         candidate = (root / relative).resolve()
         try:
-            candidate.relative_to(root)
+            canonical = prefix + candidate.relative_to(root).as_posix()
         except ValueError:
+            return None
+        if any(canonical == blocked or (blocked.endswith("/") and canonical.startswith(blocked)) for blocked in blocked_paths):
             return None
         return candidate if candidate.is_file() else None
     return None
@@ -190,6 +192,7 @@ def binary_kwargs_from_uri(  # noqa: C901
     root_dir: str | None = None,
     *,
     virtual_roots: dict[str, str] | None = None,
+    blocked_paths=(),
 ) -> dict[str, str]:
     raw = (uri or "").strip()
     if not raw:
@@ -206,7 +209,7 @@ def binary_kwargs_from_uri(  # noqa: C901
         if not path:
             raise ValueError(f"无效的文件 URI：{uri!r}")
         if virtual_roots is not None:
-            if resolved := resolve_virtual_path(path, virtual_roots):
+            if resolved := resolve_virtual_path(path, virtual_roots, blocked_paths=blocked_paths):
                 return {"path": str(resolved)}
             raise ValueError("文件路径不存在或不在允许的挂载范围内")
         if root_dir is None:
@@ -223,7 +226,8 @@ def binary_kwargs_from_uri(  # noqa: C901
         if not encoded:
             raise ValueError(f"无效的文件 URI：{uri!r}")
         return {"base64": encoded}
-    resolved = resolve_virtual_path(raw, virtual_roots) if virtual_roots is not None else resolve_local_path(raw, root_dir)
+    resolved = (resolve_virtual_path(raw, virtual_roots, blocked_paths=blocked_paths) if virtual_roots is not None
+                else resolve_local_path(raw, root_dir))
     if resolved is not None:
         return {"path": str(resolved)}
 

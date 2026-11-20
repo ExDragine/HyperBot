@@ -8,11 +8,8 @@ from langchain.agents.middleware.tool_call_limit import ToolCallLimitExceededErr
 
 from utils.milky_errors import milky_error_details
 
-from .session_errors import CheckpointCapacityExceeded, SessionInterruptedError
-
 logger = logging.getLogger(__name__)
 BUDGET_ERRORS = (ModelCallLimitExceededError, ToolCallLimitExceededError)
-CONTROL_ERRORS = (*BUDGET_ERRORS, CheckpointCapacityExceeded, SessionInterruptedError)
 WEB_SEARCH_TOOL_NAMES = frozenset({
     "deepseek_web_search", "deepseek_web_fetch",
     "web_search_exa", "web_fetch_exa", "tavily_search", "tavily_extract",
@@ -39,7 +36,7 @@ def tool_error_middleware(*, read_only_tools=(), all_read_only: bool = False) ->
     names = {tool if isinstance(tool, str) else tool.name for tool in read_only_tools}
 
     def on_error(exc, request):
-        if isinstance(exc, (*CONTROL_ERRORS, ToolExecutionUncertainError)):
+        if isinstance(exc, (*BUDGET_ERRORS, ToolExecutionUncertainError)):
             return None
         name = request.tool_call["name"]
         logger.warning(

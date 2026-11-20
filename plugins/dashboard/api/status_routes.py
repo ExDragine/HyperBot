@@ -8,10 +8,10 @@ from fastapi import APIRouter, Depends
 from nonebot import get_bots
 from sqlmodel import Session, func, select
 
-from utils.agents.sessions import session_manager
 from utils.agents.usage import usage_registry
 from utils.configs import EnvConfig
 from utils.database import Message, User, get_engine
+from utils.database.qq_sessions import qq_session_metrics
 
 from ..auth import require_auth
 
@@ -75,7 +75,7 @@ async def get_status_overview(user: dict = AUTH_DEPENDENCY):
     return {
         "bot_name": EnvConfig.BOT_NAME,
         "agent_usage": usage_registry.snapshot(include_recent=False),
-        "agent_sessions": session_manager.snapshot(),
+        "agent_sessions": dict(qq_session_metrics),
         "uptime_seconds": uptime_seconds,
         "start_time": int(_start_time),
         "driver": "fastapi+websockets",

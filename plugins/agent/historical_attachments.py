@@ -125,6 +125,8 @@ async def load_historical_attachments(
     attachment_index: int | None = None,
 ) -> dict:
     """Stage selected files; paths are references, not evidence of model perception."""
+    if await reply_context.source_message_recalled(db, source, message_seq):
+        return {"error": "该消息已撤回。"}
     lookup = {"msg_id": message_seq, "group_id": source.group_id}
     if source.group_id is None:
         lookup["peer_user_id"] = source.peer_id

@@ -567,6 +567,13 @@ async def _rebuild_quoted_normalization(
     return quoted
 
 
+async def source_message_recalled(db: MessageDatabase, source: MessageSource, sequence: int) -> bool:
+    lifecycle = getattr(db, "qq_lifecycle", None)
+    return source.group_id is not None and lifecycle is not None and bool(
+        await lifecycle.recalled(int(source.bot_user_id), source.group_id, [sequence])
+    )
+
+
 async def load_message_context(  # noqa: C901
     bot,
     source: MessageSource,
@@ -579,6 +586,8 @@ async def load_message_context(  # noqa: C901
     memory_dir: str | Path | None = None,
 ) -> tuple[dict[str, object] | None, list[bytes]]:
     group_id = source.group_id
+    if await source_message_recalled(messages_db, source, reply_seq):
+        return None, []
     select_kwargs: dict[str, int] = {}
     private_peer_user_id = source.peer_id if group_id is None else None
     if group_id is None and private_peer_user_id is None:

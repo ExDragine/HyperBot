@@ -86,7 +86,7 @@ FrontierCognitive 构造函数不再构建模型或子代理。首次执行才�
 
 ## 持久化
 
-QQ 可选会话缓存由进程级 `SessionManager` 和 `BoundedMemorySaver` 管理，默认关闭。身份为机器人＋群／私聊＋代次；图每轮重新构建，saver 跨轮复用，权限和动态工具每轮重新绑定。`TurnLease` 通过运行请求传入并保留到投递结算。TTL、轮数、会话数和序列化容量共同限制存储；历史 token 预算单独由 middleware 控制。过期／轮换后下一次从原历史边界重建，不恢复旧任务。配置、指标、媒体与失败规则见 [QQ 会话缓存](agent-sessions.md)。
+QQ 的 `QqSessionStore` 按机器人、群号和用户号持久化每个用户的会话轮次。每一轮创建独立的执行图，近期轮次由历史 middleware 按预算裁剪。触发与确认送达的回复通过数据库主键关联。当前发言人、权限和动态工具每轮重新绑定，群工作区和投递队列继续由群号确定。配置和恢复规则见 [QQ 持久会话](agent-sessions.md)。
 
 v3 图流在退出时显式 abort。活动会话的 checkpoint 必须等执行结束后才能删除。
 

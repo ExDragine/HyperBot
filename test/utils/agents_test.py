@@ -746,7 +746,11 @@ async def test_chat_agent_uses_group_id_scoped_workspace(monkeypatch, tmp_path, 
     assert isinstance(backend, workspace_mod.CompositeBackend)
     assert backend.default.virtual_mode is True
     assert backend.default.root_dir == str(tmp_path / "sandbox" / "workspaces" / "group-123")
-    assert set(backend.routes) == {"/skills/", "/memory/group-123/"}
+    expected_routes = {"/skills/", "/memory/group-123/"}
+    if platform == "qq":
+        expected_routes.add("/.qq-turn/")
+        assert backend.artifacts_root == "/.qq-turn"
+    assert set(backend.routes) == expected_routes
     assert backend.routes["/skills/"].root_dir == str(workspace_mod.PROJECT_ROOT / "skills")
     assert backend.routes["/memory/group-123/"].root_dir == str(
         tmp_path / "sandbox" / "memory" / "group-123"

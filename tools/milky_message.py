@@ -157,7 +157,14 @@ async def get_message(
     if attachment_index is not None:
         raise ToolInputError("指定 attachment_index 时需设置 include_attachments=true。")
     resolved_peer_id = require_peer(message_scene, peer_id, config)
-    message = await get_bot().get_message(
+    bot = get_bot()
+    if message_scene == "group" and str(getattr(bot, "self_id", "")).isdigit():
+        from utils.database import get_engine
+        from utils.database.qq_lifecycle import QqLifecycleStore
+
+        if await QqLifecycleStore(get_engine()).recalled(int(bot.self_id), resolved_peer_id, [message_seq]):
+            return "该消息已撤回。"
+    message = await bot.get_message(
         message_scene=message_scene,
         peer_id=resolved_peer_id,
         message_seq=message_seq,

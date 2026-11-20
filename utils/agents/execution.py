@@ -28,7 +28,6 @@ from utils.configs import EnvConfig
 
 from .progress import ProgressEvent, emit_progress
 from .runtime import conversation_workspace_key, normalize_workspace_key, run_serialized
-from .session_errors import CheckpointCapacityExceeded, SessionInterruptedError
 from .tool_errors import BUDGET_ERRORS, ToolExecutionUncertainError
 from .usage import collect_run_usage, usage_registry
 
@@ -53,10 +52,6 @@ class AgentResult(TypedDict):
 
 def agent_error_message(exc: Exception) -> str:  # noqa: C901
     """User-facing summaries must not contain provider response payloads."""
-    if isinstance(exc, CheckpointCapacityExceeded):
-        return "本次会话状态达到容量上限，已停止执行。此前操作可能已生效，请先核实结果。"
-    if isinstance(exc, SessionInterruptedError):
-        return "本次任务已中断，未继续执行后续操作。"
     if isinstance(exc, BUDGET_ERRORS):
         return "本次任务已达到调用上限，已停止继续执行。请缩小任务范围后再试。"
     if isinstance(exc, ToolExecutionUncertainError):
@@ -131,9 +126,7 @@ def managed_agent_turn(function):
                 logger.exception("Agent failed run_id=%s scope=%s error_type=%s", run_id, scope, type(exc).__name__)
                 outcome = status
                 error_code = (
-                    "checkpoint_capacity_exceeded" if isinstance(exc, CheckpointCapacityExceeded)
-                    else "session_interrupted" if isinstance(exc, SessionInterruptedError)
-                    else "budget_exceeded" if isinstance(exc, BUDGET_ERRORS)
+                    "budget_exceeded" if isinstance(exc, BUDGET_ERRORS)
                     else "tool_execution_uncertain" if isinstance(exc, ToolExecutionUncertainError)
                     else type(exc).__name__ if isinstance(exc, ModelError) else status
                 )

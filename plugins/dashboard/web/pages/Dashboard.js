@@ -73,27 +73,24 @@ const DashboardPage = {
             </div>
 
             <div v-if="overview.agent_sessions" class="bg-white rounded-lg shadow p-6">
-                <div class="flex justify-between items-center mb-2">
-                    <h2 class="text-lg font-semibold text-gray-800">会话缓存</h2>
-                    <span class="text-sm text-gray-500">{{ overview.agent_sessions.enabled ? '已启用' : '已关闭' }}</span>
-                </div>
-                <p class="text-xs text-gray-500 mb-4">连续对话复用状态，空闲后释放；重启后从聊天记录重建。</p>
+                <h2 class="text-lg font-semibold text-gray-800 mb-2">QQ 会话</h2>
+                <p class="text-xs text-gray-500 mb-4">聊天轮次保存在数据库中。以下统计为当前进程累计值。</p>
                 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     <div>
-                        <p class="text-sm text-gray-500">常驻会话</p>
-                        <p class="text-xl font-semibold">{{ overview.agent_sessions.sessions || 0 }}</p>
+                        <p class="text-sm text-gray-500">续接 / 已开始</p>
+                        <p class="text-xl font-semibold">{{ overview.agent_sessions.continued || 0 }} / {{ overview.agent_sessions.started || 0 }}</p>
                     </div>
                     <div>
-                        <p class="text-sm text-gray-500">复用 / 重建</p>
-                        <p class="text-xl font-semibold">{{ overview.agent_sessions.hot_hits || 0 }} / {{ overview.agent_sessions.cold_starts || 0 }}</p>
+                        <p class="text-sm text-gray-500">平均排队时间</p>
+                        <p class="text-xl font-semibold">{{ Math.round((overview.agent_sessions.queue_ms || 0) / (overview.agent_sessions.started || 1)) }} ms</p>
                     </div>
                     <div>
-                        <p class="text-sm text-gray-500">缓存占用上界</p>
-                        <p class="text-xl font-semibold">{{ ((overview.agent_sessions.serialized_bytes_upper_bound || 0) / 1048576).toFixed(1) }} MiB</p>
+                        <p class="text-sm text-gray-500">每轮平均读取上下文</p>
+                        <p class="text-xl font-semibold">{{ Math.round((overview.agent_sessions.context_chars || 0) / (overview.agent_sessions.started || 1)) }} 字符</p>
                     </div>
                     <div>
-                        <p class="text-sm text-gray-500">快照冲突回退</p>
-                        <p class="text-xl font-semibold">{{ overview.agent_sessions.snapshot_conflict || 0 }}</p>
+                        <p class="text-sm text-gray-500">失败 / 投递结果不明</p>
+                        <p class="text-xl font-semibold">{{ overview.agent_sessions.failed || 0 }} / {{ overview.agent_sessions.unknown || 0 }}</p>
                     </div>
                 </div>
             </div>

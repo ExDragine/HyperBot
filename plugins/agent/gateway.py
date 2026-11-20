@@ -237,6 +237,10 @@ async def _reply_check_should_reply(group_id: int, plaintext: str, messages: lis
         lexical_candidate = await _laya_candidate_should_reply(plaintext, messages)
     if not lexical_candidate:
         return False
+    now = time.monotonic()
+    last_checked_at = _reply_check_last_checked_at.get(group_id)
+    if last_checked_at is not None and now - last_checked_at < REPLY_CHECK_GROUP_COOLDOWN_SECONDS:
+        return False
     _reply_check_last_checked_at[group_id] = now
 
     history = [

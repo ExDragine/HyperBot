@@ -8,6 +8,7 @@ from sqlmodel import Session, col, desc, select
 from .engine import _run_database
 from .fts import MESSAGE_FTS_MIN_QUERY_LENGTH, _fts_query
 from .models import MESSAGE_SOURCE_TYPE_NORMAL, Message, MessageSearchResult
+from .qq_lifecycle import visible_qq_message
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,7 @@ class _MessageSearchMixin:
                 OR (:scope = 'private' AND m.user_id = :user_id AND m.group_id IS NULL)
               )
               AND m.source_type = 'message'
+              AND NOT EXISTS (SELECT 1 FROM qq_message_recalls AS r WHERE r.platform_key = m.platform_key)
               AND (:bot_user_id IS NULL OR m.bot_user_id = :bot_user_id)
               AND (:target_user_id_enabled = 0 OR m.user_id = :target_user_id)
               AND (:target_user_name IS NULL OR m.user_name LIKE :target_user_name ESCAPE '\\')
@@ -119,6 +121,7 @@ class _MessageSearchMixin:
                 OR (:scope = 'private' AND m.user_id = :user_id AND m.group_id IS NULL)
               )
               AND m.source_type = 'message'
+              AND NOT EXISTS (SELECT 1 FROM qq_message_recalls AS r WHERE r.platform_key = m.platform_key)
               AND (:bot_user_id IS NULL OR m.bot_user_id = :bot_user_id)
               AND (:target_user_id_enabled = 0 OR m.user_id = :target_user_id)
               AND (:target_user_name IS NULL OR m.user_name LIKE :target_user_name ESCAPE '\\')
@@ -194,6 +197,7 @@ class _MessageSearchMixin:
 
                 statement = select(Message).where(
                     Message.source_type == MESSAGE_SOURCE_TYPE_NORMAL,
+                    visible_qq_message(),
                     *self._bot_scope_conditions(bot_user_id),
                 )
                 if group_id is None:
@@ -311,7 +315,7 @@ class _MessageSearchMixin:
                     conditions.append(Message.role == role)
                 messages = session.exec(
                     select(Message)
-                    .where(*conditions)
+                    .where(*conditions, visible_qq_message())
                     .order_by(desc(Message.time), desc(Message.id))
                     .limit(max(1, min(limit, 500)))
                     .offset(max(0, min(offset, 5000)))

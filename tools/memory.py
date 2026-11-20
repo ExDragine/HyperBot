@@ -328,4 +328,8 @@ async def get_history_messages(
     except Exception as exc:
         logger.error(f"平台历史消息获取失败: {type(exc).__name__}: {exc}")
         return "平台历史消息获取失败，请稍后重试。"
+    if group_id is not None and str(getattr(bot, "self_id", "")).isdigit():
+        sequences = [getattr(message, "message_seq", None) for message in messages]
+        recalled = await message_db.qq_lifecycle.recalled(int(bot.self_id), group_id, sequences)
+        messages = [message for message, sequence in zip(messages, sequences, strict=True) if str(sequence) not in recalled]
     return format_messages("当前会话历史消息", messages, next_message_seq)

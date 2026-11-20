@@ -10,9 +10,8 @@ class TurnSkillsMiddleware(SkillsMiddleware):
         return "SkillsMiddleware"
 
     def _disclose_skill_tools(self, request, reads, resolved):
-        # The QQ checkpointer retains old read_file exchanges for history.
-        # Their tool access ends at the next user message. Pins are injected
-        # by the harness and may be placed before the current user message.
+        # Skill access ends at the next user message. The harness may place
+        # pinned skill instructions immediately before the current message.
         current_user = next(
             (
                 index for index in range(len(request.messages) - 1, -1, -1)

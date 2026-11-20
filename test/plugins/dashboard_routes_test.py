@@ -19,12 +19,10 @@ async def test_session_defaults_can_be_saved_as_a_new_config_section(tmp_path, m
     monkeypatch.setattr(settings_routes, "BACKUP_DIR", tmp_path / "backups")
     monkeypatch.setattr(settings_routes, "_reload_env_config", lambda _config: None)
     settings = (await settings_routes.get_settings(user={}))['config']
-    assert settings['sessions']['enabled'] is False
     assert settings['sessions']['history_window_fraction'] == 0.25
-    await settings_routes._update_section('sessions', {'enabled': True, 'group_idle_seconds': 900})
+    await settings_routes._update_section('sessions', {'history_window_fraction': 0.3})
     saved = (await settings_routes.get_section('sessions', user={}))['config']
-    assert saved['enabled'] is True
-    assert saved['group_idle_seconds'] == 900
+    assert saved['history_window_fraction'] == 0.3
     assert saved['history_max_tokens'] == 32000
 
 

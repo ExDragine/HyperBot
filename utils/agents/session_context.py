@@ -1,17 +1,9 @@
-"""Limit model-facing hot history without editing checkpoint ancestry."""
+"""Limit model-facing QQ dialogue history by complete turns."""
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages.utils import count_tokens_approximately
 
-from utils.media import media_block_kind
-
-
-def messages_contain_media(messages) -> bool:
-    for message in messages:
-        content = message.get("content") if isinstance(message, dict) else getattr(message, "content", None)
-        if isinstance(content, list) and any(media_block_kind(block) is not None for block in content):
-            return True
-    return False
+QQ_TRIGGER_ID_PREFIX = "qq:session:trigger:"
 
 
 def history_budget(settings, profile, *, reserved_tokens: int = 0) -> int:
@@ -48,13 +40,14 @@ def recent_complete_turns(messages, max_tokens: int):
 
 
 class SessionHistoryMiddleware(AgentMiddleware):
-    def __init__(self, lease, profile):
-        self.lease = lease
+    def __init__(self, current_id, settings, profile):
+        self.current_id = current_id
+        self.settings = settings
         self.profile = profile
 
     def _request(self, request):
         messages = request.messages
-        cutoff = next((index for index, message in enumerate(messages) if message.id == self.lease.current_id), None)
+        cutoff = next((index for index, message in enumerate(messages) if message.id == self.current_id), None)
         if cutoff is None:
             return request
         current = messages[cutoff:]
@@ -62,9 +55,8 @@ class SessionHistoryMiddleware(AgentMiddleware):
         if request.system_message is not None:
             reserved += count_tokens_approximately([request.system_message])
         reserved += sum(len(str(getattr(tool, "args", tool))) for tool in request.tools) // 3 + 4096
-        budget = history_budget(self.lease.entry.settings, self.profile, reserved_tokens=reserved)
+        budget = history_budget(self.settings, self.profile, reserved_tokens=reserved)
         history = recent_complete_turns(messages[:cutoff], budget)
-        self.lease.history_tokens = count_tokens_approximately(history)
         return request.override(messages=[*history, *current])
 
     def wrap_model_call(self, request, handler):

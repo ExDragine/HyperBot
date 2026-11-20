@@ -400,12 +400,14 @@ class QqHistoryStore:
         *,
         loader: Callable[[HistoryQuery], Awaitable[Sequence[object]] | Sequence[object]] | None = None,
         appender: Callable[[ChatMessage], Awaitable[object] | object] | None = None,
+        session_trigger_id: int | None = None,
     ) -> None:
         if database is None and loader is None and appender is None:
             raise ValueError("QqHistoryStore requires database or injected callbacks")
         self.database = database
         self._loader = loader
         self._appender = appender
+        self._session_trigger_id = session_trigger_id
 
     async def load(self, query: HistoryQuery) -> list[ChatMessage]:
         if query.limit <= 0:
@@ -428,6 +430,9 @@ class QqHistoryStore:
                 bot_user_id=_qq_account_id(query.conversation),
             )
         messages = [_as_chat_message(record, query.conversation) for record in records]
+        if self._session_trigger_id is not None:
+            # Session turns are already bounded by trigger ID, including later delivery of prior turns.
+            return messages
         if query.before is not None:
             messages = [
                 message
@@ -436,7 +441,7 @@ class QqHistoryStore:
             ]
         return messages[-query.limit :]
 
-    async def append(self, message: ChatMessage) -> ChatMessage | None:
+    async def append(self, message: ChatMessage) -> ChatMessage | None:  # noqa: C901
         if self._appender is not None:
             result = self._appender(message)
             if inspect.isawaitable(result):
@@ -466,6 +471,10 @@ class QqHistoryStore:
             msg_id = int(message.message_id) if message.message_id is not None else None
         except (TypeError, ValueError):
             msg_id = None
+        session_fields = {
+            "session_trigger_id": self._session_trigger_id,
+            "delivery_status": message.metadata["delivery_status"],
+        } if self._session_trigger_id is not None else {}
         result = await insert(
             time=int(message.created_at.timestamp() * 1000) if message.created_at else 0,
             msg_id=msg_id,
@@ -477,6 +486,7 @@ class QqHistoryStore:
             bot_user_id=account_id,
             sender_user_id=account_id if message.role == "assistant" else db_user_id,
             normalized_status="complete",
+            **session_fields,
         )
         return _persisted_message(message, account_id, result)
 
@@ -530,7 +540,10 @@ def _legacy_receipt(target: ConversationRef, result: object) -> DeliveryReceipt:
         raw_errors = (raw_errors,)
     errors = tuple(str(error) for error in (raw_errors or ()))
     sent = result.get("sent", 0) if isinstance(result, Mapping) else getattr(result, "sent", 0)
-    status = DeliveryStatus.PARTIAL if isinstance(sent, int) and sent > 0 else DeliveryStatus.FAILED
+    uncertain = result.get("uncertain") if isinstance(result, Mapping) else getattr(result, "uncertain", False)
+    status = DeliveryStatus.PARTIAL if isinstance(sent, int) and sent > 0 else (
+        DeliveryStatus.UNKNOWN if uncertain else DeliveryStatus.FAILED
+    )
     return DeliveryReceipt(status, _message_refs(target, result), errors or ("delivery_failed",))
 
 
@@ -650,6 +663,7 @@ class QqDelivery:
             errors=tuple(error for receipt in receipts for error in receipt.errors),
             delivered_text=response.text
             if text_receipt is not None and text_receipt.status == DeliveryStatus.DELIVERED else None,
+            text_message_refs=text_receipt.message_refs if text_receipt is not None else (),
         )
 
 

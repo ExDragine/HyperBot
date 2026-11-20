@@ -37,6 +37,7 @@ from .runtime_gateway import (
     _message_text,
     _runtime_artifacts,
 )
+from .session_context import QQ_TRIGGER_ID_PREFIX
 
 if TYPE_CHECKING:
     from .progress import ProgressReporter
@@ -175,6 +176,8 @@ def _current_content(request: AgentRequest) -> list[object]:
         },
         "directly_mentioned": current.mentions_agent,
     }
+    if session_context := current.metadata.get("qq_session_context"):
+        context["session"] = session_context
     return [
         {"type": "text", "text": json.dumps(context, ensure_ascii=False, separators=(",", ":"))},
         *_content_blocks(current.parts),
@@ -186,8 +189,8 @@ def _current_message(request: AgentRequest) -> dict[str, Any]:
         "role": "user",
         "content": _current_content(request),
     }
-    if request.session_turn is not None and (current_id := getattr(request.session_turn, "current_id", None)):
-        message["id"] = current_id
+    if (current_id := request.current.metadata.get("qq_trigger_id")) is not None:
+        message["id"] = f"{QQ_TRIGGER_ID_PREFIX}{current_id}"
     return message
 
 
@@ -291,7 +294,6 @@ class FrontierAgentCore:
             image_inputs=tuple(item.data for item in images),
             audio_inputs=tuple(item.data for item in audio),
             video_inputs=videos,
-            session_turn=request.session_turn,
             conversation=request.current.conversation,
             principal=sender,
             capabilities=request.capabilities,

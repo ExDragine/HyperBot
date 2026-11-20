@@ -61,8 +61,8 @@ def test_truly_empty_unaddressed_input_is_not_an_agent_turn(agent):
 async def test_persisted_image_without_placeholder_reaches_neutral_runner(agent, monkeypatch):
     captured = []
 
-    async def run(context, history, session_turn=None):
-        captured.append((context, history, session_turn))
+    async def run(context, history, turn=None):
+        captured.append((context, history, turn))
         return True
 
     monkeypatch.setattr(agent, "_run_qq_neutral", run)
@@ -71,5 +71,5 @@ async def test_persisted_image_without_placeholder_reaches_neutral_runner(agent,
     context = _context(agent, text=text, images=[b"image"])
     history = [{"role": "user", "content": "previous"}]
 
-    assert await agent._execute_agent_request(context, history)
+    assert await agent._process_agent_request(context, history)
     assert captured == [(context, history, None)]

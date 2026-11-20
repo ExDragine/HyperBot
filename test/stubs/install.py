@@ -101,6 +101,7 @@ def install_all_third_party_stubs():
         CompositeBackend=DummyCompositeBackend,
         FilesystemBackend=DummyFilesystemBackend,
         LocalShellBackend=DummyLocalShellBackend,
+        StateBackend=type("StateBackend", (), {}),
     )
     install_stub(
         "langchain.agents",

@@ -315,24 +315,6 @@ async def test_explicit_workspace_key_is_normalized_before_agent_execution(messa
 
 
 @pytest.mark.asyncio
-async def test_session_turn_is_forwarded_to_agent_request(message):
-    history = FakeHistory()
-    core = FakeCore()
-    session_turn = object()
-
-    outcome = await ConversationOrchestrator(core).handle(
-        message,
-        policy=FakePolicy(True),
-        history=history,
-        delivery=FakeDelivery(DeliveryStatus.DELIVERED),
-        session_turn=session_turn,
-    )
-
-    assert outcome.status is TurnStatus.DELIVERED
-    assert core.requests[0].session_turn is session_turn
-
-
-@pytest.mark.asyncio
 async def test_partial_delivery_persists_only_confirmed_text_and_still_reports_failure(message):
     class PartialDelivery:
         async def send(self, _target, _response):

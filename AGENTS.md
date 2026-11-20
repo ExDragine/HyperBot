@@ -40,7 +40,7 @@ Milky MessageEvent → NoneBot on_message(priority=10)
   │
   └─ Agent 执行
        run_serialized(delivery:workspace) 按群/私聊排队，覆盖执行与发送
-       _process_agent_request 申请会话租约并准备历史 → _execute_agent_request
+       _process_agent_request 开始 QQ 会话轮次并准备历史 → _run_qq_neutral
        → ConversationOrchestrator（平台中性编排）→ FrontierAgentCore
        → FrontierAgentRuntime.run → FrontierCognitive.chat_agent
        managed_agent_turn 在 workspace 锁内管理初始化、超时、取消和结果
@@ -95,7 +95,7 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 | `database/` | SQLite/SQLModel 包：`engine`（连接、线程调度）、`models`（表模型）、`schema`（索引与结构校验）、`fts`（FTS5）、`rows`/`store`（历史构造与 `MessageDatabase`）、`attachments`、`search`、`settings`、`events`、`maintenance`；公开 API 由 `__init__.py` 再导出 |
 | `agents/execution.py` / `agents/runtime_gateway.py` | 内置 Agent 的统一请求/结果、运行 ID、超时和取消边界 |
 | `delivery.py` | 不可变投递结果 |
-| `agents/sessions.py` / `agents/checkpoints.py` / `agents/session_context.py` | QQ 进程级有界会话、投递租约、官方 saver 适配与跨轮历史预算，默认关闭 |
+| `database/qq_sessions.py` / `agents/session_context.py` | QQ 持久轮次、投递结算及跨轮历史预算 |
 | `message.py` | 共享消息段提取、媒体下载、内容安全、Markdown/图片回复渲染和投递 |
 | `configs.py` | `EnvConfig`：从 `env.toml` 读取模型、端点、密钥、功能开关、Dashboard、内容安全配置 |
 | `llm_factory.py` | 解析供应商 profile 与协议为 `Route`，经 `providers/` 注册表分发模型构造和能力判断；自身不含供应商分支 |
@@ -152,10 +152,10 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
   - `/skills/`: 仓库内置 `skills/`，Agent 只读
   - `/memory/{workspace_key}/`: `cache/sandbox/memory/{workspace_key}`
 - 对每个 workspace，如果缺少 memory `SOUL.md`，会创建零字节空文件；群聊按 `group_id` 共享，私聊按 `user_id` 隔离。
-- 核心 middleware 顺序是 `PII → ToolError → ModelCallLimit → ToolCallLimit → ModelRetry → Filesystem → FilesystemFileSearch → Memory`；随后按需追加 `SilentReply`（仅 frontier 档）、`ProviderToolSearch`（模型名匹配适配器声明时）、`SessionHistory`（会话缓存开启时）和供应商的原生联网中间件，最后总是追加 `MediaInput`（每次模型调用前做媒体能力检查与预算限制）。没有独立的 `ToolRetryMiddleware` 层。
+- 核心 middleware 顺序是 `PII → ToolError → ModelCallLimit → ToolCallLimit → ModelRetry → Filesystem → FilesystemFileSearch → Memory`；随后按需追加 `SilentReply`（仅 frontier 档）、`ProviderToolSearch`（模型名匹配适配器声明时）、`SessionHistory`（QQ 持久轮次）和供应商的原生联网中间件，最后总是追加 `MediaInput`（每次模型调用前做媒体能力检查与预算限制）。没有独立的 `ToolRetryMiddleware` 层。
 - 主模型 SDK 重试关闭，由 ModelRetry 控制模型重试。图工具错误由 ToolError 统一处理：已确认的只读工具异常转换为脱敏的可读结果，写入或未分类工具异常结束当前轮次。平台写操作或未分类工具异常不会自动重复。
 - 主图模型/工具预算由 `[limits].agent_model_call_limit / agent_tool_call_limit` 控制；子代理保留独立预算。
-- QQ 的 `[sessions]` 开关开启后，同一机器人同一群共享 checkpoint，图仍按请求构建；配置修订不兼容、快照冲突、过期或容量轮换后从 DB 重建。ACP 和定时任务不接入该缓存。运行与投递租约不能被清理器回收，最终内容按实际送达文本校准；媒体轮次结算后释放整代。详见 `docs/agent-sessions.md`。
+- QQ 按机器人、群号和用户号持久化会话轮次，首轮从首次触发开始。后续轮次合并同一用户两次触发之间的发言，带入近期群聊背景。每轮构建执行图，确认送达的正文与轮次原子落库。详见 `docs/agent-sessions.md`。
 - `managed_agent_turn` 收集 LangChain 用量，成功/失败返回 `usage`，取消也保留进程内统计；Dashboard `/api/dashboard/status/usage` 返回最近 100 轮无正文记录。详见 `docs/agent-execution-controls.md`。
 - 内置 skills 路径通过 FilesystemPermission 禁止写入。
 
@@ -163,7 +163,7 @@ Prompt 加载链：
 - `FrontierCognitive.load_system_prompt()` 组合 `prompts/AGENTS.md` 的全局规范与入口专属说明。QQ 使用 `[bot].system_prompt` 基础人设、`prompts/qq.md` 和当前会话风格；`{name}` 按唤醒词注入。ACP、定时任务和日报归档使用各自的任务说明。
 - 自定义 `MemoryMiddleware` 从当前 workspace 的 `/memory/{workspace_key}/SOUL.md` 注入动态人设及其写入约束。日报归档不注入 SOUL。
 - QQ 主回复与兼容 QQ 入口每轮在输入状态中传 `pinned_skills=["rich-markdown"]`（Deep Agents >= 0.7.36），由 Skills middleware 在首个模型调用前注入精简的排版决策正文，无需模型先调用 `read_file`。本轮后续工具循环不重复注入；ACP 档与显式非 QQ 平台不固定加载该技能。
-- 框架注入的技能 HumanMessage 带 `lc_source=pinned_skill`，属于当轮操作说明。会话缓存向模型提供历史时省略旧轮的技能正文，保留原始用户问题、工具交换和回复。
+- 框架注入的技能 HumanMessage 带 `lc_source=pinned_skill`，属于当轮操作说明。持久会话保存本人输入和确认送达的回复正文。
 - `/skills/rich-markdown/SKILL.md` 定义内容关系与基本 Markdown 组件语法；正文直接写 Markdown，按需插入 `::card`、分区、分栏、步骤或媒体，基本卡片无需先读取参考文件。详细字段、数据与媒体契约位于其 `references/`；旧 ui JSON 契约位于 `references/legacy-ui.md`。短聊天与需要复制的回复保持文字，500 字转图规则只控制发送方式。
 - `plugins/agent/prompts/reply_check.md` 用于群聊是否应主动回复的 Decision LLM 判断。
 - 每日新闻技能位于 `/skills/daily-news/SKILL.md`。主 Agent 可按聊天请求加载，定时和预览入口固定加载同一技能。`plugins/news/editor.py` 根据主模型返回的搜索摘要校验 `NewsPayload` 引证。模板位于 `plugins/news/templates/`。
@@ -245,7 +245,7 @@ Agent 提取工件时延迟从 `utils.alconna` 加载 `UniMessage`，只接受�
 }
 ```
 
-`_process_agent_request()` 申请并结算 QQ 会话租约、准备会话历史，然后把请求交给 `_execute_agent_request()`；内容安全清洗由中性 `_QqNeutralCore` 完成，媒体工件和最终文本/图片回复由 `QqDelivery` 经中立投递端口发送，最终回复发送成功后才落库；生产路径不再经过任何旧版执行函数。发送函数返回 `DeliveryResult`，生成成功和送达成功分别判断。
+`_process_agent_request()` 准备并记录 QQ 会话轮次，然后把请求交给 `_run_qq_neutral()`。内容安全清洗由 `_QqNeutralCore` 完成，媒体工件和最终文本/图片回复由 `QqDelivery` 经中立投递端口发送。确认送达的正文与轮次结算在同一个事务提交。发送函数返回 `DeliveryResult`，生成成功和送达成功分别判断。
 
 ### 输出发送规则
 

@@ -163,7 +163,6 @@ class AgentRequest:
     capabilities: frozenset[str]
     execution_profile: str
     allow_silent_reply: bool = False
-    session_turn: object | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,6 +206,7 @@ class DeliveryReceipt:
     message_refs: tuple[MessageRef, ...] = ()
     errors: tuple[str, ...] = ()
     delivered_text: str | None = None
+    text_message_refs: tuple[MessageRef, ...] | None = None
 
 
 __all__ = [

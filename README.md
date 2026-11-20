@@ -13,7 +13,7 @@ HyperBot 是一个基于 [NoneBot2](https://nonebot.dev/) 与 Milky 适配器的
 - **富文本回复**：Markdown 正文与轻量组件按需渲染成长图，支持卡片、分区、步骤、表格、图表、公式、Mermaid、地图与网页快照；本地资源不依赖 CDN。
 - **多模型路由**：OpenAI-compatible、Google Gemini、Anthropic Claude、DeepSeek 统一由供应商 profile 管理，模型目录提供上下文窗口与能力元数据。
 - **工具与集成**：`tools/` 下约 128 个 `@tool` 入口，覆盖平台操作、媒体生成、搜索、天文/地球、占卜、提醒与自动任务；MCP 工具通过 `mcp.json` 接入，ACP Agent 通过 `acp.json` 接入。
-- **运维能力**：FastAPI Dashboard、APScheduler 定时任务、独立新闻管线、Milky 申请事件处理、Wolfx 地震预警、会话缓存与执行用量统计。
+- **运维能力**：FastAPI Dashboard、APScheduler 定时任务、独立新闻管线、Milky 申请事件处理、Wolfx 地震预警、QQ 持久会话与执行用量统计。
 
 ## 内置插件
 
@@ -226,7 +226,7 @@ uv run python scripts/database_maintenance.py diagnose
 ## 文档导航
 
 - [文档索引](docs/README.md)：按入门、架构与运行时、平台与集成、存储与运维、历史归档分类的全部文档。
-- 常用入口：[配置参考](docs/configuration.md)、[ACP 接入](docs/acp.md)、[消息投递边界](docs/message_flow.md)、[Agent 执行控制](docs/agent-execution-controls.md)、[QQ 会话缓存](docs/agent-sessions.md)。
+- 常用入口：[配置参考](docs/configuration.md)、[ACP 接入](docs/acp.md)、[消息投递边界](docs/message_flow.md)、[Agent 执行控制](docs/agent-execution-controls.md)、[QQ 持久会话](docs/agent-sessions.md)。
 - 插件、渲染器、模型目录与内置 Skill 的说明见各自目录下的 README/SKILL.md（已汇总到 [文档索引](docs/README.md)）；历史设计计划与审查记录保存在 [docs/archive/](docs/archive/README.md)，不作为当前行为依据。
 
 ## 开发提示

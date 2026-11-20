@@ -198,16 +198,8 @@ class LimitConfig(_FrozenConfig):
 
 
 class SessionConfig(_FrozenConfig):
-    enabled: bool = False
-    group_idle_seconds: int = Field(default=1800, ge=1)
-    private_idle_seconds: int = Field(default=7200, ge=1)
-    max_sessions: int = Field(default=128, ge=1)
-    max_generation_turns: int = Field(default=30, ge=1)
-    max_session_bytes: int = Field(default=64 * 1024 * 1024, ge=1024)
-    max_total_bytes: int = Field(default=256 * 1024 * 1024, ge=1024)
     history_max_tokens: int = Field(default=32000, ge=1)
     history_window_fraction: float = Field(default=0.25, gt=0, le=1)
-    cleanup_interval_seconds: int = Field(default=60, ge=1)
 
 
 class NotificationConfig(_FrozenConfig):

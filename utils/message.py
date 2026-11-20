@@ -12,7 +12,7 @@ from utils.delivery import DeliveryResult
 from utils.http_client import get_http_client
 from utils.markdown_components import has_markdown_components
 from utils.markdown_render import markdown_to_image, markdown_to_text
-from utils.milky_errors import milky_error_details
+from utils.milky_errors import milky_action_failure, milky_error_details
 
 httpx_client = get_http_client("message")
 MESSAGE_IMAGE_RENDER_MAX_ATTEMPTS = 3
@@ -280,7 +280,9 @@ async def send_artifacts(artifacts: list[object]) -> DeliveryResult:
                     logger.error("工件发送失败: {}{}", type(exc).__name__, details)
                 else:
                     logger.exception("工件发送失败: {}", type(exc).__name__)
-                return result.combine(DeliveryResult(attempted=1, errors=(type(exc).__name__,)))
+                return result.combine(DeliveryResult(
+                    attempted=1, errors=(type(exc).__name__,), uncertain=milky_action_failure(exc) is None,
+                ))
             result = result.combine(DeliveryResult(attempted=1, sent=1))
     return result
 
@@ -337,6 +339,24 @@ def _receipt_message_ids(receipt: object) -> tuple[int, ...]:
     return tuple(sequences)
 
 
+async def _send_final_text(content: str, with_reply) -> DeliveryResult | None:
+    try:
+        text = (await markdown_to_text(content)).rstrip("\r\n").strip()
+    except Exception as exc:
+        logger.warning("文本转换失败，尝试图片回退: {}", type(exc).__name__)
+        return None
+    try:
+        receipt = await with_reply(UniMessage.text(text)).send()
+    except Exception as exc:
+        details = milky_error_details(exc, sensitive=(content, text))
+        if milky_action_failure(exc) is None:
+            logger.warning("文本投递结果不明: {}{}", type(exc).__name__, details)
+            return DeliveryResult(attempted=1, errors=(type(exc).__name__,), uncertain=True)
+        logger.warning("平台拒绝文本投递，尝试图片回退: {}{}", type(exc).__name__, details)
+        return None
+    return DeliveryResult(attempted=1, sent=1, message_ids=_receipt_message_ids(receipt))
+
+
 async def send_messages(group_id: int | None, message_id, response: dict[str, list]) -> DeliveryResult:
     """Deliver final text or its rendered image and report only actual content delivery."""
     raw_messages = response.get("messages", [])
@@ -352,16 +372,8 @@ async def send_messages(group_id: int | None, message_id, response: dict[str, li
         return message
 
     if not _message_should_render_as_image(content):
-        text_content = content
-        try:
-            text_content = (await markdown_to_text(content)).rstrip("\r\n").strip()
-            receipt = await with_reply(UniMessage.text(text_content)).send()
-            return DeliveryResult(attempted=1, sent=1, message_ids=_receipt_message_ids(receipt))
-        except Exception as exc:
-            logger.warning(
-                "文本消息发送失败，尝试图片回退: {}{}", type(exc).__name__,
-                milky_error_details(exc, sensitive=(content, text_content)),
-            )
+        if (text_delivery := await _send_final_text(content, with_reply)) is not None:
+            return text_delivery
 
     result = await _markdown_to_image_with_retry(content)
     if not result:
@@ -377,7 +389,7 @@ async def send_messages(group_id: int | None, message_id, response: dict[str, li
         receipt = await with_reply(UniMessage.image(raw=result)).send()
     except Exception as exc:
         logger.error("图片消息发送失败: {}{}", type(exc).__name__, milky_error_details(exc, sensitive=content))
-        return DeliveryResult(attempted=1, errors=(type(exc).__name__,))
+        return DeliveryResult(attempted=1, errors=(type(exc).__name__,), uncertain=milky_action_failure(exc) is None)
     return DeliveryResult(attempted=1, sent=1, message_ids=_receipt_message_ids(receipt))
 
 

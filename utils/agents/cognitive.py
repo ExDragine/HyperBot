@@ -31,6 +31,7 @@ from langchain.tools import ToolRuntime
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.types import Command
+from wcmatch import glob
 
 import tools as _tool_registry
 from plugins.acp.subagent import build_acp_subagents
@@ -64,9 +65,7 @@ from .progress import (
 from .prompts import JobPrompt, PromptProfile, build_workspace_soul_prompt
 from .prompts import load_system_prompt as compose_system_prompt
 from .runtime import agent_thread_id, conversation_workspace_key, normalize_workspace_key
-from .session_context import SessionHistoryMiddleware, history_budget, messages_contain_media, recent_complete_turns
-from .session_errors import SessionInterruptedError
-from .sessions import TurnLease
+from .session_context import QQ_TRIGGER_ID_PREFIX, SessionHistoryMiddleware, history_budget, recent_complete_turns
 from .skill_tools import TurnSkillsMiddleware
 from .subagents import build_document_subagent
 from .tool_errors import WEB_SEARCH_TOOL_NAMES, tool_error_middleware
@@ -473,7 +472,6 @@ class FrontierCognitive:
         access_profile: Literal["frontier", "acp"] = "frontier",
         enable_acp_subagents: bool = True,
         allow_silent_reply: bool = False,
-        session_turn: TurnLease | None = None,
         conversation: ConversationRef | None = None,
         principal: Participant | None = None,
         capabilities: frozenset[str] = frozenset(),
@@ -492,8 +490,6 @@ class FrontierCognitive:
         )
         if allow_local_tools:
             await self._prepare_components()
-        if session_turn is not None and session_turn.entry.revision != EnvConfig.REVISION:
-            raise SessionInterruptedError("configuration changed before session execution")
         selected_tools = self._tools_for_capabilities(capabilities) if allow_local_tools else []
         if allow_local_tools and tool_overrides:
             selected_tools = _merge_named_items(selected_tools, tool_overrides)
@@ -534,10 +530,8 @@ class FrontierCognitive:
         thread_id = thread_id_override or agent_thread_id(user_id, group_id)
         if not isinstance(thread_id, uuid.UUID):
             thread_id = uuid.uuid5(namespace=uuid.NAMESPACE_OID, name=str(thread_id))
-        if session_turn is not None:
-            thread_id = session_turn.entry.thread_id
-            session_turn.run_id = current_run_id.get()
-        backend = build_agent_backend(working_dir, workspace_key)
+        qq_group = conversation is not None and conversation.platform == "qq" and group_id is not None
+        backend = build_agent_backend(working_dir, workspace_key, **({"qq_group": True} if qq_group else {}))
         workspace_dir = os.path.join(working_dir, "workspaces", workspace_key)
         memory_dir = os.path.join(working_dir, "memory", workspace_key)
         soul_path = f"/memory/{workspace_key}/SOUL.md"
@@ -599,12 +593,16 @@ class FrontierCognitive:
             EnvConfig.ADVAN_MODEL,
             role="advanced",
         )
-        if session_turn is not None:
-            messages = session_turn.inputs(messages)
+        current_id = messages[-1].get("id", "") if messages and isinstance(messages[-1], dict) else ""
+        has_qq_history = isinstance(current_id, str) and current_id.startswith(QQ_TRIGGER_ID_PREFIX)
+        history_ids = set()
+        if has_qq_history:
             messages = [
-                *recent_complete_turns(messages[:-1], history_budget(session_turn.entry.settings, model.profile)),
+                *recent_complete_turns(messages[:-1], history_budget(EnvConfig.SESSIONS, model.profile)),
                 messages[-1],
             ]
+            history_ids = {message["id"] for message in messages[:-1] if isinstance(message, dict) and "id" in message}
+        blocked_virtual_paths: list[str] = []
         filesystem_permissions = [
             FilesystemPermission(
                 operations=["write"],
@@ -612,6 +610,18 @@ class FrontierCognitive:
                 mode="deny",
             )
         ]
+        if qq_group:
+            from utils.database import get_engine
+            from utils.database.qq_lifecycle import QqLifecycleStore
+
+            recalled_paths = []
+            if has_qq_history:
+                recalled_paths = await QqLifecycleStore(get_engine()).recalled_attachment_paths(int(conversation.account_id), group_id)
+            blocked_virtual_paths = ["/conversation_history/", "/.qq-turn/", *recalled_paths]
+            filesystem_permissions.append(FilesystemPermission(
+                operations=["read", "write"], mode="deny",
+                paths=["/conversation_history", "/conversation_history/**", *(glob.escape(path) for path in recalled_paths)],
+            ))
         available_tools = [*effective_tools, *skill_tools]
         is_read_only_tool = getattr(agent_tools, "is_read_only_tool", None) if available_tools else None
         read_only_tools = [
@@ -654,8 +664,8 @@ class FrontierCognitive:
                     searchable_tools=[tool for tool in effective_tools if tool is not skip_reply]
                 )
             )
-        if session_turn is not None:
-            middleware.append(SessionHistoryMiddleware(session_turn, model.profile))
+        if has_qq_history:
+            middleware.append(SessionHistoryMiddleware(current_id, EnvConfig.SESSIONS, model.profile))
         if search_middleware is not None:
             middleware.append(search_middleware)
         middleware.append(MediaInputMiddleware(
@@ -678,7 +688,6 @@ class FrontierCognitive:
             state_schema=FrontierAgentState,
             context_schema=FrontierRuntimeContext,
             debug=EnvConfig.AGENT_DEBUG_MODE,
-            **({"checkpointer": session_turn.saver} if session_turn is not None else {}),
         )
         start_time = time.time()
         logger.info(f"Agent烧烤中~🍖 思考等级: {capability} 用户: {user_name} (ID: {user_id})")
@@ -686,6 +695,7 @@ class FrontierCognitive:
             "metadata": {"frontier_run_id": current_run_id.get()},
             "configurable": {
                 "thread_id": thread_id,
+                **({"blocked_virtual_paths": blocked_virtual_paths} if blocked_virtual_paths else {}),
                 "user_id": user_id,
                 "group_id": group_id,
                 "group_member_role": group_member_role,
@@ -722,13 +732,6 @@ class FrontierCognitive:
             skill_names.append("rich-markdown")
         if skill_names:
             input_data["pinned_skills"] = list(dict.fromkeys(skill_names))
-        prior_ids = set()
-        if session_turn is not None:
-            snapshot = await agent.aget_state(config)
-            if snapshot.next or any(getattr(task, "interrupts", ()) for task in snapshot.tasks):
-                raise SessionInterruptedError("unfinished QQ session")
-            prior_ids = {message.id for message in snapshot.values.get("messages", [])}
-            input_data["todos"] = []
         stream = await agent.astream_events(
             input_data,
             config=config,
@@ -747,13 +750,9 @@ class FrontierCognitive:
 
         if response is None:
             response = {}
-        if session_turn is not None:
-            snapshot = await agent.aget_state(config)
-            if snapshot.next or any(getattr(task, "interrupts", ()) for task in snapshot.tasks):
-                raise SessionInterruptedError("QQ session interrupted")
+        if history_ids:
             response = {**response, "messages": [
-                message for message in response.get("messages", [])
-                if getattr(message, "id", None) not in prior_ids
+                message for message in response.get("messages", []) if getattr(message, "id", None) not in history_ids
             ]}
         should_reply = not bool(response.get("suppress_reply", False))
         artifacts = (
@@ -768,16 +767,6 @@ class FrontierCognitive:
             )
         else:
             final_response = AIMessage("")
-
-        if session_turn is not None:
-            session_turn.graph, session_turn.config = agent, config
-            session_turn.final_message = final_response if ai_messages and should_reply else None
-            session_turn.valid_result = bool(ai_messages) or not should_reply
-            session_turn.entry.state = "awaiting_delivery"
-            session_turn.media_turn = bool(
-                image_inputs or audio_inputs or video_inputs or artifacts
-                or messages_contain_media([*messages, *response.get("messages", [])])
-            )
 
         processing_time = time.time() - start_time
         logger.info(f"Agent烤熟了~🥓 (耗时: {processing_time:.2f}s)")

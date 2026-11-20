@@ -53,19 +53,24 @@ def _redact_message(message: str, sensitive: object) -> str:
     return message[:511] + "…" if len(message) > 512 else message
 
 
-def milky_error_details(exc: BaseException, *, sensitive: object = None) -> str:
-    """Extract only known response fields; never stringify the raw exception/data."""
+def milky_action_failure(exc: BaseException) -> ActionFailed | None:
     seen = set()
     current: BaseException | None = exc
     while current is not None and id(current) not in seen and len(seen) < 8:
         if isinstance(current, ActionFailed):
-            break
+            return current
         seen.add(id(current))
         current = current.__cause__ or current.__context__
-    if not isinstance(current, ActionFailed) or not isinstance(current.info, dict):
+    return None
+
+
+def milky_error_details(exc: BaseException, *, sensitive: object = None) -> str:
+    """Extract only known response fields; never stringify the raw exception/data."""
+    failure = milky_action_failure(exc)
+    if failure is None or not isinstance(failure.info, dict):
         return ""
 
-    info = current.info
+    info = failure.info
     status = info.get("status")
     status = status if isinstance(status, str) and status in {"ok", "failed"} else "unknown"
     retcode = info.get("retcode")

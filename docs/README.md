@@ -21,7 +21,7 @@
 | [Agent 与平台解耦设计](agent-platform-separation.md) | 目标架构、统一领域模型、应用层端口、Conversation Orchestrator、迁移阶段与飞书方案。 |
 | [消息、上下文与投递边界](message_flow.md) | 消息归一化、存储、门控与媒体下载顺序，当前请求/历史边界、两级队列锁和投递结果。 |
 | [Agent 执行控制](agent-execution-controls.md) | 主图模型/工具调用预算、用量统计口径、工具错误分类和 Decision 结构化输出策略。 |
-| [QQ 会话缓存](agent-sessions.md) | 有界 checkpoint 会话缓存的开关、参数、容量与媒体语义、投递结算和观测指标。 |
+| [QQ 持久会话](agent-sessions.md) | 群内个人会话、轮次合并、投递结算、重启恢复和观测指标。 |
 | [DeepSeek 网页搜索](deepseek-web-search.md) | 主模型服务端搜索与网页读取的配置、证据字段和验收测试。 |
 | [Provider 协议](providers.md) | `ChatAdapter` / `Vendor` 两个角色、`Route`、协议方法和新增供应商的步骤。 |
 | [DeepSeek 媒体能力](deepseek-media.md) | 托管 OCR、语音识别与语音合成的配置、限制和 QQ 媒体适配。 |
@@ -63,7 +63,7 @@
 | 文档 | 说明 |
 | --- | --- |
 | [归档目录说明](archive/README.md) | 归档用途、维护约定，以及哪些文档不再按当前代码维护。 |
-| [Checkpointer 实施计划](archive/checkpointer-plan.md) | 有界 checkpointer 与会话重建的实施计划（已实施、默认关闭）；使用说明已由 [QQ 会话缓存](agent-sessions.md) 取代。 |
+| [Checkpointer 实施计划](archive/checkpointer-plan.md) | 旧进程内会话缓存的历史实施计划。当前行为见 [QQ 持久会话](agent-sessions.md)。 |
 | [新闻模块、Exa MCP 与日志检查](archive/news-mcp-review.md) | 2026-09-20 的历史审查记录，保留问题复现证据和修复范围；当前运维语义见 [新闻插件运维](news-plugin.md)。 |
 
 [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)

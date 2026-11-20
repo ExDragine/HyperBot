@@ -39,7 +39,7 @@ def _resolve_message_source(source: str, config: RunnableConfig) -> tuple[Path |
     workspace_dir = settings.get("workspace_dir")
     try:
         if isinstance(virtual_roots, dict):
-            path = resolve_virtual_path(source, virtual_roots)
+            path = resolve_virtual_path(source, virtual_roots, blocked_paths=settings.get("blocked_virtual_paths", ()))
         elif workspace_dir is not None:
             path = resolve_virtual_path(source, {"/": workspace_dir})
         else:
@@ -146,7 +146,9 @@ async def send_file(
         workspace_dir = configurable_section.get("workspace_dir")
         virtual_roots = {"/": workspace_dir} if workspace_dir else {}
 
-    local_path = resolve_virtual_path(path_or_url, virtual_roots) if virtual_roots else None
+    local_path = resolve_virtual_path(
+        path_or_url, virtual_roots, blocked_paths=configurable_section.get("blocked_virtual_paths", ()),
+    ) if virtual_roots else None
     upload_kwargs: dict[str, str]
     if local_path is not None:
         upload_kwargs = {"path": str(local_path)}

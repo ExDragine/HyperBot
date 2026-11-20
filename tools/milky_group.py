@@ -80,10 +80,12 @@ def _require_group_admin_or_owner(
     return None
 
 
-def require_admin_group(
+async def require_admin_group(
     group_id: int | None,
     config: RunnableConfig | None,
     runtime: ToolRuntime[FrontierRuntimeContext, dict] | None = None,
+    *,
+    bot=None,
 ) -> int:
     """解析目标群号并校验当前用户是群主/管理员，失败时抛出 :class:`ToolInputError`。"""
     context = _runtime_context(runtime)
@@ -92,7 +94,22 @@ def require_admin_group(
     permission_error = _require_group_admin_or_owner(resolved_group_id, config, runtime)
     if permission_error:
         raise ToolInputError(permission_error)
+    user_id = context.user_id if context is not None else configurable(config).get("user_id")
+    try:
+        bot = get_bot() if bot is None else bot
+        member = await bot.get_group_member_info(group_id=resolved_group_id, user_id=int(user_id), no_cache=True)
+    except Exception as exc:
+        raise ToolInputError("暂时无法核实请求者的群管理权限。") from exc
+    if _role_from_value(member) not in _GROUP_ADMIN_ROLES:
+        raise ToolInputError(_GROUP_ADMIN_REQUIRED_MESSAGE)
     return resolved_group_id
+
+
+def _group_image_kwargs(image_uri: str | None, config: RunnableConfig | None):
+    settings = configurable(config)
+    return binary_kwargs_from_uri(
+        image_uri, virtual_roots=settings.get("virtual_roots"), blocked_paths=settings.get("blocked_virtual_paths", ()),
+    )
 
 
 def _format_announcements(group_id: int, announcements: list[Any]) -> str:
@@ -181,7 +198,7 @@ async def set_group_name(
         new_group_name: 新群名称
         group_id: 可选群号，未传时使用当前群聊
     """
-    resolved_group_id = require_admin_group(group_id, config, runtime)
+    resolved_group_id = await require_admin_group(group_id, config, runtime)
     await get_bot().set_group_name(group_id=resolved_group_id, new_group_name=new_group_name)
     return f"已将群 {resolved_group_id} 的名称设置为：{new_group_name}"
 
@@ -199,8 +216,8 @@ async def set_group_avatar(
         image_uri: 头像文件 URI
         group_id: 可选群号，未传时使用当前群聊
     """
-    resolved_group_id = require_admin_group(group_id, config, runtime)
-    await get_bot().set_group_avatar(group_id=resolved_group_id, **binary_kwargs_from_uri(image_uri))
+    resolved_group_id = await require_admin_group(group_id, config, runtime)
+    await get_bot().set_group_avatar(group_id=resolved_group_id, **_group_image_kwargs(image_uri, config))
     return f"已更新群 {resolved_group_id} 的头像"
 
 
@@ -219,7 +236,7 @@ async def set_group_member_card(
         card: 新群名片
         group_id: 可选群号，未传时使用当前群聊
     """
-    resolved_group_id = require_admin_group(group_id, config, runtime)
+    resolved_group_id = await require_admin_group(group_id, config, runtime)
     await get_bot().set_group_member_card(group_id=resolved_group_id, user_id=user_id, card=card)
     return f"已将群 {resolved_group_id} 内用户 {user_id} 的群名片设置为：{card}"
 
@@ -239,7 +256,7 @@ async def set_group_member_special_title(
         special_title: 新专属头衔
         group_id: 可选群号，未传时使用当前群聊
     """
-    resolved_group_id = require_admin_group(group_id, config, runtime)
+    resolved_group_id = await require_admin_group(group_id, config, runtime)
     await get_bot().set_group_member_special_title(
         group_id=resolved_group_id,
         user_id=user_id,
@@ -263,7 +280,7 @@ async def set_group_member_admin(
         is_set: True 设置为管理员，False 取消管理员
         group_id: 可选群号，未传时使用当前群聊
     """
-    resolved_group_id = require_admin_group(group_id, config, runtime)
+    resolved_group_id = await require_admin_group(group_id, config, runtime)
     await get_bot().set_group_member_admin(group_id=resolved_group_id, user_id=user_id, is_set=is_set)
     action = "设置为管理员" if is_set else "取消管理员"
     return f"已将群 {resolved_group_id} 内用户 {user_id} {action}"
@@ -284,7 +301,7 @@ async def set_group_member_mute(
         duration: 禁言持续时间，单位秒；0 表示取消禁言
         group_id: 可选群号，未传时使用当前群聊
     """
-    resolved_group_id = require_admin_group(group_id, config, runtime)
+    resolved_group_id = await require_admin_group(group_id, config, runtime)
     if duration < 0:
         return "禁言时长不能为负数。"
     await get_bot().set_group_member_mute(group_id=resolved_group_id, user_id=user_id, duration=duration)
@@ -306,7 +323,7 @@ async def set_group_whole_mute(
         is_mute: True 开启全员禁言，False 取消全员禁言
         group_id: 可选群号，未传时使用当前群聊
     """
-    resolved_group_id = require_admin_group(group_id, config, runtime)
+    resolved_group_id = await require_admin_group(group_id, config, runtime)
     await get_bot().set_group_whole_mute(group_id=resolved_group_id, is_mute=is_mute)
     action = "开启" if is_mute else "取消"
     return f"已{action}群 {resolved_group_id} 的全员禁言"
@@ -327,7 +344,7 @@ async def kick_group_member(
         reject_add_request: 是否拒绝后续加群申请
         group_id: 可选群号，未传时使用当前群聊
     """
-    resolved_group_id = require_admin_group(group_id, config, runtime)
+    resolved_group_id = await require_admin_group(group_id, config, runtime)
     await get_bot().kick_group_member(
         group_id=resolved_group_id,
         user_id=user_id,
@@ -367,11 +384,11 @@ async def send_group_announcement(
         image_uri: 可选公告图片 URI，支持 file://、http(s)://、base64:// 或本地文件路径
         group_id: 可选群号，未传时使用当前群聊
     """
-    resolved_group_id = require_admin_group(group_id, config, runtime)
+    resolved_group_id = await require_admin_group(group_id, config, runtime)
     await get_bot().send_group_announcement(
         group_id=resolved_group_id,
         content=content,
-        **binary_kwargs_from_uri(image_uri),
+        **_group_image_kwargs(image_uri, config),
     )
     return f"已向群 {resolved_group_id} 发送群公告"
 
@@ -389,7 +406,7 @@ async def delete_group_announcement(
         announcement_id: 公告 ID
         group_id: 可选群号，未传时使用当前群聊
     """
-    resolved_group_id = require_admin_group(group_id, config, runtime)
+    resolved_group_id = await require_admin_group(group_id, config, runtime)
     await get_bot().delete_group_announcement(group_id=resolved_group_id, announcement_id=announcement_id)
     return f"已删除群 {resolved_group_id} 的公告 {announcement_id}"
 
@@ -435,7 +452,7 @@ async def set_group_essence_message(
         is_set: True 设置精华，False 取消精华
         group_id: 可选群号，未传时使用当前群聊
     """
-    resolved_group_id = require_admin_group(group_id, config, runtime)
+    resolved_group_id = await require_admin_group(group_id, config, runtime)
     await get_bot().set_group_essence_message(group_id=resolved_group_id, message_seq=message_seq, is_set=is_set)
     action = "设为精华" if is_set else "取消精华"
     return f"已将群 {resolved_group_id} 的消息 {message_seq} {action}"
@@ -452,7 +469,7 @@ async def quit_group(
     Args:
         group_id: 可选群号，未传时使用当前群聊
     """
-    resolved_group_id = require_admin_group(group_id, config, runtime)
+    resolved_group_id = await require_admin_group(group_id, config, runtime)
     await get_bot().quit_group(group_id=resolved_group_id)
     return f"已退出群 {resolved_group_id}"
 
@@ -545,7 +562,7 @@ async def accept_group_request(
         is_filtered: 是否是被过滤请求
         config: 工具调用上下文
     """
-    resolved_group_id = require_admin_group(group_id, config, runtime)
+    resolved_group_id = await require_admin_group(group_id, config, runtime)
     normalized_type = _normalize_group_request_type(notification_type)
     if normalized_type is None:
         return "notification_type 仅支持 join_request 或 invited_join_request。"
@@ -578,7 +595,7 @@ async def reject_group_request(
         reason: 可选拒绝理由
         config: 工具调用上下文
     """
-    resolved_group_id = require_admin_group(group_id, config, runtime)
+    resolved_group_id = await require_admin_group(group_id, config, runtime)
     normalized_type = _normalize_group_request_type(notification_type)
     if normalized_type is None:
         return "notification_type 仅支持 join_request 或 invited_join_request。"

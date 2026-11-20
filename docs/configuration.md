@@ -40,7 +40,7 @@ HyperBot 的配置分为四类文件：NoneBot 启动参数在 `.env`，HyperBot
 | `[speech_synthesis]` | DeepSeek 云端语音合成 | [DeepSeek 媒体能力](deepseek-media.md) |
 | `[agent_policy]` / `[auto_reply_policy]` / `[paint_policy]` | 访问名单与主动回复、绘画权限 | 本页 |
 | `[limits]` | 调用预算、超时、限流 | [Agent 执行控制](agent-execution-controls.md) |
-| `[sessions]` | QQ 跨轮会话缓存 | [QQ 会话缓存](agent-sessions.md) |
+| `[sessions]` | QQ 持久会话的历史预算 | [QQ 持久会话](agent-sessions.md) |
 | `[events]` | Milky 申请事件处理 | [Milky 申请事件](platform-events.md) |
 | `[notifications]` | 内置任务与通知的初始目标群 | 本页 |
 | `[storage]` | 历史查询窗口、图片与媒体 TTL | 本页 |
@@ -168,7 +168,7 @@ Dashboard 设置页通过 `/api/dashboard/settings/*` 读写 `env.toml`：
 - Agent 默认工作区是 `cache/sandbox/workspaces/{workspace_key}`；`/memory/{workspace_key}/` 映射到 memory 目录，`/skills/` 映射到仓库内置只读 Skill。
 - 消息图片和上传文件保存在 `cache/sandbox/memory/{workspace_key}/...`；历史图片可重新注入为模型输入。
 - 当前版本使用带 `group-` / `dm-` 前缀的会话目录；启动不会移动历史裸 `{id}` 目录，旧部署需先用包含迁移工具的历史版本完成升级。
-- 主 Agent 默认接收当前请求和最近的聊天历史作为背景，但只回应当前请求；需要更早的前文时调用聊天历史工具。聊天原文仍作为可检索的权威数据保存并按群聊/私聊隔离。`[sessions]` 开启后的缓存行为见 [QQ 会话缓存](agent-sessions.md)。
+- QQ 主 Agent 接收当前触发、区间背景和本人的近期轮次。`[sessions]` 设置回读上下文的预算，更早的聊天原文可通过聊天工具查询。详见 [QQ 持久会话](agent-sessions.md)。
 
 ## 诊断
 

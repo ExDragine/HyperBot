@@ -75,6 +75,7 @@ class MessageInsertResult:
     message_id: int
     time: int
     inserted: bool
+    resume_ingress: bool = False
 
 
 class TimeStamp(SQLModel, table=True):

@@ -31,7 +31,10 @@ def _prepare_upload(file_uri: str, file_name: str | None, config: RunnableConfig
     if not isinstance(virtual_roots, dict):
         virtual_roots = {"/": workspace_dir} if workspace_dir else None
     try:
-        kwargs = binary_kwargs_from_uri(file_uri, root_dir=workspace_dir, virtual_roots=virtual_roots)
+        kwargs = binary_kwargs_from_uri(
+            file_uri, root_dir=workspace_dir, virtual_roots=virtual_roots,
+            blocked_paths=settings.get("blocked_virtual_paths", ()),
+        )
         if not kwargs or ("path" in kwargs and not Path(kwargs["path"]).is_file()):
             raise ValueError("file source is unavailable")
         if "base64" in kwargs and not base64.b64decode(kwargs["base64"], validate=True):
@@ -135,8 +138,9 @@ async def persist_group_file(
     """
     from .milky_group import require_admin_group
 
-    resolved_group_id = require_admin_group(group_id, config, runtime)
-    await get_bot().persist_group_file(group_id=resolved_group_id, file_id=file_id)
+    bot = get_bot()
+    resolved_group_id = await require_admin_group(group_id, config, runtime, bot=bot)
+    await bot.persist_group_file(group_id=resolved_group_id, file_id=file_id)
     return f"已将群 {resolved_group_id} 文件 {file_id} 转存为永久文件"
 
 

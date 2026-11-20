@@ -28,7 +28,7 @@ async def deepseek_ocr(
     settings = configurable(config)
     roots = settings.get("virtual_roots") or {}
     try:
-        path = resolve_virtual_path(file_path, roots)
+        path = resolve_virtual_path(file_path, roots, blocked_paths=settings.get("blocked_virtual_paths", ()))
     except (OSError, ValueError) as exc:
         return json.dumps({"status": "error", "code": "invalid_file_path", "message": str(exc)}, ensure_ascii=False)
     if path is None or not path.is_file():

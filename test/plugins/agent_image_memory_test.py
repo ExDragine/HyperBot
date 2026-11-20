@@ -5,6 +5,7 @@ import dataclasses
 import json
 import types
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import pytest
 from nonebot.adapters.milky.event import MessageEvent
@@ -758,6 +759,9 @@ async def test_agent_stores_expanded_forward_message_and_derived_nodes(monkeypat
         async def replace_derived_messages(self, **kwargs):
             captured["derived"] = kwargs
 
+        async def update_message_normalization(self, **kwargs):
+            captured["normalized"] = kwargs
+
         async def insert_media(self, **_kwargs):
             return []
 
@@ -851,10 +855,11 @@ async def test_agent_stores_expanded_forward_message_and_derived_nodes(monkeypat
         ctx.receive_event(bot, event)
         ctx.should_finished()
 
-    assert "Alice: 第一条" in captured["insert"]["content"]
-    assert "Dana: 第二层" in captured["insert"]["content"]
-    assert captured["insert"]["normalized_version"] == agent.NORMALIZED_VERSION
-    assert captured["insert"]["normalized_status"] == "complete"
+    assert "合并转发" in captured["insert"]["content"]
+    assert "Alice: 第一条" in captured["normalized"]["content"]
+    assert "Dana: 第二层" in captured["normalized"]["content"]
+    assert captured["normalized"]["normalized_version"] == agent.NORMALIZED_VERSION
+    assert captured["normalized"]["normalized_status"] == "complete"
     assert captured["insert"]["raw_segments_json"]
     assert len(captured["derived"]["derived_messages"]) == 3
     current_text = _first_text(captured["messages"][-1]["content"])
@@ -874,6 +879,9 @@ async def test_agent_does_not_duplicate_normalized_video_marker(monkeypatch):  #
         async def insert(self, **kwargs):
             if kwargs["role"] == "user":
                 captured["stored_content"] = kwargs["content"]
+
+        async def update_message_normalization(self, **kwargs):
+            captured["stored_content"] = kwargs["content"]
 
         async def insert_media(self, **_kwargs):
             return []
@@ -958,12 +966,15 @@ async def test_agent_appends_local_quoted_text_to_current_message(monkeypatch): 
     from plugins.agent import handlers as agent
 
     captured = {}
+    monkeypatch.setattr(agent, "message_gateway", AsyncMock(return_value=True))
 
     class DummyMessagesDb:
         async def insert(self, **kwargs):
             if kwargs["role"] == "user":
                 captured["stored_content"] = kwargs["content"]
-                captured["stored_reply_context"] = kwargs["reply_context_json"]
+
+        async def finalize_message_context(self, **kwargs):
+            captured["stored_reply_context"] = kwargs["reply_context_json"]
 
         async def insert_media(self, **_kwargs):
             return []
@@ -1149,6 +1160,7 @@ async def test_agent_fetches_unindexed_quoted_image_from_milky(monkeypatch):  # 
 
     monkeypatch.setattr(nonebot, "require", lambda *_args, **_kwargs: None)
     from plugins.agent import handlers as agent
+    monkeypatch.setattr(agent, "message_gateway", AsyncMock(return_value=True))
 
     captured = {"restored_images": []}
 
@@ -1755,7 +1767,9 @@ async def test_gateway_queue_routing(case, monkeypatch):  # noqa: C901
     assistant_messages: list[str] = []
     reactions: list[dict[str, Any]] = []
 
-    async def fake_run_serialized(_key, _operation, **_kwargs):
+    async def fake_run_serialized(key, operation, **_kwargs):
+        if not key.startswith("delivery:"):
+            return await operation()
         calls["queue"] += 1
         return None
 
@@ -1915,6 +1929,8 @@ async def test_agent_startup_cleans_cached_files_and_schedules_daily_job(monkeyp
     calls = []
 
     class DummyMessagesDb:
+        qq_sessions = types.SimpleNamespace(interrupt=AsyncMock())
+
         async def cleanup_expired_attachments(self):
             calls.append("attachments")
             return 0
@@ -1923,11 +1939,13 @@ async def test_agent_startup_cleans_cached_files_and_schedules_daily_job(monkeyp
         def add_job(self, func, trigger, **kwargs):
             calls.append((func, trigger, kwargs))
 
-    monkeypatch.setattr(agent, "messages_db", DummyMessagesDb())
+    database = DummyMessagesDb()
+    monkeypatch.setattr(agent, "messages_db", database)
     monkeypatch.setattr(agent, "scheduler", DummyScheduler())
     monkeypatch.setattr(agent.EnvConfig, "IMAGE_AUTO_CLEANUP", True)
     await agent.on_startup()
 
+    database.qq_sessions.interrupt.assert_awaited_once()
     assert calls[0] == "attachments"
     func, trigger, kwargs = calls[1]
     assert func is agent.run_daily_cache_cleanup

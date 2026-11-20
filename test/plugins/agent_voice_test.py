@@ -1,6 +1,7 @@
 # ruff: noqa: S101
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from nonebot.adapters.milky.event import MessageEvent
@@ -53,6 +54,8 @@ async def test_voice_gate_precedes_download_and_asr_then_checks_and_persists_tex
     calls, captured = [], {}
 
     class Database:
+        qq_sessions = SimpleNamespace(enqueue=AsyncMock(return_value=True), interrupt=AsyncMock())
+
         async def insert(self, **kwargs):
             captured["insert"] = kwargs
             return SimpleNamespace(inserted=True, message_id=101)

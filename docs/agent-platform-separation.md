@@ -196,7 +196,6 @@ class AgentRequest:
     capabilities: frozenset[str]
     execution_profile: str
     allow_silent_reply: bool = False
-    session_turn: object | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -550,7 +549,7 @@ QqToolProvider
 
 已完成第一步：`tools/__init__.py` 为 QQ/Milky 模块提供 capability 元数据和按能力筛选的 direct 快照；显式传入 `qq`、`platform:qq` 或 `qq:tools` 时开放完整 QQ 工具，细分能力可只开放消息、文件、好友、群管理或系统工具。空 capability 仍保持旧调用的全量行为。
 
-QQ `handlers.py` 已通过 `AgentRuntimeRequest` 注入中性身份和 `platform:qq` 能力；群聊和私聊的当前文本、已下载媒体、当前已暂存文件、解析中的引用、已完成 hydration 的近期媒体和 session 统一进入 `ConversationOrchestrator`，session 租约在中性投递成功或静默结果后结算。网关仍在媒体下载前执行，编排器复用已准备的历史快照和延迟群回复策略；近期附件按独立字段传入，不会误混入当前请求；Agent 执行后不重跑旧 Agent，避免重复工具副作用或重复投递。平台工具提供器选出的工具会继续传入 runtime，和能力快照中的同名工具只保留一份。
+QQ `handlers.py` 通过 `AgentRuntimeRequest` 注入中性身份和 `platform:qq` 能力。群聊和私聊的当前输入及近期轮次进入 `ConversationOrchestrator`。会话由 QQ 入口持久化，确认送达的正文在同一事务中关联到触发轮次。网关在媒体下载前执行，近期附件按独立字段传入。平台工具提供器选出的工具会继续传入 runtime，和能力快照中的同名工具只保留一份。详见 [QQ 持久会话](agent-sessions.md)。
 
 ### P4：飞书最小闭环（暂缓，作为参考设计）
 

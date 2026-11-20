@@ -21,7 +21,6 @@ from utils.media import (
 if TYPE_CHECKING:
     from .execution import AgentResult
     from .prompts import JobPrompt
-    from .sessions import TurnLease
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,7 +51,6 @@ class AgentRuntimeRequest:
     image_inputs: tuple[bytes, ...] = ()
     audio_inputs: tuple[bytes, ...] = ()
     video_inputs: tuple[bytes, ...] = ()
-    session_turn: TurnLease | None = None
     conversation: ConversationRef | None = None
     principal: Participant | None = None
     capabilities: frozenset[str] = frozenset()
@@ -346,7 +344,6 @@ class FrontierAgentRuntime:
             enable_acp_subagents=request.enable_acp_subagents,
             allow_silent_reply=request.allow_silent_reply,
             **compatibility_kwargs,
-            **({"session_turn": request.session_turn} if request.session_turn is not None else {}),
         )
 
     async def prompt(

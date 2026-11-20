@@ -40,6 +40,10 @@ def file_bot(load_tool_module, install_milky_bot):
             "create_group_folder": "folder-new",
         },
     )
+    async def get_group_member_info(**_kwargs):
+        return {"role": "admin"}
+
+    bot.get_group_member_info = get_group_member_info
     return milky_file, bot
 
 

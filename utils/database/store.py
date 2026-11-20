@@ -9,6 +9,7 @@ attachment API in :mod:`utils.database.attachments`; both are mixed in so
 import json
 import os
 
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, desc, func, select
 
@@ -21,16 +22,18 @@ from .fts import ensure_message_fts
 from .models import (
     MESSAGE_SOURCE_TYPE_FORWARD_NODE,
     MESSAGE_SOURCE_TYPE_NORMAL,
-    GroupSettings,
     Message,
     MessageAttachment,
     MessageInsertResult,
 )
+from .qq_lifecycle import QqIngress, QqLifecycleStore, visible_qq_message
+from .qq_sessions import QqSession, QqSessionStore, QqSessionTurn, persist_session_reply, qq_session_metrics
 from .rows import (
     _REPLY_CONTEXT_UNSET,
     _attachment_agent_payload,
     _find_message,
     _message_agent_payload,
+    _message_reply_payload,
     _refresh_message_model_state,
 )
 from .schema import ensure_database_performance_indexes, platform_message_key, validate_database_schema
@@ -40,11 +43,11 @@ from .search import _MessageSearchMixin
 class MessageDatabase(_MessageAttachmentFacadeMixin, _MessageSearchMixin):
     def __init__(self):
         self.engine = get_engine()
-        validate_database_schema(self.engine, Message, MessageAttachment)
+        validate_database_schema(self.engine, Message, MessageAttachment, QqSession, QqSessionTurn)
         self._attachments = _MessageAttachmentManager(self.engine)
         Message.metadata.create_all(self.engine)
-        MessageAttachment.metadata.create_all(self.engine)
-        GroupSettings.metadata.create_all(self.engine)
+        self.qq_sessions = QqSessionStore(self.engine)
+        self.qq_lifecycle = QqLifecycleStore(self.engine)
         ensure_database_performance_indexes(self.engine)
         ensure_message_fts(self.engine)
 
@@ -70,6 +73,9 @@ class MessageDatabase(_MessageAttachmentFacadeMixin, _MessageSearchMixin):
         sender_user_id: int | None = None,
         bot_user_id: int | None = None,
         directly_mentions_bot: bool = False,
+        session_trigger_id: int | None = None,
+        delivery_status: str = "delivered",
+        track_qq_ingress: bool = False,
     ) -> MessageInsertResult:
         def _do():
             with Session(self.engine, expire_on_commit=False) as session:
@@ -102,8 +108,17 @@ class MessageDatabase(_MessageAttachmentFacadeMixin, _MessageSearchMixin):
                     bot_user_id=bot_user_id,
                     directly_mentions_bot=directly_mentions_bot,
                 )
+                if session_trigger_id is not None:
+                    result = persist_session_reply(session, session_trigger_id, message, delivery_status)
+                    session.commit()
+                    return result
                 session.add(message)
                 try:
+                    if track_qq_ingress and message.platform_key is not None:
+                        session.flush()
+                        session.execute(sqlite_insert(QqIngress).values(
+                            platform_key=message.platform_key, cancelled=False,
+                        ).on_conflict_do_nothing())
                     session.commit()
                 except IntegrityError:
                     session.rollback()
@@ -114,10 +129,17 @@ class MessageDatabase(_MessageAttachmentFacadeMixin, _MessageSearchMixin):
                     ).first()
                     if existing is None:
                         raise
-                    return MessageInsertResult(message_id=existing.id, time=existing.time, inserted=False)
+                    pending = session.get(QqIngress, existing.platform_key) if track_qq_ingress else None
+                    return MessageInsertResult(
+                        message_id=existing.id, time=existing.time, inserted=False,
+                        resume_ingress=pending is not None and not pending.cancelled,
+                    )
                 return MessageInsertResult(message_id=message.id, time=message.time, inserted=True)
 
-        return await _run_database(self.engine, _do)
+        result = await _run_database(self.engine, _do)
+        if session_trigger_id is not None:
+            qq_session_metrics["settled"] += 1
+        return result
 
     async def select(
         self,
@@ -140,7 +162,7 @@ class MessageDatabase(_MessageAttachmentFacadeMixin, _MessageSearchMixin):
                     )
                 else:
                     return None
-                statement = statement.where(Message.source_type == MESSAGE_SOURCE_TYPE_NORMAL)
+                statement = statement.where(Message.source_type == MESSAGE_SOURCE_TYPE_NORMAL, visible_qq_message())
                 if bot_user_id is not None:
                     statement = statement.where(Message.bot_user_id == bot_user_id)
                 if before_time is not None:
@@ -198,6 +220,7 @@ class MessageDatabase(_MessageAttachmentFacadeMixin, _MessageSearchMixin):
                     Message.time < before_time,
                     Message.time >= after_time,
                     Message.raw_segments_json.is_not(None),
+                    visible_qq_message(),
                 ]
                 if group_id is None:
                     conditions.extend((Message.group_id.is_(None), Message.user_id == user_id))
@@ -236,7 +259,7 @@ class MessageDatabase(_MessageAttachmentFacadeMixin, _MessageSearchMixin):
         def _do():
             with Session(self.engine) as session:
                 statement = select(Message).where(Message.msg_id == msg_id)
-                statement = statement.where(Message.source_type == MESSAGE_SOURCE_TYPE_NORMAL)
+                statement = statement.where(Message.source_type == MESSAGE_SOURCE_TYPE_NORMAL, visible_qq_message())
                 if group_id is None:
                     statement = statement.where(Message.group_id.is_(None))  # type: ignore
                     statement = statement.where(Message.user_id == peer_user_id)
@@ -353,43 +376,6 @@ class MessageDatabase(_MessageAttachmentFacadeMixin, _MessageSearchMixin):
 
         await _run_database(self.engine, _do)
 
-    async def prepare_session_history(
-        self, *, bot_user_id: int, user_id: int, group_id: int | None,
-        before_time: int, before_message_id: int, query_numbers: int,
-        after_message_id: int | None = None,
-    ) -> list[dict[str, object]]:
-        """Read only this bot's records visible when the triggering message arrived.
-
-        The ID bound excludes later/backdated inserts; the time bound preserves
-        the existing QQ snapshot contract. Null/ambiguous bot ownership is excluded.
-        """
-        def read():
-            conditions = [
-                Message.bot_user_id == bot_user_id,
-                Message.source_type == MESSAGE_SOURCE_TYPE_NORMAL,
-                Message.time < before_time,
-                Message.id < before_message_id,
-            ]
-            if group_id is None:
-                conditions.extend([Message.group_id.is_(None), Message.user_id == user_id])
-            else:
-                conditions.append(Message.group_id == group_id)
-            if after_message_id is not None:
-                conditions.append(Message.id > after_message_id)
-            with Session(self.engine) as session:
-                return list(reversed(session.exec(
-                    select(Message).where(*conditions).order_by(desc(Message.time), desc(Message.id)).limit(query_numbers)
-                ).all()))
-
-        records = await _run_database(self.engine, read)
-        rendered = await self.prepare_message_records(
-            records, accessible_workspace_key=_message_workspace_key(user_id, group_id),
-        )
-        return [
-            {**message, "id": f"qq:{bot_user_id}:message:{record.id}"}
-            for record, message in zip(records, rendered, strict=True)
-        ]
-
     async def prepare_message(
         self,
         user_id: int | None = None,
@@ -434,6 +420,17 @@ class MessageDatabase(_MessageAttachmentFacadeMixin, _MessageSearchMixin):
         self._attachments.engine = self.engine
         attachments_by_time = await self._attachments.select_by_msg_times(all_msg_times)
 
+        quote_sequences = {}
+        for message in messages:
+            if message.bot_user_id is not None and message.group_id is not None:
+                quote = _message_reply_payload(message) or {}
+                if (sequence := quote.get("message_id")) is not None:
+                    quote_sequences.setdefault((message.bot_user_id, message.group_id), set()).add(str(sequence))
+        recalled_quotes = {
+            scope: await QqLifecycleStore(self.engine).recalled(*scope, sequences)
+            for scope, sequences in quote_sequences.items()
+        }
+
         for message in messages:
             msg_attachments = [
                 attachment for attachment in attachments_by_time.get(message.time, [])
@@ -471,11 +468,13 @@ class MessageDatabase(_MessageAttachmentFacadeMixin, _MessageSearchMixin):
             if missing_kinds:
                 content_text += "\n" + " ".join(f"[{kind}附件已过期]" for kind in missing_kinds)
 
+            quote = _message_reply_payload(message) or {}
+            quote_visible = str(quote.get("message_id")) not in recalled_quotes.get((message.bot_user_id, message.group_id), ())
             payload = _message_agent_payload(
                 message,
                 content=content_text,
                 attachments=attachment_refs,
-                include_reply_to=same_workspace,
+                include_reply_to=same_workspace and quote_visible,
                 include_attachment_refs=same_workspace,
             )
             messages_seq.append(

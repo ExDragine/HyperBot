@@ -66,7 +66,7 @@ from plugins.toolbox import menu, settings, update
 agent = nonebot.get_plugin('agent')
 toolbox = nonebot.get_plugin('toolbox')
 assert handlers.common in agent.matcher
-assert handlers.group_disband in agent.matcher
+assert handlers.session_notice in agent.matcher
 assert all(command in toolbox.matcher for command in (
     menu.vehelp_cmd, settings.model_cmd, settings.settings, update.updater, update.restart,
 ))

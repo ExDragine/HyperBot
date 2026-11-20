@@ -122,7 +122,7 @@ const SettingsPage = {
             { key: 'auto_reply_policy', label: '自动回复' },
             { key: 'paint_policy', label: '绘画与视频权限' },
             { key: 'limits', label: '限流与超时' },
-            { key: 'sessions', label: '会话缓存' },
+            { key: 'sessions', label: 'QQ 会话' },
             { key: 'notifications', label: '消息推送' },
             { key: 'storage', label: '存储' },
             { key: 'debug', label: '调试' },

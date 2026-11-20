@@ -103,15 +103,16 @@ def _assistant_message(
 ) -> ChatMessage:
     """Convert a delivered neutral response to the history representation."""
 
-    message_id = receipt.message_refs[-1].message_id if receipt.message_refs else None
+    reply_refs = receipt.message_refs if receipt.text_message_refs is None else receipt.text_message_refs
     metadata: dict[str, object] = {
         "run_id": response.run_id,
         "artifact_count": len(response.artifacts),
+        "delivery_status": receipt.status.value,
     }
     return ChatMessage(
         role="assistant",
         content=receipt.delivered_text if receipt.delivered_text is not None else response.text,
-        message_id=message_id,
+        message_id=reply_refs[-1].message_id if reply_refs else None,
         conversation=message.conversation,
         created_at=datetime.now(UTC),
         metadata=metadata,
@@ -151,7 +152,6 @@ class ConversationOrchestrator:
         capabilities: frozenset[str] = frozenset(),
         execution_profile: str = "default",
         allow_silent_reply: bool = False,
-        session_turn: object | None = None,
         progress_reporter: ProgressReporter | None = None,
     ) -> TurnOutcome:
         """Process a normalized message through the application ports."""
@@ -201,7 +201,6 @@ class ConversationOrchestrator:
             capabilities=capabilities,
             execution_profile=execution_profile,
             allow_silent_reply=allow_silent_reply,
-            session_turn=session_turn,
         )
         try:
             selected_tools: Sequence[object] = tools.tools(capabilities) if tools else ()

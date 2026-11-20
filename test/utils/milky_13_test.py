@@ -75,8 +75,8 @@ async def test_group_disband_passes_nudge_matcher_and_is_handled_without_reply(m
 
     event = GroupDisbandEvent(time=123, self_id=999, data={"group_id": 123, "operator_id": 456})
     assert not await playground._is_nudge(event)
-    assert await agent._is_group_disband(event)
-    await agent.handle_group_disband(event)
+    assert await agent._is_session_notice(event)
+    await agent.handle_session_notice(event)
 
 
 @pytest.mark.asyncio
@@ -89,10 +89,13 @@ async def test_persist_file_enforces_target_group_permission(load_tool_module, m
     async def persist(**kwargs):
         calls.append(kwargs)
 
-    monkeypatch.setattr(module, "get_bot", lambda: SimpleNamespace(persist_group_file=persist))
+    async def get_member(**_kwargs):
+        return {"role": role}
+
+    monkeypatch.setattr(module, "get_bot", lambda: SimpleNamespace(persist_group_file=persist, get_group_member_info=get_member))
     result = await module.persist_group_file(
         file_id="file-1", group_id=target,
-        config={"configurable": {"group_id": 123, "group_member_role": role}},
+        config={"configurable": {"group_id": 123, "group_member_role": role, "user_id": "456"}},
     )
     assert bool(calls) is allowed
     if allowed:

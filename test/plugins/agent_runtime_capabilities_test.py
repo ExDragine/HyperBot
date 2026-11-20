@@ -49,7 +49,7 @@ async def test_qq_handler_passes_neutral_identity_and_capabilities(monkeypatch):
     monkeypatch.setattr(agent, "f_cognitive", object())
 
     context = _context(agent)
-    assert await agent._execute_agent_request(context, history_messages=[]) is False
+    assert await agent._process_agent_request(context, history_messages=[]) is False
 
     request = captured["request"]
     assert request.conversation == ConversationRef(

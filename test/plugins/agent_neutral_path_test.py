@@ -73,7 +73,6 @@ def test_neutral_path_accepts_all_normalized_message_shapes(agent, monkeypatch):
         _context(agent, reply_to={"message_id": "1"}, attachments=[{"path": "x"}])
     ) is True
 
-    monkeypatch.setattr(agent.EnvConfig, "SESSIONS", SimpleNamespace(enabled=True))
     assert agent._qq_neutral_eligible(_context(agent, message_id=11)) is True
 
 
@@ -158,42 +157,6 @@ async def test_neutral_path_delivers_only_final_reply(agent, monkeypatch, group_
     assert result is True
     assert seen == [None]
     assert sent == [(group_id, "ok")]
-
-
-@pytest.mark.asyncio
-async def test_session_neutral_forwards_lease_and_settles_after_delivery(agent, monkeypatch):
-    seen = []
-    settled = []
-    session = SimpleNamespace(current_id="qq:42:message:9", entry=SimpleNamespace(key=SimpleNamespace(bot_id="42")))
-
-    class Core:
-        async def run(self, request, *, tools=(), progress_reporter=None):
-            seen.append(request.session_turn)
-            return AgentResponse(text="session reply")
-
-    async def send_messages(*args, **kwargs):
-        return DeliveryResult(attempted=1, sent=1, message_ids=(123,))
-
-    async def settle(lease, **kwargs):
-        settled.append((lease, kwargs))
-
-    class Database:
-        async def insert(self, **kwargs):
-            return SimpleNamespace(message_id=10)
-
-    monkeypatch.setattr(agent, "FrontierAgentCore", lambda *_args, **_kwargs: Core())
-    monkeypatch.setattr(agent, "send_messages", send_messages)
-    monkeypatch.setattr(agent, "messages_db", Database())
-    monkeypatch.setattr(agent, "_settle_session", settle)
-
-    result = await agent._run_qq_neutral(_context(agent, message_id=9), [], session_turn=session)
-
-    assert result is True
-    assert seen == [session]
-    assert settled[0][0] is session
-    assert settled[0][1]["delivered"] is True
-    assert settled[0][1]["message_id"] == 10
-    assert settled[0][1]["content"] == "session reply"
 
 
 @pytest.mark.asyncio

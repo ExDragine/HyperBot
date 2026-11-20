@@ -20,6 +20,14 @@ def ensure_database_performance_indexes(engine: Engine) -> None:
                 "CREATE INDEX IF NOT EXISTS ix_message_group_msg_id_time ON message (group_id, msg_id, time DESC)",
                 "CREATE INDEX IF NOT EXISTS ix_message_source_parent ON message (source_type, parent_msg_time)",
                 (
+                    "CREATE INDEX IF NOT EXISTS ix_message_qq_group_interval "
+                    "ON message (bot_user_id, group_id, role, source_type, id)"
+                ),
+                (
+                    "CREATE INDEX IF NOT EXISTS ix_message_qq_sender_interval "
+                    "ON message (bot_user_id, group_id, sender_user_id, role, source_type, id)"
+                ),
+                (
                     "CREATE INDEX IF NOT EXISTS ix_message_private_user_time "
                     "ON message (user_id, time DESC) WHERE group_id IS NULL"
                 ),

@@ -23,7 +23,7 @@ async def test_final_delivery_retains_milky_message_sequence(monkeypatch, mode):
 
     async def send(self):
         if mode == "fallback" and isinstance(self[-1], Text):
-            raise RuntimeError("text rejected")
+            raise ActionFailed(status="failed", retcode=403, message="text rejected")
         return SimpleNamespace(msg_ids=[SimpleNamespace(message_seq=900, time=123)])
 
     monkeypatch.setattr(UniMessage, "send", send)
@@ -94,7 +94,7 @@ async def test_text_delivery_failure_can_recover_with_image(monkeypatch):
     async def send(self):
         calls.append(self[0].type)
         if isinstance(self[0], Text):
-            raise RuntimeError("text rejected")
+            raise ActionFailed(status="failed", retcode=403, message="text rejected")
 
     monkeypatch.setattr(UniMessage, "send", send)
     monkeypatch.setattr(message, "markdown_to_text", text)
@@ -103,6 +103,29 @@ async def test_text_delivery_failure_can_recover_with_image(monkeypatch):
 
     assert calls == ["text", "image"]
     assert result.successful
+
+
+@pytest.mark.asyncio
+async def test_lost_text_receipt_does_not_attempt_image_delivery(monkeypatch):
+    calls = []
+
+    async def send(_message):
+        calls.append("text")
+        raise TimeoutError("receipt lost")
+
+    async def render(_content):
+        pytest.fail("must not fall back after an uncertain send")
+
+    async def text(content):
+        return content
+
+    monkeypatch.setattr(UniMessage, "send", send)
+    monkeypatch.setattr(message, "markdown_to_text", text)
+    monkeypatch.setattr(message, "_markdown_to_image_with_retry", render)
+    result = await message.send_messages(None, 1, {"messages": ["hi"]})
+
+    assert calls == ["text"]
+    assert result.uncertain
 
 
 @pytest.mark.asyncio

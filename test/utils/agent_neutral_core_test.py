@@ -5,7 +5,6 @@
 import json
 from dataclasses import replace
 from datetime import UTC, datetime
-from types import SimpleNamespace
 
 import pytest
 
@@ -131,7 +130,7 @@ async def test_bridge_preserves_session_message_boundaries(agent_request):
     request = replace(
         agent_request,
         history=(history,),
-        session_turn=SimpleNamespace(current_id="qq:42:message:9"),
+        current=replace(agent_request.current, metadata={"qq_trigger_id": 9}),
     )
     runtime = FakeRuntime()
 
@@ -139,7 +138,7 @@ async def test_bridge_preserves_session_message_boundaries(agent_request):
 
     messages = runtime.requests[0].messages
     assert messages[0]["id"] == "history-1"
-    assert messages[-1]["id"] == "qq:42:message:9"
+    assert messages[-1]["id"] == "qq:session:trigger:9"
 
 
 class MappingRuntime:

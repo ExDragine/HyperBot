@@ -54,11 +54,15 @@ def group_bot(load_tool_module, install_milky_bot):
             "get_group_notifications": _GROUP_NOTIFICATIONS,
         },
     )
+    async def get_group_member_info(**_kwargs):
+        return {"role": "admin"}
+
+    bot.get_group_member_info = get_group_member_info
     return group, bot
 
 
 def _group_config(group_id=123, role="admin"):
-    configurable = {"group_id": group_id}
+    configurable = {"group_id": group_id, "user_id": "42"}
     if role is not None:
         configurable["group_member_role"] = role
     return {"configurable": configurable}
@@ -82,6 +86,22 @@ async def test_group_management_uses_current_group_from_config(group_bot):
 
     assert result == "已将群 123 的名称设置为：新群名"
     assert bot.calls == [("set_group_name", {"group_id": 123, "new_group_name": "新群名"})]
+
+
+@pytest.mark.asyncio
+async def test_group_write_checks_live_requester_role(group_bot):
+    group, bot = group_bot
+    checks = []
+
+    async def downgraded(**kwargs):
+        checks.append(kwargs)
+        return {"role": "member"}
+
+    bot.get_group_member_info = downgraded
+    result = await group.set_group_name(new_group_name="新群名", config=_group_config())
+    assert result == _ADMIN_REQUIRED_MESSAGE
+    assert checks == [{"group_id": 123, "user_id": 42, "no_cache": True}]
+    assert bot.calls == []
 
 
 @pytest.mark.asyncio

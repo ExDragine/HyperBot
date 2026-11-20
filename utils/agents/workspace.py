@@ -5,7 +5,7 @@ import os
 import time
 from pathlib import Path
 
-from deepagents.backends import CompositeBackend, FilesystemBackend
+from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend
 
 SKILLS_BACKEND_PATH = "/skills"
 MEMORY_BACKEND_PATH = "/memory"
@@ -18,7 +18,7 @@ def ensure_dir(path: str) -> str:
     return path
 
 
-def build_agent_backend(working_dir: str, workspace_key: str) -> CompositeBackend:
+def build_agent_backend(working_dir: str, workspace_key: str, *, qq_group: bool = False) -> CompositeBackend:
     workspace_dir = ensure_dir(os.path.join(working_dir, "workspaces", workspace_key))
     skills_dir = str(PROJECT_ROOT / "skills")
     memory_dir = ensure_dir(os.path.join(working_dir, "memory", workspace_key))
@@ -35,10 +35,14 @@ def build_agent_backend(working_dir: str, workspace_key: str) -> CompositeBacken
         with open(soul_md, "w", encoding="utf-8"):
             pass
 
+    routes = {
+        f"{SKILLS_BACKEND_PATH}/": FilesystemBackend(root_dir=skills_dir, virtual_mode=True),
+        f"{MEMORY_BACKEND_PATH}/{workspace_key}/": FilesystemBackend(root_dir=memory_dir, virtual_mode=True),
+    }
+    if qq_group:
+        routes["/.qq-turn/"] = StateBackend()
     return CompositeBackend(
         default=FilesystemBackend(root_dir=workspace_dir, virtual_mode=True),
-        routes={
-            f"{SKILLS_BACKEND_PATH}/": FilesystemBackend(root_dir=skills_dir, virtual_mode=True),
-            f"{MEMORY_BACKEND_PATH}/{workspace_key}/": FilesystemBackend(root_dir=memory_dir, virtual_mode=True),
-        },
+        routes=routes,
+        **({"artifacts_root": "/.qq-turn"} if qq_group else {}),
     )
