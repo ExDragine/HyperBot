@@ -172,6 +172,7 @@ def test_map_analysis_and_flow_validate_references():
         {"type": "grid", "columns": 4, "children": [{"type": "text", "text": "a"}]},
         {"type": "row", "columns": 2, "children": [{"type": "text", "text": "a"}]},
         {"type": "table", "columns": ["A", "B"], "rows": [["1"]]},
+        {"type": "section", "table_layout": "unknown", "children": [{"type": "text", "text": "记录"}]},
         {"type": "callout", "text": "test", "status": "unknown"},
         {"type": "text", "text": "x" * 2001},
     ],

@@ -48,6 +48,7 @@ Leaflet 只负责在本地渲染器中叠加声明式图层，适合标记和路
 ## Flow
 
 `flow` 使用 React Flow 展示节点和连线，适合工作流、Agent 决策链和系统关系图。节点需要唯一的 `id`；不填写坐标时渲染器会自动排布。
+截图时，节点或连线标签缩放后过小的图会按节点列出分支。把判断条件写在连线的 `label`，让每条分支都能读出条件和去向。
 
 ```flow
 {"type":"flow","height":420,"direction":"LR","nodes":[{"id":"input","label":"输入"},{"id":"tool","label":"调用工具","color":"#059669"},{"id":"answer","label":"回答"}],"edges":[{"source":"input","target":"tool"},{"source":"tool","target":"answer","label":"结果"}]}

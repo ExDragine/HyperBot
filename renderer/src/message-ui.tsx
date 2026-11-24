@@ -2,6 +2,7 @@ import {
   Component,
   useLayoutEffect,
   useRef,
+  useState,
   type CSSProperties,
   type ReactNode,
 } from "react";
@@ -14,8 +15,6 @@ import length from "@turf/length";
 import { lineString, polygon } from "@turf/helpers";
 import {
   Background,
-  Controls,
-  MiniMap,
   ReactFlow,
   type Edge,
   type Node,
@@ -258,6 +257,27 @@ function MapView({ config }: { config: Extract<MediaNode, { type: "map" }> }) {
 
 function FlowView({ config }: { config: UIFlow }) {
   const host = useRef<HTMLDivElement>(null);
+  const [showBranches, setShowBranches] = useState(false);
+  if (showBranches) {
+    const labels = new Map(config.nodes.map(node => [
+      node.id,
+      config.nodes.some(other => other.id !== node.id && other.label === node.label)
+        ? `${node.label} (${node.id})` : node.label,
+    ]));
+    const incoming = new Set(config.edges?.map(edge => edge.target));
+    return <dl className="md-flow-branches" data-flow-rendered="true">
+      {config.nodes.map(node => {
+        const outgoing = config.edges?.filter(edge => edge.source === node.id) || [];
+        if (!outgoing.length && incoming.has(node.id)) return null;
+        return <div className="md-flow-stage" key={node.id}>
+          <dt style={{ borderColor: node.color }}>{labels.get(node.id)}</dt>
+          {outgoing.map((edge, index) => (
+            <dd key={index}>{edge.label && <span>{edge.label} </span>}→ {labels.get(edge.target)}</dd>
+          ))}
+        </div>;
+      })}
+    </dl>;
+  }
   const autoLayout = config.nodes.every((item) => !item.x && !item.y);
   const nodes: Node[] = config.nodes.map((item, index) => ({
     id: item.id,
@@ -267,21 +287,28 @@ function FlowView({ config }: { config: UIFlow }) {
         : { x: 0, y: index * 110 }
       : { x: item.x || 0, y: item.y || 0 },
     data: { label: item.label },
-    style: { background: item.color || "#6366f1", color: "#fff", border: "0", borderRadius: "12px", padding: "10px 14px", fontWeight: 650, boxShadow: "0 4px 14px rgb(15 23 42 / 0.16)" },
+    style: { background: item.color || "#6366f1", color: "#fff", border: "0", borderRadius: "12px", padding: "10px 14px", fontSize: 22, fontWeight: 650, boxShadow: "0 4px 14px rgb(15 23 42 / 0.16)" },
   }));
   const edges: Edge[] = (config.edges || []).map((item, index) => ({
     id: `${item.source}-${item.target}-${index}`,
     source: item.source,
     target: item.target,
     label: item.label || undefined,
+    labelStyle: { fontSize: 20 },
     animated: item.animated,
     style: { stroke: item.color || "#94a3b8", strokeWidth: 2 },
   }));
   return <div className="md-flow" ref={host} style={{ height: config.height }}>
-    <ReactFlow nodes={nodes} edges={edges} fitView nodesDraggable={false} nodesConnectable={false} zoomOnScroll={false} panOnDrag={false} onInit={() => host.current?.setAttribute("data-flow-rendered", "true")}>
+    <ReactFlow nodes={nodes} edges={edges} minZoom={0.01} nodesDraggable={false} nodesConnectable={false} zoomOnScroll={false} panOnDrag={false}
+      onInit={async flow => {
+        await flow.fitView();
+        if (!host.current) return;
+        const previewScale = Math.min(1, 390 / document.documentElement.clientWidth);
+        const labelSize = edges.some(edge => edge.label) ? 20 : 22;
+        if (labelSize * flow.getZoom() * previewScale < 11) setShowBranches(true);
+        else host.current.dataset.flowRendered = "true";
+      }}>
       <Background gap={24} size={1} color="#cbd5e1" />
-      <Controls showInteractive={false} />
-      <MiniMap pannable={false} zoomable={false} />
     </ReactFlow>
   </div>;
 }
@@ -476,7 +503,7 @@ function MessageComponent({
       );
     case "section":
       return (
-        <section className="md-ui-section">
+        <section className="md-ui-section" data-table-layout={config.table_layout}>
           <Header config={config} />
           <div className="md-ui-content">
             <Children nodes={config.children} renderers={renderers} />

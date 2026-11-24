@@ -224,6 +224,75 @@ function renderRichBlocks() {
   });
 }
 
+function layoutRecordTables() {
+  for (const table of document.querySelectorAll(".md-ui-prose table, table.md-ui-table")) {
+    if (table.closest("[data-table-layout]")?.dataset.tableLayout !== "records") continue;
+    const headers = table.tHead?.rows[0]?.cells;
+    if (!headers?.length || !table.tBodies.length) continue;
+    table.classList.add("md-table-records");
+    for (const row of table.tBodies[0].rows) {
+      for (const cell of row.cells) {
+        const header = headers[cell.cellIndex];
+        if (!header) continue;
+        const label = element("span", "md-record-label");
+        label.setAttribute("aria-hidden", "true");
+        // Preserve formatted column names, including math that will be typeset next.
+        label.append(...Array.from(header.childNodes, node => node.cloneNode(true)));
+        cell.prepend(label);
+      }
+    }
+  }
+}
+
+function keepMathTermsTogether(parts) {
+  // Plain TeX parentheses can span multiple KaTeX bases. Keep a term
+  // together when it fits, respecting explicit newlines between bases.
+  let depth = 0;
+  let term = [];
+  for (const part of parts) {
+    if (term.length && term.at(-1).nextElementSibling !== part) {
+      depth = 0;
+      term = [];
+    }
+    term.push(part);
+    for (const symbol of part.children) {
+      if (symbol.classList.contains("mopen")) depth++;
+      if (symbol.classList.contains("mclose")) depth = Math.max(0, depth - 1);
+    }
+    if (depth > 0) continue;
+    if (term.length > 1) {
+      const group = element("span", "md-math-term");
+      term[0].before(group);
+      group.append(...term);
+    }
+    term = [];
+  }
+}
+
+function fitDisplayMath() {
+  for (const display of document.querySelectorAll(".katex-display")) {
+    const width = display.clientWidth;
+    if (!width || display.scrollWidth <= width + 1) continue;
+    display.classList.add("md-math-wrap");
+    // Each direct .base is a KaTeX-approved unbreakable group. Fractions,
+    // matrices and nested expressions retain their internal layout.
+    const parts = display.querySelectorAll(":scope > .katex > .katex-html > .base");
+    keepMathTermsTogether(parts);
+    for (const part of parts) {
+      const size = part.getBoundingClientRect().width;
+      if (size <= width) continue;
+      if (width / size < 0.75) {
+        const source = display.querySelector("annotation")?.textContent;
+        if (source) {
+          display.replaceChildren(element("code", "md-math-source", source));
+          break;
+        }
+      }
+      part.style.zoom = String(width / size);
+    }
+  }
+}
+
 function renderMath(root = document.body, rich = false) {
   renderMathInElement(root, {
     delimiters: [
@@ -276,6 +345,7 @@ async function renderDocument() {
   try {
     if (document.fonts?.ready) await document.fonts.ready;
     renderRichBlocks();
+    layoutRecordTables();
     await Promise.allSettled([
       ["math", () => {
         renderMath();
@@ -308,6 +378,8 @@ async function renderDocument() {
       check();
     });
     await nextFrame();
+    await document.fonts.ready;
+    fitDisplayMath();
     await nextFrame();
   } finally {
     renderState.state = "ready";

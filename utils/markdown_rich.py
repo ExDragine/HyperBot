@@ -160,6 +160,7 @@ class UICard(_RichModel):
 
 class UISection(_RichModel):
     type: Literal["section"]
+    table_layout: Literal["columns", "records"] | None = None
     title: ShortText | None = None
     description: LongText | None = None
     eyebrow: LabelText | None = None

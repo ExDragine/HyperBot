@@ -73,6 +73,7 @@
 ## Data and tables
 
 `table`：必填 `columns`（1–8 个列名，每个 80 字符），`rows`（1–50 行，每个单元格最多 200 字符）。每行的列数必须匹配。
+需要按记录阅读时，外层 `section` 可设置 `table_layout: "records"`，同一区域的 Markdown 表格和结构化表格都会按行展示字段名和值。普通列对照使用 `"columns"`。
 可选 `caption`（200），`column_widths`（每列一个 1–12 的整数权重）。默认自动分配列宽；只有明确需要控制比例时使用权重，例如两列 `[2, 8]`。
 
 `chart/stats/timeline`：必填 `config`，契约见 [数据组件](data.md)。不要把配置字段直接放在组件根上。

@@ -148,6 +148,7 @@ def load_cases():
 def case_checks(name, observed, width, image):
     checks = {}
     if name == "compat":
+        checks.update(observed["technical_layout"])
         checks.update(
             {
                 "long_image": image.height > 1500,
@@ -295,6 +296,20 @@ def composed_source(name, case):
         long_url = "https://example.com/" + "a" * 160
         source += f'```python\ndef endpoint():\n    return "{long_url}"\n```\n\n'
         source += "```ui\n" + json.dumps(second, ensure_ascii=False) + "\n```\n"
+        long_sum = " + ".join(f"(x_{{{i}}} + 1)" for i in range(40))
+        source += f"\n$$S = {long_sum}$$\n\n$$x=1$$\n\n"
+        source += r"$$\text{" + "W" * 160 + "}$$\n\n"
+        source += (
+            '::section{table_layout="records"}\n'
+            "| 名称 | **概率** | 分段 | 用时 | 贡献 |\n|---|---|---|---|---|\n| 命中 | 80% | 5 | 5 | 4 |\n::\n\n"
+        )
+        for distance in (90, 1600):
+            flow = {
+                "type": "flow",
+                "nodes": [{"id": "a", "label": "检查"}, {"id": "b", "label": "返回", "y": distance}],
+                "edges": [{"source": "a", "target": "b", "label": "命中"}],
+            }
+            source += "```flow\n" + json.dumps(flow, ensure_ascii=False) + "\n```\n\n"
     if name == "media":
         source += "\n外部模块之后的普通正文也需要保持间距。\n"
     return source
@@ -348,7 +363,7 @@ async def verify(
                 remote_requests = []
                 source = composed_source(name, case)
 
-                async def after_load(page, observed=observed):
+                async def after_load(page, observed=observed, name=name):
                     await original_wait(page)
                     observed.update(
                         await page.evaluate("""() => {
@@ -433,6 +448,28 @@ async def verify(
                     )
 
                     observed["frameImage"] = False
+                    if name == "compat":
+                        observed["technical_layout"] = await page.evaluate("""() => {
+                            const all = selector => [...document.querySelectorAll(selector)];
+                            const [sum, short, atomic] = all('#markdown-content > p .katex-display');
+                            const chunks = [...sum.querySelector('.katex-html').children];
+                            const cells = all('.md-table-records tbody td');
+                            const diagram = document.querySelector('.md-flow[data-flow-rendered=true]');
+                            const branches = document.querySelector('.md-flow-branches');
+                            return {
+                                wrapped_sum: chunks.at(-1).offsetTop > chunks[0].offsetTop
+                                    && sum.scrollWidth <= sum.clientWidth + 1
+                                    && sum.querySelectorAll('.md-math-term').length === 40
+                                    && sum.querySelector('annotation').textContent.endsWith('x_{39} + 1)'),
+                                compact_math: !short.classList.contains('md-math-wrap'),
+                                atomic_math: atomic.querySelector('code')?.textContent.includes('W'.repeat(160))
+                                    && atomic.scrollWidth <= atomic.clientWidth + 1,
+                                record_fields: cells.length === 5 && cells[1].querySelector('.md-record-label strong')?.textContent === '概率'
+                                    && cells[1].textContent.endsWith('80%') && cells[4].textContent.endsWith('4'),
+                                column_table: getComputedStyle(document.querySelector('.md-ui-table tbody tr')).display === 'table-row',
+                                flow_layouts: !!diagram?.querySelector('.react-flow__edge') && branches?.querySelector('dd')?.textContent === '命中 → 返回',
+                            };
+                        }""")
                     frame_node = await page.query_selector("iframe.md-ui-frame")
                     if frame_node:
                         frame = await frame_node.content_frame()

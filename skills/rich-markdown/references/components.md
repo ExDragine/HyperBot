@@ -42,7 +42,7 @@
 | 名称 | 属性 | 正文 |
 | --- | --- | --- |
 | `card` | `title/description/eyebrow/footer`；`color` 默认 neutral；`variant` 默认 muted | Markdown 和嵌套组件 |
-| `section` | 可选 `title/description/eyebrow` | Markdown 和嵌套组件，无边框分区 |
+| `section` | 可选 `title/description/eyebrow`，`table_layout` 可选 columns 或 records | Markdown 和嵌套组件，无边框分区。逐条解读表格用 records，第一列作为记录名称；跨行数值对照用 columns |
 | `grid` | `columns` 为 1–3，默认 2；`gap` 为 sm/md/lg，默认 md | 短内容适合并列，窄图自动纵向排列 |
 | `row` / `column` | `gap` 为 sm/md/lg，默认 md | 自动换行的横向布局／纵向布局，不传 columns |
 

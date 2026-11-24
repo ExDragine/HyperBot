@@ -23,6 +23,7 @@ description: Compose longer QQ replies, comparisons, guides and data or media wi
 
 - **解释概念或原因**：沿因果写连贯正文，按机制与应用分区；关键判断可用单张卡片强调，关系确实需要图时加 Mermaid。
 - **比较对象**：少量对象的短概览可用一个 grid 组合卡片。共同维度多或对象多时，用 Markdown 表格对齐比较项，选择依据写在正文。
+- **逐条解读记录**：同一条记录有多个字段时，可把 Markdown 表格放进 `::section{table_layout="records"}`，第一列放记录名称。需要跨行比较数值时保留普通表格。
 - **给出方法**：使用有序列表，步骤较完整时用 `::steps`；每步包含操作、预期结果或检查方法，命令保留 Markdown 代码块。
 - **属性和引文**：需要展示属性或原文引语时，用普通 Markdown 列表或引用。
 - **数据与事件**：确有依据才使用 chart/stats/timeline 的 JSON 代码块，可以放在分区内部。没有数值时用正文或表格，不编造比例、指标或进度。

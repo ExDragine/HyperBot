@@ -207,6 +207,7 @@ export type UIQuote = {
 
 export type UISection = {
   "type": "section";
+  "table_layout"?: "columns" | "records" | null;
   "title"?: string | null;
   "description"?: string | null;
   "eyebrow"?: string | null;

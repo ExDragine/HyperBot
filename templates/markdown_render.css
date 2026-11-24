@@ -47,6 +47,11 @@ hr { margin: 32px 0; border: 0; border-top: 1px solid var(--md-border); }
 .katex { font-size: 1.1em !important; }
 .katex-display, .math-display { margin: 1.4em 0; overflow-x: auto; overflow-y: hidden; }
 .katex-html { white-space: nowrap; }
+.markdown-body .md-math-wrap:has(.katex-html > .base + .base) > .katex { font-size: max(1.1em, min(3.2vw, 32px)) !important; }
+.md-math-wrap > .katex > .katex-html { white-space: normal; text-wrap: balance; text-align: left; }
+.md-math-term { display: inline-block; width: max-content; max-width: 100%; white-space: normal; }
+.markdown-body .md-math-wrap > .katex > .katex-html > .tag { position: static; display: block; text-align: right; }
+.md-math-source { display: block; white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; }
 .math-inline, .math-display { font-family: 'KaTeX_Main', serif; }
 
 .md-rich-block { margin: 32px 0; padding: 28px; border: 1px solid var(--md-border); border-radius: var(--md-radius); background: var(--md-card); }
@@ -140,6 +145,19 @@ hr { margin: 32px 0; border: 0; border-top: 1px solid var(--md-border); }
 .md-ui-progress-track { height: 8px; border-radius: 99px; background: var(--md-muted); overflow: hidden; }
 .md-ui-progress-fill { height: 100%; border-radius: inherit; background: var(--md-primary); }
 .md-ui-table { margin: 0; table-layout: auto; }
+.md-table-records { display: block; font-variant-numeric: tabular-nums; }
+.md-table-records caption, .md-table-records tbody { display: block; }
+.md-table-records colgroup { display: none; }
+.md-table-records thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.md-table-records tbody tr { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(12em, 40%)), 1fr)); gap: 6px 18px; padding: 14px 0; border-bottom: 1px solid var(--md-border); }
+.md-table-records tbody td { min-width: 0; padding: 0; border: 0; text-align: left; font-size: clamp(20px, 3vw, 30px); }
+.md-table-records tbody td:first-child { grid-column: 1 / -1; font-size: clamp(22px, 3.4vw, 34px); font-weight: 650; }
+.md-record-label { margin-inline-end: 0.5em; color: var(--md-muted-foreground); font: 500 0.9em/1.4 var(--md-font); }
+.md-flow-branches { margin: 0; font: clamp(22px, 3.2vw, 32px)/1.45 var(--md-font); }
+.md-flow-stage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 4px 16px; padding: 14px 0; border-bottom: 1px solid var(--md-border); }
+.md-flow-stage dt { align-self: start; border-left: 3px solid var(--md-border); padding-left: 10px; font-weight: 650; }
+.md-flow-stage dd { grid-column: 2; margin: 0; }
+.md-flow-stage dd span { color: var(--md-muted-foreground); }
 .md-ui-table th:first-child, .md-ui-table td:first-child { min-width: 4.5em; }
 .md-table-weighted { table-layout: fixed; }
 .md-table-weighted th:first-child, .md-table-weighted td:first-child { min-width: 0; }
