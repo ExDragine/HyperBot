@@ -139,7 +139,8 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 - 构造函数不创建模型或连接 MCP。首轮初始化组件，`EnvConfig.REVISION` 变化后在下一轮重建。
 - QQ、用户定时任务和日报经 `FrontierAgentRuntime.run()` 调用。`chat_agent()` 保留兼容入口。
 - 使用 `EnvConfig.ADVAN_MODEL` 创建主对话模型；`assistant_agent()` 默认使用 `EnvConfig.BASIC_MODEL`，决策判断使用 `EnvConfig.DECISION_MODEL`。
-- 当模型引用的供应商 `api_mode` 为 `responses` 时，主 Agent 会传 `reasoning_effort` 和 `verbosity`；其他协议路径会跳过这些参数。
+- 在 `[models]` 中用 `advanced_reasoning_effort` 和 `basic_reasoning_effort` 分别设置主模型和辅助模型的思考强度。两项均支持 `responses` 和 `chat_completions`。辅助 Agent、文档子代理和逆地理编码共用辅助模型设置。
+- Responses 主模型的思考强度留空时沿用 `[agent].reasoning_effort`（默认 `medium`）。其他留空情况使用供应商默认值。主 Agent 在 Responses 路由下还会传入 `verbosity = "low"`。
 - 根据模型自身的 `capabilities` 判断是否保留视觉输入；不支持 vision 时会移除图片并追加“图片已省略”提示。
 - 主 Agent 默认接收当前消息以及 `[storage].query_message_numbers` 控制的最近历史，并直接持有当前会话的最近对话、聊天搜索和平台历史工具；超出窗口的前文按需调用工具获取。通用搜索和平台能力直接可用，领域工具由相应技能按需公开。两者均通过主图调用，共享模型和工具预算；`document-agent` 继承当前 backend 并仅读分析 workspace / memory 文件。
 - 文档子代理定义位于 `utils/agents/subagents/`，以声明式配置继承当前 backend，只读访问 workspace / memory 文件；不反向依赖工具注册器。
@@ -151,7 +152,8 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
   - `/skills/`: 仓库内置 `skills/`，Agent 只读
   - `/memory/{workspace_key}/`: `cache/sandbox/memory/{workspace_key}`
 - 对每个 workspace，如果缺少 memory `SOUL.md`，会创建零字节空文件；群聊按 `group_id` 共享，私聊按 `user_id` 隔离。
-- 核心 middleware 顺序是 `PII → ToolError → ModelCallLimit → ToolCallLimit → ModelRetry → Filesystem → FilesystemFileSearch → Memory`；随后按需追加 `SilentReply`（仅 frontier 档）、`ProviderToolSearch`（模型名匹配适配器声明时）、`SessionHistory`（QQ 持久轮次）和供应商的原生联网中间件，最后总是追加 `MediaInput`（每次模型调用前做媒体能力检查与预算限制）。没有独立的 `ToolRetryMiddleware` 层。
+- 核心 middleware 顺序是 `PII → ToolError → ModelCallLimit → ToolCallLimit → ModelRetry → Filesystem → FilesystemFileSearch → Memory`；随后按需追加 `SilentReply`（仅 frontier 档）、`ProviderToolSearch`（允许本地工具且当前模型路由支持时）、`SessionHistory`（QQ 持久轮次）和供应商的原生联网中间件，最后总是追加 `MediaInput`（每次模型调用前做媒体能力检查与预算限制）。没有独立的 `ToolRetryMiddleware` 层。
+- OpenAI 原生工具检索按实际端点和协议启用。官方端点上，模型目录标记为支持 Responses 和工具调用的 GPT-5.4 及后续模型默认启用，可用 `native_tool_search = false` 关闭。兼容 Responses 网关须显式设置 `native_tool_search = true`。OpenAI Chat Completions 使用普通工具绑定。
 - 主模型 SDK 重试关闭，由 ModelRetry 控制模型重试。图工具错误由 ToolError 统一处理：已确认的只读工具异常转换为脱敏的可读结果，写入或未分类工具异常结束当前轮次。平台写操作或未分类工具异常不会自动重复。
 - 主图模型/工具预算由 `[limits].agent_model_call_limit / agent_tool_call_limit` 控制；子代理保留独立预算。
 - QQ 按机器人、群号和用户号持久化会话轮次，首轮从首次触发开始。后续轮次合并同一用户两次触发之间的发言，带入近期群聊背景。每轮构建执行图，确认送达的正文与轮次原子落库。详见 `docs/agent-sessions.md`。
@@ -201,7 +203,8 @@ Prompt 加载链：
 模型路由规则：
 - 显式 `*_model_provider` 优先。
 - 所有 `*_model_provider`（包括 paint/video）均指向 `[providers.<name>]`；供应商 profile 用 `type` 管理 LangChain 适配器、用 `api_mode` 管理协议，并统一保存 base URL 和 API key。Decision 的结构化策略由可选 `structured_output_method` 指定，默认 `auto`。
-- Paint/Video 对应 provider 的 `type` 必须为 `openai`。绘图协议跟随 provider 的 `api_mode`：`chat_completions` 选择 Images API 的生成/编辑接口，`responses` 保留依赖 sub2api 重写模型的原绘图路径。Images 返回的公网 URL 经现有 PublicFetcher 校验并下载，不携带 provider 凭据。视频使用 Videos API。
+- 绘图 provider 使用 `type = "openai"`。官方端点统一走 Images API 的生成和编辑接口，独立于聊天协议。兼容网关在 `chat_completions` 下使用 Images API，在 `responses` 下使用依赖网关重写顶层模型的 `image_generation` 路径。Images API 返回的 URL 经 PublicFetcher 校验公网地址后下载，请求不携带 provider 凭据。
+- 视频仅通过支持 Videos API 的兼容网关提供。配置 `video_model` 和 `video_model_provider`，将对应的 `type = "openai"` profile 指向网关。下载上限为 20 MB，结果链接经 PublicFetcher 校验公网地址后下载。
 - 主模型为官方 DeepSeek Flash Responses 时，默认启用 `deepseek_web_search` 和 `deepseek_read_url` 服务端工具。归档日报使用这一路由收集可校验证据。详见 `docs/deepseek-web-search.md`。
 - 没有显式 provider 时，`llm_factory.py` 会根据模型名前缀推断：`deepseek*`、`gemini-*`、`claude-*`，其余走 OpenAI-compatible。
 
