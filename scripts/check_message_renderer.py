@@ -161,6 +161,7 @@ def case_checks(name, observed, width, image):
                 "responsive_grid": len(observed["gridColumns"].split()) == (2 if width == 1000 else 1),
                 "multiple_react_roots": observed["secondReady"] and observed["secondMath"],
                 "ordinary_markdown_styles": observed["markdownListStyle"] == "disc",
+                "highlighted_code": observed["highlightedCode"],
                 "shadcn_primitives": observed["cardSlots"] > 0 and observed["componentSlots"] >= 6,
             }
         )
@@ -225,7 +226,6 @@ def markdown_case_checks(name, observed, width):
     elif name == "markdown-guide":
         checks["markdown_step_commands"] = observed["stepCount"] == 3 and observed["stepCode"] == 2
         checks["markdown_step_formatting"] = observed["stepBold"] == 3
-        checks["complete_step_commands"] = observed["stepCodeFits"]
     elif name == "markdown-media":
         checks["standalone_media"] = len(observed["allMediaImages"]) == 1 and all(observed["allMediaImages"])
         checks["standalone_map"] = len(observed["allMapLayers"]) == 1 and all(observed["allMapLayers"])
@@ -292,6 +292,8 @@ def composed_source(name, case):
             ],
         }
         source += "\n普通 Markdown 列表仍保留标记：\n\n- 第一项\n- 第二项\n\n"
+        long_url = "https://example.com/" + "a" * 160
+        source += f'```python\ndef endpoint():\n    return "{long_url}"\n```\n\n'
         source += "```ui\n" + json.dumps(second, ensure_ascii=False) + "\n```\n"
     if name == "media":
         source += "\n外部模块之后的普通正文也需要保持间距。\n"
@@ -376,7 +378,8 @@ async def verify(
                             stepCount: content.querySelectorAll('.md-ui-steps > li').length,
                             stepCode: content.querySelectorAll('.md-ui-steps pre code').length,
                             stepBold: content.querySelectorAll('.md-ui-steps strong').length,
-                            stepCodeFits: [...content.querySelectorAll('.md-ui-steps pre')].every(p => p.scrollWidth <= p.clientWidth),
+                            highlightedCode: !!content.querySelector(':scope > pre > code.language-python .token'),
+                            codeBlocksFit: [...content.querySelectorAll('pre')].every(p => p.scrollWidth <= p.clientWidth),
                             allMediaImages: [...content.querySelectorAll('.md-ui-picture')].map(i => i.complete && i.naturalWidth > 100),
                             allMapLayers: mapLayers(content),
                             allFrames: content.querySelectorAll('iframe[sandbox=""]').length,
@@ -465,6 +468,7 @@ async def verify(
                     "no_render_errors": not observed["state"]["errors"] and not page_errors,
                     "no_remote_requests": not remote_requests,
                     "no_horizontal_overflow": observed["scrollWidth"] <= observed["width"],
+                    "complete_code_blocks": observed["codeBlocksFit"],
                     "alert_alignment": observed["alertAligned"],
                     "image_size": image.width == width and image.height > 600,
                     "spacing": all(gap >= 25 for gap in observed["gaps"]),

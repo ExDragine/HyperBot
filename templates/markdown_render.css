@@ -32,6 +32,8 @@ a { color: var(--md-primary); text-decoration: underline; text-underline-offset:
 code { padding: 0.14em 0.3em; border-radius: 5px; background: var(--md-muted); font: 0.9em/1.6 var(--md-mono); }
 pre { margin: 1.3em 0; padding: 22px 24px; border: 1px solid var(--md-border); border-radius: 12px; background: var(--md-secondary); color: var(--md-foreground); font: 18px/1.7 var(--md-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 pre code { padding: 0; background: transparent; color: inherit; font-size: inherit; }
+/* Prism sets both elements to white-space: pre in its language theme. */
+.markdown-body pre[class*="language-"], .markdown-body pre code[class*="language-"] { white-space: pre-wrap; overflow-wrap: anywhere; }
 blockquote { margin: 1.4em 0; padding: 4px 0 4px 24px; border-left: 3px solid var(--md-border); color: var(--md-muted-foreground); }
 blockquote > :last-child { margin-bottom: 0; }
 table { width: 100%; margin: 1.4em 0; border-collapse: collapse; font-size: 21px; line-height: 1.65; }
@@ -93,7 +95,6 @@ hr { margin: 32px 0; border: 0; border-top: 1px solid var(--md-border); }
 .md-ui-prose > :first-child { margin-top: 0; }
 .md-ui-prose > :last-child { margin-bottom: 0; }
 .md-ui-prose strong { font-weight: 650; }
-.md-ui-prose pre[class*="language-"], .md-ui-prose code[class*="language-"] { white-space: pre-wrap; overflow-wrap: anywhere; }
 .md-ui-row { display: flex; flex-wrap: wrap; align-items: flex-start; }
 .md-ui-row > * { flex: 1 1 260px; }
 .md-ui-column { display: flex; flex-direction: column; }
