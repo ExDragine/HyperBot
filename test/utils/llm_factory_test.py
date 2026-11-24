@@ -321,6 +321,8 @@ def test_openai_web_search_respects_switch_and_model_capabilities(monkeypatch):
     "model,mode,base_url,setting,expected",
     [
         ("gpt-5.4", "responses", "https://api.openai.com", None, True),
+        ("gpt-6-luna", "responses", "https://api.openai.com", None, True),
+        ("gpt-6.2-sol", "responses", "https://api.openai.com", None, True),
         ("gpt-5.4", "responses", "https://api.openai.com", False, False),
         ("gpt-5-mini", "responses", "https://api.openai.com", True, False),
         ("gpt-5.4", "chat_completions", "https://api.openai.com", True, False),
@@ -1059,3 +1061,21 @@ def test_vendor_prefixed_model_id_is_passed_through_unchanged(monkeypatch, model
     factory.create_llm(model=model)
 
     assert mock_cls.call_args.kwargs["model"] == model
+
+
+def test_openai_62_omits_temperature_and_maps_unsupported_effort(monkeypatch):
+    profile = {"type": "openai", "api_mode": "responses", "base_url": "https://api.openai.com"}
+    monkeypatch.setattr(factory.EnvConfig, "LLM_PROVIDERS", {"openai": profile})
+    client = MagicMock()
+    monkeypatch.setattr("utils.providers.openai.ChatOpenAI", client)
+
+    factory.create_llm("gpt-6.2-sol", "openai", temperature=0, reasoning_effort="none")
+    assert "temperature" not in client.call_args.kwargs
+    assert client.call_args.kwargs["reasoning_effort"] == "low"
+    assert "vision" in factory.get_model_capabilities("gpt-6.2-sol")
+    assert factory.model_supports_native_web_search("gpt-6.2-sol", "openai")
+
+    profile["base_url"] = "https://gateway.example.com/v1"
+    factory.create_llm("gpt-6.2-sol", "openai", temperature=0, reasoning_effort="none")
+    assert client.call_args.kwargs["temperature"] == 0
+    assert client.call_args.kwargs["reasoning_effort"] == "none"

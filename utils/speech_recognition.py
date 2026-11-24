@@ -1,4 +1,4 @@
-"""DeepSeek hosted speech recognition with the historical Frontier contract."""
+"""Hosted speech recognition for incoming QQ messages."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from utils.configs import EnvConfig, SpeechRecognitionConfig
 from utils.providers.deepseek.media import DeepSeekMediaError
 from utils.providers.deepseek.media import transcribe_audio as _transcribe_audio
+from utils.providers.openai import audio as openai_audio
 
 
 class SpeechRecognitionError(Exception):
@@ -33,20 +34,26 @@ async def transcribe_audio(data: bytes, *, settings: SpeechRecognitionConfig | N
     started = time.monotonic()
     try:
         async with asyncio.timeout(settings.timeout_seconds):
-            text, duration = await _transcribe_audio(
-                data, provider=settings.credentials_profile, max_seconds=settings.max_audio_seconds,
-            )
+            if settings.backend == "openai":
+                text, duration = await openai_audio.transcribe_audio(
+                    data, provider=settings.credentials_profile, model=settings.model.strip(),
+                    max_seconds=settings.max_audio_seconds,
+                )
+            else:
+                text, duration = await _transcribe_audio(
+                    data, provider=settings.credentials_profile, max_seconds=settings.max_audio_seconds,
+                )
         if len(text) > settings.max_transcript_chars:
             raise SpeechRecognitionError("transcript_limit")
         return Transcription(text, duration, time.monotonic() - started)
     except TimeoutError as exc:
         raise SpeechRecognitionError("timeout") from exc
-    except DeepSeekMediaError as exc:
+    except (DeepSeekMediaError, openai_audio.OpenAIAudioError) as exc:
         raise SpeechRecognitionError(exc.code) from exc
 
 
 async def transcribe_message_audio(text: str, audio: list[bytes]) -> tuple[str, bool]:
-    """Append DeepSeek ASR transcripts while retaining the original attachment."""
+    """Append automatic speech transcripts while retaining the original attachment."""
     settings = EnvConfig.SPEECH_RECOGNITION
     if not settings.enabled or not audio:
         return text, False
@@ -58,13 +65,13 @@ async def transcribe_message_audio(text: str, audio: list[bytes]) -> tuple[str, 
             from nonebot import logger
 
             logger.info(
-                "DeepSeek 语音识别完成 audio_seconds={:.2f} elapsed_seconds={:.2f} chars={}",
-                result.audio_seconds, result.elapsed_seconds, len(result.text),
+                "语音识别完成 backend={} audio_seconds={:.2f} elapsed_seconds={:.2f} chars={}",
+                settings.backend, result.audio_seconds, result.elapsed_seconds, len(result.text),
             )
         except SpeechRecognitionError as exc:
             from nonebot import logger
 
-            logger.warning("DeepSeek 语音识别失败 code={}", exc.code)
+            logger.warning("语音识别失败 backend={} code={}", settings.backend, exc.code)
             additions.append(f"[用户语音 {index} 识别失败，错误码：{exc.code}；可请用户改发文字]")
     if len(audio) > settings.max_audio_per_message:
         additions.append("[其余语音超出本条消息的识别数量限制，尚未识别]")

@@ -175,6 +175,7 @@ class AgentArtifact:
     name: str | None = None
     url: str | None = None
     path: str | None = None
+    caption: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -38,7 +38,8 @@ async def main():
         spec.loader.exec_module(module)
         tool = getattr(module, f"get_{name}")
         properties = tool.tool_call_schema.model_json_schema()["properties"]
-        assert set(properties) == {"prompt", "mode" if name == "paint" else "input_type"}, properties
+        expected = {"prompt", "mode", "options"} if name == "paint" else {"prompt", "input_type"}
+        assert set(properties) == expected, properties
         service_calls, limit_calls = [], []
 
         async def paint(prompt, images):

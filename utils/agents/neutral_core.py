@@ -310,6 +310,7 @@ class FrontierAgentCore:
                 name=item.name,
                 url=item.url,
                 path=item.path,
+                caption=item.caption,
             )
             for item in result.artifacts
         )

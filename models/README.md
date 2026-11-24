@@ -31,7 +31,7 @@ from models import ModelFeature, get_model, get_model_display_name, list_models
 model = get_model("openai", "gpt-6.1-sol")
 assert model is not None
 print(model.display_name)
-print(get_model_display_name("openai", "gpt-image-2"))  # OpenAI: GPT Image 2
+print(get_model_display_name("openai", "gpt-image-2"))  # GPT Image 2
 
 tool_models = list_models(feature=ModelFeature.TOOL_CALLING)
 google_previews = list_models(provider="google", status="preview")

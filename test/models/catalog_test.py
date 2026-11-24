@@ -113,7 +113,9 @@ def test_catalog_invariants() -> None:
 
             assert model["description"]["en"].strip()
             assert model["description"]["zh-CN"].strip()
-            assert "text" in model["capabilities"]["input"]
+            assert model["capabilities"]["input"]
+            if set(model["capabilities"]["api_modes"]) & {"responses", "chat_completions", "messages", "generate_content"}:
+                assert "text" in model["capabilities"]["input"]
             assert model["sources"]
             assert all(source["url"].startswith("https://") for source in model["sources"])
             assert all(urlparse(source["url"]).hostname in official_hosts[provider] for source in model["sources"])
@@ -156,8 +158,8 @@ def test_gpt_6_2_astra_has_distinct_input_and_context_limits() -> None:
 
 
 def test_get_model_display_name_uses_local_overlays_without_affecting_unknown_models() -> None:
-    assert get_model_display_name("openai", "gpt-image-2") == "OpenAI: GPT Image 2"
-    assert get_model_display_name("openai", "gateway/openai/gpt-image-2") == "OpenAI: GPT Image 2"
+    assert get_model_display_name("openai", "gpt-image-2") == "GPT Image 2"
+    assert get_model_display_name("openai", "gateway/openai/gpt-image-2") == "GPT Image 2"
     assert get_model_display_name("openai", "gpt-5.6-sol") == "GPT-5.6 Sol"
     assert get_model_display_name("private", "custom-model") == "custom-model"
 

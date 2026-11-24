@@ -20,6 +20,8 @@ class ModelInput(StrEnum):
 
 
 class ModelOutput(StrEnum):
+    CLASSIFICATION = "classification"
+    EMBEDDING = "embedding"
     TEXT = "text"
     IMAGE = "image"
     AUDIO = "audio"
@@ -40,6 +42,13 @@ class ApiMode(StrEnum):
     RESPONSES = "responses"
     MESSAGES = "messages"
     GENERATE_CONTENT = "generate_content"
+    IMAGES = "images"
+    TRANSCRIPTIONS = "transcriptions"
+    SPEECH = "speech"
+    REALTIME = "realtime"
+    LIVE = "live"
+    EMBEDDINGS = "embeddings"
+    MODERATIONS = "moderations"
 
 
 @dataclass(frozen=True, slots=True)

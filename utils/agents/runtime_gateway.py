@@ -33,6 +33,7 @@ class AgentRuntimeMedia:
     name: str | None = None
     url: str | None = None
     path: str | None = None
+    caption: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,7 +175,7 @@ def _runtime_artifact(value: object) -> AgentRuntimeMedia | None:
             return None
         return AgentRuntimeMedia(
             kind=kind, data=value.data, mime_type=value.mime_type,
-            name=value.name, url=value.url, path=value.path,
+            name=value.name, url=value.url, path=value.path, caption=value.caption,
         )
     kind = media_block_kind(value) if isinstance(value, Mapping) else None
     if kind is None:

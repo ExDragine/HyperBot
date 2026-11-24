@@ -7,24 +7,29 @@ the former local speech runtimes without changing its callers.
 from __future__ import annotations
 
 import asyncio
-import io
-import os
-import subprocess
 import tempfile
 import time
-import wave
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from utils.configs import get_provider_profile
 from utils.http_client import get_http_client
+from utils.speech_codec import (
+    SILK_HEADERS,
+    AudioCodecError,
+    decode_silk,
+)
+from utils.speech_codec import (
+    wav_duration as _audio_seconds,
+)
+from utils.speech_codec import (
+    wav_to_silk as _wav_to_silk,
+)
 
 from .constants import DEFAULT_BASE_URL
 
 _client = get_http_client("deepseek-media", timeout=600.0)
-_SILK_HEADERS = (b"\x02#!SILK_V3", b"#!SILK_V3")
-_DECODE_WORKER = Path(__file__).resolve().parents[2] / "speech_decode.py"
 
 
 class DeepSeekMediaError(Exception):
@@ -72,43 +77,21 @@ async def _raise_for_status(response: Any) -> None:
     raise DeepSeekMediaError(_error_code(response), f"DeepSeek media request failed: {status}")
 
 
-async def _decode_silk(data: bytes, target: Path, max_seconds: int) -> None:
-    source = target.with_suffix(".silk")
-    source.write_bytes(data)
-    try:
-        process = await asyncio.create_subprocess_exec(
-            os.fspath(__import__("sys").executable), os.fspath(_DECODE_WORKER),
-            os.fspath(source), os.fspath(target), str(max_seconds),
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-        )
-        _, stderr = await process.communicate()
-    except OSError as exc:
-        raise DeepSeekMediaError("audio_decode_failed") from exc
-    if process.returncode:
-        raise DeepSeekMediaError("audio_decode_failed", stderr.decode(errors="replace")[:200])
-
-
 async def _normalize_audio(data: bytes, max_seconds: int) -> tuple[bytes, str]:
     if not data:
         raise DeepSeekMediaError("empty_audio")
     with tempfile.TemporaryDirectory(prefix="frontier-deepseek-asr-") as directory:
         root = Path(directory)
-        if data.startswith(_SILK_HEADERS):
+        if data.startswith(SILK_HEADERS):
             wav = root / "input.wav"
-            await _decode_silk(data, wav, max_seconds)
+            try:
+                await decode_silk(data, wav, max_seconds)
+            except AudioCodecError as exc:
+                raise DeepSeekMediaError(exc.code) from exc
             return wav.read_bytes(), "speech.wav"
         if data.startswith(b"RIFF") or data.startswith(b"OggS"):
             return data, "speech.wav" if data.startswith(b"RIFF") else "speech.ogg"
         raise DeepSeekMediaError("unsupported_audio_format")
-
-
-def _audio_seconds(wav: bytes) -> float:
-    try:
-        with wave.open(io.BytesIO(wav), "rb") as stream:
-            return stream.getnframes() / stream.getframerate()
-    except (EOFError, OSError, ValueError, wave.Error, ZeroDivisionError) as exc:
-        raise DeepSeekMediaError("invalid_audio") from exc
 
 
 async def transcribe_audio(data: bytes, *, provider: str = "deepseek", max_seconds: int = 120) -> tuple[str, float]:
@@ -133,28 +116,6 @@ async def transcribe_audio(data: bytes, *, provider: str = "deepseek", max_secon
     return text, duration or time.monotonic() - started
 
 
-def _wav_to_silk(wav: bytes) -> bytes:
-    try:
-        import pysilk
-
-        input_stream = io.BytesIO()
-        with wave.open(io.BytesIO(wav), "rb") as source:
-            pcm = source.readframes(source.getnframes())
-            rate = source.getframerate()
-            channels = source.getnchannels()
-        if channels != 1:
-            raise DeepSeekMediaError("invalid_audio")
-        input_stream.write(pcm)
-        input_stream.seek(0)
-        output = io.BytesIO()
-        pysilk.encode(input_stream, output, rate, rate, tencent=True)
-        return output.getvalue()
-    except DeepSeekMediaError:
-        raise
-    except Exception as exc:
-        raise DeepSeekMediaError("silk_encode_failed") from exc
-
-
 async def synthesize_speech(
     text: str,
     *,
@@ -176,7 +137,10 @@ async def synthesize_speech(
     )
     await _raise_for_status(response)
     wav = bytes(response.content)
-    return wav, await asyncio.to_thread(_wav_to_silk, wav), _audio_seconds(wav)
+    try:
+        return wav, await asyncio.to_thread(_wav_to_silk, wav), _audio_seconds(wav)
+    except AudioCodecError as exc:
+        raise DeepSeekMediaError(exc.code) from exc
 
 
 async def ocr_file(

@@ -102,7 +102,7 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 | `markdown_render.py` | Markdown → 图片，使用本地 Mermaid/ECharts/KaTeX/Prism 渲染增强内容，适配 QQ 文本/图片发送 |
 | `browser_capture.py` | Playwright 截图/录屏/页面数据提取，带浏览器重启和超时处理 |
 | `paint_service.py` / `video_service.py` | 共享图片和视频生成服务，供命令和 Agent 工具复用 |
-| `speech_recognition.py` / `speech_synthesis.py` | DeepSeek 托管语音识别与合成的限额、超时和错误码封装；`get_speech` 工件自动发送 |
+| `speech_recognition.py` / `speech_synthesis.py` | DeepSeek 与 OpenAI 托管语音识别与合成的限额、超时和错误码封装；`get_speech` 工件自动发送 |
 | `speech_decode.py` | 隔离子进程中的 SILK 解码，供托管识别前转换 QQ 语音 |
 | `milky_tools.py` | Milky API 参数解析、路径/URL/base64 输入处理、结果格式化 |
 | `http_client.py` | 命名 httpx2 AsyncClient 注册表，统一关闭生命周期 |
@@ -196,9 +196,9 @@ Prompt 加载链：
 
 `env.toml.example` 是快速启动模板，按需覆盖的字段见 `docs/configuration.md` 和 `utils/configs.py`。仅接受显式 `config_version = 2`，旧配置分区、provider 别名、`use_responses_api` 和绘图尺寸迁移已移除。代码中不要硬编码模型名、provider、base URL 或 API key，使用 `EnvConfig`。
 
-`[speech_recognition]` 与 `[speech_synthesis]` 默认关闭，启用后调用 DeepSeek 托管接口，`credentials_profile` 指向提供密钥的
-供应商 profile。识别结果标记为用户语音转写后进入 Agent；原始音频保留为附件，避免重复内联给主模型。
-配置与限制见 `docs/deepseek-media.md`。
+`[speech_recognition]` 与 `[speech_synthesis]` 默认关闭，`backend` 可选 DeepSeek 或 OpenAI，`credentials_profile` 指向供应商 profile。
+识别结果作为用户语音转写进入 Agent，原始音频保留为附件。OpenAI 默认通过 Realtime 合成语音，QQ 投递时显示 AI 合成标签。
+配置与调用入口见 `docs/openai-platform.md` 和 `docs/deepseek-media.md`。
 
 模型路由规则：
 - 显式 `*_model_provider` 优先。

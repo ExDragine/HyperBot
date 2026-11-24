@@ -6,6 +6,7 @@ import wave
 import pytest
 
 from utils.providers.deepseek import media as deepseek_media
+from utils.speech_codec import DECODE_WORKER
 
 
 class _Response:
@@ -89,7 +90,7 @@ async def test_ocr_posts_file_and_purpose(monkeypatch):
 
 
 def test_silk_decode_worker_exists():
-    assert deepseek_media._DECODE_WORKER.is_file()
+    assert DECODE_WORKER.is_file()
 
 
 def test_other_vendor_key_is_not_sent_to_the_default_deepseek_host(monkeypatch):

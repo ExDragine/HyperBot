@@ -554,6 +554,7 @@ def qq_artifact_messages(artifacts: Sequence[AgentArtifact]):
     from utils.alconna import UniMessage
 
     messages = []
+    media_builder = {"image": UniMessage.image, "audio": UniMessage.audio, "video": UniMessage.video}
     for artifact in artifacts:
         source: dict[str, object] = {}
         if artifact.data:
@@ -565,13 +566,11 @@ def qq_artifact_messages(artifacts: Sequence[AgentArtifact]):
         else:
             raise ValueError("empty_artifact")
 
+        if artifact.caption:
+            messages.append(UniMessage.text(artifact.caption))
         media_kwargs = {"mimetype": artifact.mime_type} if artifact.mime_type else {}
-        if artifact.kind == "image":
-            messages.append(UniMessage.image(**source, **media_kwargs))
-        elif artifact.kind == "audio":
-            messages.append(UniMessage.audio(**source, **media_kwargs))
-        elif artifact.kind == "video":
-            messages.append(UniMessage.video(**source, **media_kwargs))
+        if build_media := media_builder.get(artifact.kind):
+            messages.append(build_media(**source, **media_kwargs))
         elif artifact.kind == "file":
             kwargs = {**source, **media_kwargs}
             if artifact.name:

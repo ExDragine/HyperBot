@@ -4,9 +4,9 @@ import math
 from collections import defaultdict, deque
 from dataclasses import dataclass
 
-from utils.providers.openai.images import paint as paint
+from utils.providers.openai.images import ImageOptionError, ImageOptions, paint
 
-__all__ = ["PaintRateLimitResult", "PaintRateLimiter", "paint"]
+__all__ = ["ImageOptionError", "ImageOptions", "PaintRateLimitResult", "PaintRateLimiter", "paint"]
 
 
 @dataclass(frozen=True)

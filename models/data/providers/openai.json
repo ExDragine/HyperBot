@@ -51,6 +51,51 @@
       ]
     },
     {
+      "id": "gpt-6.2-sol",
+      "display_name": "GPT-6.2 Sol",
+      "description": {
+        "en": "A general-purpose reasoning model for coding and agent workflows. Tool calling requires Responses.",
+        "zh-CN": "面向编程和智能体工作流的通用推理模型。工具调用需要 Responses API。"
+      },
+      "capabilities": {
+        "input": [
+          "text",
+          "image",
+          "file"
+        ],
+        "output": [
+          "text"
+        ],
+        "features": [
+          "reasoning",
+          "tool_calling",
+          "structured_output",
+          "web_search",
+          "image_generation"
+        ],
+        "api_modes": [
+          "responses",
+          "chat_completions"
+        ]
+      },
+      "context_window": 1050000,
+      "max_output_tokens": 128000,
+      "knowledge_cutoff": "2026-06",
+      "released_at": "2026-11-17",
+      "status": "active",
+      "sources": [
+        {
+          "url": "https://developers.openai.com/api/docs/models/gpt-6.2-sol",
+          "verified_at": "2026-11-24"
+        },
+        {
+          "url": "https://developers.openai.com/api/docs/guides/file-inputs",
+          "verified_at": "2026-11-24"
+        }
+      ],
+      "max_input_tokens": 922000
+    },
+    {
       "id": "gpt-6.1-terra",
       "display_name": "GPT-6.1 Terra",
       "description": {
@@ -678,7 +723,7 @@
       "max_output_tokens": 128000,
       "knowledge_cutoff": "2025-08",
       "released_at": "2026-03-17",
-      "status": "active",
+      "status": "deprecated",
       "sources": [
         {
           "url": "https://developers.openai.com/api/docs/models/gpt-5.4-nano",
@@ -691,6 +736,447 @@
         {
           "url": "https://developers.openai.com/api/docs/deprecations",
           "verified_at": "2026-09-17"
+        },
+        {
+          "url": "https://developers.openai.com/api/docs/deprecations",
+          "verified_at": "2026-11-24"
+        }
+      ]
+    },
+    {
+      "id": "gpt-image-2.6-sunburst",
+      "display_name": "GPT-Image-2.6 Sunburst",
+      "description": {
+        "en": "Image generation and precise editing for detailed visual work.",
+        "zh-CN": "支持细节构图和精细编辑的图像生成模型。"
+      },
+      "capabilities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "image"
+        ],
+        "features": [
+          "image_generation"
+        ],
+        "api_modes": [
+          "images"
+        ]
+      },
+      "context_window": null,
+      "max_output_tokens": null,
+      "knowledge_cutoff": null,
+      "released_at": "2026-11-04",
+      "status": "active",
+      "sources": [
+        {
+          "url": "https://developers.openai.com/api/docs/models/gpt-image-2.6-sunburst",
+          "verified_at": "2026-11-24"
+        }
+      ]
+    },
+    {
+      "id": "gpt-image-2.6-flare",
+      "display_name": "GPT-Image-2.6 Flare",
+      "description": {
+        "en": "Low-latency image generation and editing.",
+        "zh-CN": "低延迟图像生成和编辑模型。"
+      },
+      "capabilities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "image"
+        ],
+        "features": [
+          "image_generation"
+        ],
+        "api_modes": [
+          "images"
+        ]
+      },
+      "context_window": null,
+      "max_output_tokens": null,
+      "knowledge_cutoff": null,
+      "released_at": "2026-11-04",
+      "status": "active",
+      "sources": [
+        {
+          "url": "https://developers.openai.com/api/docs/models/gpt-image-2.6-flare",
+          "verified_at": "2026-11-24"
+        }
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst",
+      "display_name": "GPT-Image-2.5 Sunburst",
+      "description": {
+        "en": "Image generation and editing focused on precision.",
+        "zh-CN": "侧重编辑精度的图像生成模型。"
+      },
+      "capabilities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "image"
+        ],
+        "features": [
+          "image_generation"
+        ],
+        "api_modes": [
+          "images"
+        ]
+      },
+      "context_window": null,
+      "max_output_tokens": null,
+      "knowledge_cutoff": null,
+      "released_at": "2026-09-08",
+      "status": "active",
+      "sources": [
+        {
+          "url": "https://developers.openai.com/api/docs/models/gpt-image-2.5-sunburst",
+          "verified_at": "2026-11-24"
+        }
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare",
+      "display_name": "GPT-Image-2.5 Flare",
+      "description": {
+        "en": "Image generation and editing for rapid iteration.",
+        "zh-CN": "支持快速迭代的图像生成和编辑模型。"
+      },
+      "capabilities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "image"
+        ],
+        "features": [
+          "image_generation"
+        ],
+        "api_modes": [
+          "images"
+        ]
+      },
+      "context_window": null,
+      "max_output_tokens": null,
+      "knowledge_cutoff": null,
+      "released_at": "2026-09-08",
+      "status": "active",
+      "sources": [
+        {
+          "url": "https://developers.openai.com/api/docs/models/gpt-image-2.5-flare",
+          "verified_at": "2026-11-24"
+        }
+      ]
+    },
+    {
+      "id": "gpt-image-2",
+      "display_name": "GPT Image 2",
+      "description": {
+        "en": "Generates and edits raster images from text and images.",
+        "zh-CN": "根据文字和参考图生成或编辑位图。"
+      },
+      "capabilities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "image"
+        ],
+        "features": [
+          "image_generation"
+        ],
+        "api_modes": [
+          "images"
+        ]
+      },
+      "context_window": null,
+      "max_output_tokens": null,
+      "knowledge_cutoff": null,
+      "released_at": "2026-04-21",
+      "status": "deprecated",
+      "sources": [
+        {
+          "url": "https://developers.openai.com/api/docs/models/gpt-image-2",
+          "verified_at": "2026-11-24"
+        },
+        {
+          "url": "https://developers.openai.com/api/docs/deprecations",
+          "verified_at": "2026-11-24"
+        }
+      ]
+    },
+    {
+      "id": "gpt-transcribe",
+      "display_name": "GPT-Transcribe",
+      "description": {
+        "en": "Transcribes recorded speech in its original language.",
+        "zh-CN": "将录音转写为原语言文本。"
+      },
+      "capabilities": {
+        "input": [
+          "audio"
+        ],
+        "output": [
+          "text"
+        ],
+        "features": [],
+        "api_modes": [
+          "transcriptions"
+        ]
+      },
+      "context_window": null,
+      "max_output_tokens": null,
+      "knowledge_cutoff": null,
+      "released_at": null,
+      "status": "active",
+      "sources": [
+        {
+          "url": "https://developers.openai.com/api/docs/models/gpt-transcribe",
+          "verified_at": "2026-11-24"
+        }
+      ]
+    },
+    {
+      "id": "gpt-realtime-2.1",
+      "display_name": "GPT-Realtime-2.1",
+      "description": {
+        "en": "Realtime speech model with reasoning and tool use.",
+        "zh-CN": "支持推理和工具调用的实时语音模型。"
+      },
+      "capabilities": {
+        "input": [
+          "text",
+          "audio",
+          "image"
+        ],
+        "output": [
+          "text",
+          "audio"
+        ],
+        "features": [
+          "reasoning",
+          "tool_calling"
+        ],
+        "api_modes": [
+          "realtime"
+        ]
+      },
+      "context_window": 128000,
+      "max_output_tokens": 32000,
+      "knowledge_cutoff": "2024-09",
+      "released_at": null,
+      "status": "active",
+      "sources": [
+        {
+          "url": "https://developers.openai.com/api/docs/models/gpt-realtime-2.1",
+          "verified_at": "2026-11-24"
+        }
+      ]
+    },
+    {
+      "id": "gpt-realtime-2.1-mini",
+      "display_name": "GPT-Realtime-2.1 mini",
+      "description": {
+        "en": "Low-latency realtime voice model for conversation and speech generation.",
+        "zh-CN": "用于实时对话和语音生成的低延迟模型。"
+      },
+      "capabilities": {
+        "input": [
+          "text",
+          "audio",
+          "image"
+        ],
+        "output": [
+          "text",
+          "audio"
+        ],
+        "features": [
+          "reasoning",
+          "tool_calling"
+        ],
+        "api_modes": [
+          "realtime"
+        ]
+      },
+      "context_window": 128000,
+      "max_output_tokens": 32000,
+      "knowledge_cutoff": "2024-09",
+      "released_at": null,
+      "status": "active",
+      "sources": [
+        {
+          "url": "https://developers.openai.com/api/docs/models/gpt-realtime-2.1-mini",
+          "verified_at": "2026-11-24"
+        }
+      ]
+    },
+    {
+      "id": "gpt-live-1.1",
+      "display_name": "GPT-Live-1.1",
+      "description": {
+        "en": "Full-duplex voice model for multilingual conversation.",
+        "zh-CN": "用于多语言对话的全双工语音模型。"
+      },
+      "capabilities": {
+        "input": [
+          "text",
+          "audio"
+        ],
+        "output": [
+          "audio",
+          "text"
+        ],
+        "features": [],
+        "api_modes": [
+          "live"
+        ]
+      },
+      "context_window": null,
+      "max_output_tokens": null,
+      "knowledge_cutoff": null,
+      "released_at": "2026-11-19",
+      "status": "active",
+      "sources": [
+        {
+          "url": "https://developers.openai.com/api/docs/models/gpt-live-1.1",
+          "verified_at": "2026-11-24"
+        }
+      ]
+    },
+    {
+      "id": "gpt-4o-mini-tts",
+      "display_name": "GPT-4o mini TTS",
+      "description": {
+        "en": "Legacy file-based text-to-speech model scheduled to shut down on January 6, 2027.",
+        "zh-CN": "旧版文件语音合成模型，计划于 2027 年 1 月 6 日停用。"
+      },
+      "capabilities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "audio"
+        ],
+        "features": [],
+        "api_modes": [
+          "speech"
+        ]
+      },
+      "context_window": null,
+      "max_output_tokens": null,
+      "knowledge_cutoff": null,
+      "released_at": null,
+      "status": "deprecated",
+      "sources": [
+        {
+          "url": "https://developers.openai.com/api/docs/guides/text-to-speech",
+          "verified_at": "2026-11-24"
+        }
+      ]
+    },
+    {
+      "id": "text-embedding-3-small",
+      "display_name": "Text Embedding 3 Small",
+      "description": {
+        "en": "Compact text embeddings for semantic retrieval.",
+        "zh-CN": "用于语义检索的小型文本嵌入模型。"
+      },
+      "capabilities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "embedding"
+        ],
+        "features": [],
+        "api_modes": [
+          "embeddings"
+        ]
+      },
+      "context_window": null,
+      "max_output_tokens": null,
+      "knowledge_cutoff": null,
+      "released_at": null,
+      "status": "active",
+      "sources": [
+        {
+          "url": "https://developers.openai.com/api/docs/models/text-embedding-3-small",
+          "verified_at": "2026-11-24"
+        }
+      ]
+    },
+    {
+      "id": "text-embedding-3-large",
+      "display_name": "Text Embedding 3 Large",
+      "description": {
+        "en": "Multilingual text embeddings for semantic retrieval.",
+        "zh-CN": "用于语义检索的多语言文本嵌入模型。"
+      },
+      "capabilities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "embedding"
+        ],
+        "features": [],
+        "api_modes": [
+          "embeddings"
+        ]
+      },
+      "context_window": null,
+      "max_output_tokens": null,
+      "knowledge_cutoff": null,
+      "released_at": null,
+      "status": "active",
+      "sources": [
+        {
+          "url": "https://developers.openai.com/api/docs/models/text-embedding-3-large",
+          "verified_at": "2026-11-24"
+        }
+      ]
+    },
+    {
+      "id": "omni-moderation-latest",
+      "display_name": "Omni Moderation",
+      "description": {
+        "en": "Classifies text and images for content moderation.",
+        "zh-CN": "对文本和图像进行内容审核分类。"
+      },
+      "capabilities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "classification"
+        ],
+        "features": [],
+        "api_modes": [
+          "moderations"
+        ]
+      },
+      "context_window": null,
+      "max_output_tokens": null,
+      "knowledge_cutoff": null,
+      "released_at": null,
+      "status": "active",
+      "sources": [
+        {
+          "url": "https://developers.openai.com/api/docs/models/omni-moderation-latest",
+          "verified_at": "2026-11-24"
         }
       ]
     }

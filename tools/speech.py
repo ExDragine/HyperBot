@@ -1,4 +1,4 @@
-"""DeepSeek speech synthesis with automatically delivered QQ voice artifacts."""
+"""Speech synthesis with automatically delivered QQ voice artifacts."""
 
 import time
 from typing import cast
@@ -9,6 +9,7 @@ from langchain_core.tools import tool
 from nonebot import logger
 
 from utils.agent_context import FrontierRuntimeContext
+from utils.agent_protocol import AgentArtifact
 from utils.alconna import UniMessage
 from utils.configs import EnvConfig
 from utils.media_access import MEDIA_ACCESS_DENIED, has_media_tool_permission
@@ -26,8 +27,8 @@ async def get_speech(
     text: str,
     config: RunnableConfig = _DEFAULT_CONFIG,
     runtime: ToolRuntime[FrontierRuntimeContext, dict] = _DEFAULT_RUNTIME,
-) -> tuple[str, UniMessage | None]:
-    """将文字转换为 DeepSeek 合成的语音，仅在用户明确要求语音或朗读时调用。
+) -> tuple[str, AgentArtifact | UniMessage | None]:
+    """将文字转换为 合成语音，仅在用户明确要求语音或朗读时调用。
 
     Args:
         text: 要朗读的原文，默认最多 300 字；不要包含排版标记、链接或过程说明。
@@ -38,7 +39,7 @@ async def get_speech(
     """
     settings = EnvConfig.SPEECH_SYNTHESIS
     if not settings.enabled:
-        return "DeepSeek 语音合成未启用", None
+        return "语音合成未启用", None
     if not has_media_tool_permission(config, runtime, policy=EnvConfig):
         return MEDIA_ACCESS_DENIED, None
     context = getattr(runtime, "context", None)
@@ -54,12 +55,18 @@ async def get_speech(
     try:
         result = await synthesize_speech(text, settings=settings)
     except SpeechSynthesisError as exc:
-        logger.warning("DeepSeek 语音合成失败 code={}", exc.code)
+        logger.warning("语音合成失败 backend={} code={}", settings.backend, exc.code)
         return f"语音生成失败，错误码：{exc.code}；可改用文字回复。", None
     logger.info(
-        "DeepSeek 语音合成完成 audio_seconds={:.2f} elapsed_seconds={:.2f} chars={}",
+        "语音合成完成 backend={} audio_seconds={:.2f} elapsed_seconds={:.2f} chars={}",
+        settings.backend,
         result.audio_seconds,
         result.elapsed_seconds,
         len(text),
     )
-    return "语音已加入本轮回复，将自动发送，无需再调用 send_voice 或 send_audio。", UniMessage.voice(raw=result.silk)
+    artifact = (
+        AgentArtifact(kind="audio", data=result.silk, mime_type="audio/silk", caption="AI 合成语音")
+        if settings.backend == "openai"
+        else UniMessage.voice(raw=result.silk)
+    )
+    return "语音已加入本轮回复，将自动发送，无需再调用 send_voice 或 send_audio。", artifact

@@ -36,8 +36,8 @@ HyperBot 的应用配置在 `env.toml`。从 [完整配置示例](../env.toml.ex
 | `[features]` | 对话、绘画和视频功能开关 | 本页 |
 | `[agent]` | 长文转图阈值、Fake-IP 媒体回退 | [消息媒体网络](message-media-network.md) |
 | `[search]` | 独立网页搜索和读取工具 | [DeepSeek 联网](deepseek-web-search.md) |
-| `[speech_recognition]` | DeepSeek 云端语音识别 | [DeepSeek 媒体能力](deepseek-media.md) |
-| `[speech_synthesis]` | DeepSeek 云端语音合成 | [DeepSeek 媒体能力](deepseek-media.md) |
+| `[speech_recognition]` | DeepSeek 或 OpenAI 云端语音识别 | [OpenAI 配置](openai-platform.md) · [DeepSeek 配置](deepseek-media.md) |
+| `[speech_synthesis]` | DeepSeek 或 OpenAI 云端语音合成 | [OpenAI 配置](openai-platform.md) · [DeepSeek 配置](deepseek-media.md) |
 | `[agent_policy]` / `[auto_reply_policy]` / `[paint_policy]` | 访问名单与主动回复、绘画权限 | 本页 |
 | `[limits]` | 调用预算、超时、限流 | [Agent 执行控制](agent-execution-controls.md) |
 | `[sessions]` | QQ 持久会话的历史预算 | [QQ 持久会话](agent-sessions.md) |
@@ -107,6 +107,7 @@ DeepSeek 可分别配置为 `deepseek + chat_completions`、`openai + responses`
 - 供应商 profile 名称必须存在；未声明的内置名称按上表默认值可用，未知名称报错。
 - `models/` 模型目录为命中的模型卡注入上下文窗口、输出上限和能力元数据；目录外模型按未知模型降级。
 - 绘图使用 `type = "openai"`。官方端点通过 Images API 生成和编辑图片，独立于聊天协议。兼容网关按 `api_mode` 选择 Images API 或可重写顶层模型的 Responses `image_generation` 接口。
+- 官方 GPT-Image-2.6 支持通过 Agent 工具选择 GIF、SVG 和复杂度，GPT-Image-2.5 与 2.6 支持标注编辑。见 [OpenAI 媒体和平台接口](openai-platform.md)。
 - 视频仅供支持 Videos API 的兼容网关使用。配置 `video_model` 和 `video_model_provider`，并将该 `type = "openai"` profile 指向网关。下载限制为 20 MB，响应中的结果链接通过公网地址校验后下载。 [官方停用公告](https://developers.openai.com/api/docs/deprecations)
 - 每日新闻使用 `advanced_model` / `advanced_model_provider` 对应的主模型。归档预览和定时日报需要启用服务端联网的官方 DeepSeek Flash，可走 Chat Completions、Responses 或 Anthropic Messages。旧日报模型字段仍可解析。 [新闻插件运维](news-plugin.md)
 
@@ -130,11 +131,11 @@ DeepSeek 可分别配置为 `deepseek + chat_completions`、`openai + responses`
 
 ### `[speech_recognition]`
 
-默认关闭。启用后网关通过才调用 DeepSeek `/v1/tools/asr`，API key 从 `[providers.<provider>]` 读取。QQ SILK 会在本地转换为 DeepSeek 支持的 WAV，原始音频仍保存为附件，转写文本进入历史。`max_audio_seconds`、`max_audio_bytes`、`max_audio_per_message` 和 `max_transcript_chars` 继续限制单条消息。
+语音识别默认关闭。启用后可选 `backend = "deepseek"` 或 `"openai"`，后者默认使用 `gpt-transcribe`。识别后的文字作为用户语音转写进入 Agent，原始音频继续保留为附件。网关通过后才调用转写 API。可设置 `timeout_seconds`、`max_audio_seconds`、`max_audio_bytes`、`max_audio_per_message` 和 `max_transcript_chars`。见 [OpenAI 配置](openai-platform.md#qq-语音) 与 [DeepSeek 配置](deepseek-media.md)。
 
 ### `[speech_synthesis]`
 
-默认关闭。启用后调用 DeepSeek `/v1/tools/tts`，`voice_id` 可选 `stella` 或 `tide`。服务端返回 WAV，系统转换为 QQ 所需的 SILK 语音工件。`max_text_chars` 默认 300，`max_audio_seconds` 默认 60，`timeout_seconds` 默认 180。`get_speech` 共用 `[paint_policy]` 权限，每个用户在 `rate_limit_window_seconds`（默认 600 秒）内可请求 `rate_limit_max_requests` 次（默认 3 次）。
+语音合成默认关闭，由 `get_speech` 投递 QQ 语音工件。DeepSeek 音色可选 `stella`（默认）或 `tide`。OpenAI 默认通过 Realtime 使用 `gpt-realtime-2.1-mini` 和 `marin`。`max_text_chars` 默认 300，`max_audio_seconds` 默认 60，`timeout_seconds` 默认 180。工具共用 `[paint_policy]` 权限，每个用户在 `rate_limit_window_seconds`（默认 600 秒）内可请求 `rate_limit_max_requests` 次（默认 3 次）。见 [OpenAI 配置](openai-platform.md#qq-语音) 与 [DeepSeek 配置](deepseek-media.md)。
 
 ### `[document_parsing]` 与 `[search]`
 

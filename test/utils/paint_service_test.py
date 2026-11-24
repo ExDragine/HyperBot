@@ -363,3 +363,34 @@ async def test_images_api_always_closes_client(monkeypatch, error):
     else:
         assert await paint_service.paint("a fox") is None
     assert calls["closed"] is True
+
+
+@pytest.mark.asyncio
+async def test_official_image_26_native_gif_and_svg(monkeypatch):
+    out = io.BytesIO()
+    Image.new("RGB", (2, 2)).save(out, format="GIF")
+    gif = out.getvalue()
+    calls = _install_images_client(monkeypatch, result={"data": [{"b64_json": base64.b64encode(gif).decode()}]})
+    _set_paint_config(monkeypatch, base_url="https://api.openai.com/v1")
+    monkeypatch.setattr(images.EnvConfig, "PAINT_MODEL", "gpt-image-2.6-flare")
+    options = images.ImageOptions(output_format="gif", complexity="low", frame_count=4, frame_duration_ms=300)
+    assert await paint_service.paint("animate", options=options) == gif
+    assert {key: calls["generate"][key] for key in ("output_format", "complexity", "frame_count", "frame_duration_ms")} == {
+        "output_format": "gif", "complexity": "low", "frame_count": 4, "frame_duration_ms": 300,
+    }
+
+    svg = images.ImageOptions(output_format="svg")
+    with pytest.raises(images.ImageOptionError, match="SVG"):
+        await paint_service.paint("edit", [_tiny_png_bytes()], options=svg)
+    assert "edit" not in calls
+
+
+@pytest.mark.asyncio
+async def test_official_image_markup_is_a_separate_upload(monkeypatch):
+    png = _tiny_png_bytes()
+    calls = _install_images_client(monkeypatch, result={"data": [{"b64_json": base64.b64encode(png).decode()}]})
+    _set_paint_config(monkeypatch, base_url="https://api.openai.com/v1")
+    monkeypatch.setattr(images.EnvConfig, "PAINT_MODEL", "gpt-image-2.5-sunburst")
+    assert await paint_service.paint("edit the marked area", [png, png], options=images.ImageOptions(use_markup=True)) == png
+    assert len(calls["edit"]["image"]) == 1
+    assert calls["edit"]["markup"][0] == "reference-2.png"

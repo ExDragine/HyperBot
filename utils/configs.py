@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Literal
 
 import dotenv
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from utils.event_policy import EventConfig
 from utils.providers import adapter_protocol, default_profiles, infer_adapter, validate_profile_fields
@@ -141,11 +141,28 @@ class DocumentParsingConfig(_FrozenConfig):
     timeout_seconds: float = Field(default=180, gt=0, le=600)
 
 
-class SpeechRecognitionConfig(_FrozenConfig):
-    """DeepSeek hosted speech recognition settings."""
+class _SpeechConfig(_FrozenConfig):
+    openai_default_model: ClassVar[str]
 
     enabled: bool = False
-    credentials_profile: str = "deepseek"
+    backend: Literal["deepseek", "openai"] = "deepseek"
+    credentials_profile: str = Field(default="deepseek", min_length=1)
+    model: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_openai_profile(cls, values: Any) -> Any:
+        if isinstance(values, Mapping) and values.get("backend") == "openai":
+            model = values.get("model", "")
+            if isinstance(model, str) and not model.strip():
+                model = cls.openai_default_model
+            return {"credentials_profile": "openai", **values, "model": model}
+        return values
+
+
+class SpeechRecognitionConfig(_SpeechConfig):
+    openai_default_model: ClassVar[str] = "gpt-transcribe"
+
     timeout_seconds: float = Field(default=120, gt=0, le=600)
     max_audio_seconds: int = Field(default=120, ge=1, le=600)
     max_audio_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, le=50 * 1024 * 1024)
@@ -153,12 +170,26 @@ class SpeechRecognitionConfig(_FrozenConfig):
     max_transcript_chars: int = Field(default=8000, ge=1, le=20000)
 
 
-class SpeechSynthesisConfig(_FrozenConfig):
-    """DeepSeek hosted speech synthesis settings."""
+class SpeechSynthesisConfig(_SpeechConfig):
+    openai_default_model: ClassVar[str] = "gpt-realtime-2.1-mini"
 
-    enabled: bool = False
-    credentials_profile: str = "deepseek"
-    voice_id: Literal["stella", "tide"] = "stella"
+    voice_id: str = Field(default="stella", min_length=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_openai_voice(cls, values: Any) -> Any:
+        if isinstance(values, Mapping) and values.get("backend") == "openai":
+            model = str(values.get("model", "")).strip()
+            voice = "marin" if not model or model.startswith("gpt-realtime-") else "alloy"
+            return {"voice_id": voice, **values}
+        return values
+
+    @model_validator(mode="after")
+    def validate_voice(self):
+        if self.backend == "deepseek" and self.voice_id not in {"stella", "tide"}:
+            raise ValueError("DeepSeek voice_id 必须为 stella 或 tide")
+        return self
+
     timeout_seconds: float = Field(default=180, gt=0, le=600)
     max_text_chars: int = Field(default=300, ge=1, le=2000)
     max_audio_seconds: int = Field(default=60, ge=1, le=120)

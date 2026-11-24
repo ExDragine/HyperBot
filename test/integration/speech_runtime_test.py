@@ -38,7 +38,7 @@ class Model(FakeMessagesListChatModel):
 
 async def main():
     EnvConfig.ADVAN_MODEL = 'contract-model'
-    EnvConfig.SPEECH_SYNTHESIS = SpeechSynthesisConfig(enabled=True)
+    EnvConfig.SPEECH_SYNTHESIS = SpeechSynthesisConfig(enabled=True, backend='openai')
     EnvConfig.PAINT_WHITELIST_MODE = False
     EnvConfig.PAINT_BLACKLIST_PERSON_LIST = []
     EnvConfig.PAINT_BLACKLIST_GROUP_LIST = []
@@ -66,6 +66,11 @@ async def main():
     assert result['status'] == 'success' and len(result['artifacts']) == 1, result
     artifact = result['artifacts'][0]
     assert artifact.kind == 'audio' and artifact.data == b'\x02#!SILK_V3voice', artifact
+    from plugins.agent.adapters.qq import qq_artifact_messages
+    from utils.agents.runtime_gateway import _runtime_artifacts
+    assert _runtime_artifacts([artifact])[0].caption == 'AI 合成语音'
+    messages = qq_artifact_messages([artifact])
+    assert len(messages) == 2 and str(messages[0]) == 'AI 合成语音', messages
     assert 'torch' not in sys.modules and 'onnxruntime' not in sys.modules
 
 asyncio.run(main())
