@@ -79,10 +79,6 @@ def test_env_config_defaults(monkeypatch):
     assert EnvConfig.MAX_INLINE_IMAGES == 4
     assert EnvConfig.MAX_INLINE_MEDIA_BYTES == 20 * 1024 * 1024
     assert EnvConfig.QQ_TEXT_CANARY_ENABLED is False
-    assert EnvConfig.LAYA_CANDIDATE_ENABLED is False
-    assert EnvConfig.LAYA_CANDIDATE_MODEL == "auto"
-    assert EnvConfig.LAYA_CANDIDATE_DEVICE == "cpu"
-    assert EnvConfig.LAYA_CANDIDATE_THRESHOLD == 0.5
     assert EnvConfig.AGENT_AUTO_REPLY_WHITELIST_MODE is False
     assert EnvConfig.MESSAGE_IMAGE_TEXT_THRESHOLD == 500
     assert EnvConfig.MESSAGE_MEDIA_FAKE_IP_FALLBACK is True
@@ -130,12 +126,7 @@ def test_env_config_reload_updates_runtime_sections():
             "blacklist_group_list": [1002],
         },
         "storage": {"image_enabled": False, "image_ttl_days": 9, "image_auto_cleanup": False},
-        "features": {
-            "qq_text_canary_enabled": True,
-            "laya_candidate_enabled": True,
-            "laya_candidate_model": "multilingual",
-            "laya_candidate_threshold": 0.2,
-        },
+        "features": {"qq_text_canary_enabled": True},
         "models": {"signal_model_provider": "deepseek_responses"},
     })
     assert EnvConfig.REVISION == before + 1
@@ -143,9 +134,6 @@ def test_env_config_reload_updates_runtime_sections():
     assert EnvConfig.MEDIA_TTL_DAYS == EnvConfig.IMAGE_TTL_DAYS == 9
     assert EnvConfig.IMAGE_AUTO_CLEANUP is False
     assert EnvConfig.QQ_TEXT_CANARY_ENABLED is True
-    assert EnvConfig.LAYA_CANDIDATE_ENABLED is True
-    assert EnvConfig.LAYA_CANDIDATE_MODEL == "multilingual"
-    assert EnvConfig.LAYA_CANDIDATE_THRESHOLD == 0.2
     assert EnvConfig.AGENT_AUTO_REPLY_WHITELIST_MODE is True
     assert EnvConfig.AGENT_AUTO_REPLY_WHITELIST_GROUP_LIST == [1001]
     assert EnvConfig.AGENT_AUTO_REPLY_BLACKLIST_GROUP_LIST == [1002]
@@ -157,8 +145,25 @@ def test_env_config_reload_updates_runtime_sections():
     assert EnvConfig.AGENT_AUTO_REPLY_BLACKLIST_GROUP_LIST == []
     assert EnvConfig.SIGNAL_MODEL_PROVIDER == "deepseek"
     assert EnvConfig.QQ_TEXT_CANARY_ENABLED is False
-    assert EnvConfig.LAYA_CANDIDATE_ENABLED is False
-    assert EnvConfig.LAYA_CANDIDATE_MODEL == "auto"
+
+
+def test_removed_laya_settings_are_ignored_in_existing_config():
+    from utils.configs import parse_config
+
+    current = {"config_version": 2, "features": {"agent_enabled": False}}
+    legacy = {
+        **current,
+        "features": {
+            **current["features"],
+            "laya_candidate_enabled": True,
+            "laya_candidate_model": "multilingual",
+            "laya_candidate_device": "cpu",
+            "laya_candidate_base_url": "https://example.com",
+            "laya_candidate_threshold": 0.2,
+            "laya_candidate_timeout_seconds": 3,
+        },
+    }
+    assert parse_config(legacy) == parse_config(current)
 
 
 def test_decision_model_fields_are_canonical_and_old_aliases_follow():

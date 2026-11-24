@@ -18,6 +18,13 @@ _tools_dir = Path(__file__).resolve().parents[1] / "tools"
 _collection_env = pytest.StashKey[tuple[pytest.MonkeyPatch, tempfile.TemporaryDirectory]]()
 
 
+@pytest.fixture
+def offline_agent_eval(monkeypatch):
+    monkeypatch.setenv("LANGSMITH_TRACING", "false")
+    monkeypatch.setenv("LANGCHAIN_TRACING_V2", "false")
+    monkeypatch.setenv("PYTHON_DOTENV_DISABLED", "1")
+
+
 def pytest_configure(config):
     try:
         from nonebug import NONEBOT_INIT_KWARGS

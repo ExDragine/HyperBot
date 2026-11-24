@@ -24,40 +24,6 @@ class DummyCompositeBackend:
         self.artifacts_root = kw.get("artifacts_root", "/")
 
 
-class DummyModel:
-    device = "cpu"
-
-    @classmethod
-    def from_pretrained(cls, *_args, **_kwargs):
-        return cls()
-
-    def eval(self):
-        return self
-
-    def generate(self, **_kwargs):
-        return [[0]]
-
-    def __call__(self, **_kwargs):
-        return types.SimpleNamespace(
-            logits=types.SimpleNamespace(argmax=lambda *_: types.SimpleNamespace(item=lambda: 0))
-        )
-
-
-class DummyTokenizer:
-    @classmethod
-    def from_pretrained(cls, *_args, **_kwargs):
-        return cls()
-
-    def apply_chat_template(self, messages, tokenize=False):
-        return ""
-
-    def __call__(self, texts, return_tensors=None):
-        return types.SimpleNamespace(input_ids=[[0]], to=lambda device: self)
-
-    def decode(self, ids, skip_special_tokens=True):
-        return "Safety: Safe"
-
-
 class DummyScheduler:
     def add_listener(self, *_args, **_kwargs):
         return None
@@ -76,14 +42,6 @@ class DummyScheduler:
 
     def get_job(self, *_args, **_kwargs):
         return types.SimpleNamespace(next_run_time=None)
-
-
-class DummyContext:
-    def __enter__(self):
-        return None
-
-    def __exit__(self, exc_type, exc, tb):
-        return None
 
 
 def is_injected_tool_arg(annotation) -> bool:

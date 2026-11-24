@@ -25,7 +25,6 @@
 | [DeepSeek 网页搜索](deepseek-web-search.md) | 主模型服务端搜索与网页读取的配置、证据字段和验收测试。 |
 | [Provider 协议](providers.md) | `ChatAdapter` / `Vendor` 两个角色、`Route`、协议方法和新增供应商的步骤。 |
 | [DeepSeek 媒体能力](deepseek-media.md) | 托管 OCR、语音识别与语音合成的配置、限制和 QQ 媒体适配。 |
-| [Laya 决策 Provider](laya-decision-provider.md) | 可选 Laya 候选预筛的本地 SDK/HTTP 后端、DecisionProvider 契约与门控边界。 |
 | [消息媒体网络](message-media-network.md) | 媒体加载的公开地址校验，以及 Clash TUN / Fake-IP 环境下的 DNS 回退规则。 |
 | [模型目录](../models/README.md) | `models/` 模型元数据：模型卡字段、能力与生命周期、LobeHub 名称同步、更新流程。 |
 | [渲染器开发说明](../renderer/README.md) | Markdown 渲染器的 React/TypeScript 组件、构建、类型生成与截图验证。 |

@@ -114,7 +114,7 @@ uv run playwright install
 QQ SILK 只在本地做格式转换，不再下载或加载语音模型。
 配置与平台限制见 [DeepSeek 媒体能力](docs/deepseek-media.md)。
 
-项目已将腾讯云 PyPI 镜像设为 uv 默认源；CPU 版 PyTorch 使用上海交通大学的 wheel 镜像，`.env.example` 和启动脚本默认把 `HF_ENDPOINT` 设为 `https://hf-mirror.com`。模型输入输出安全审核由 DeepSeek 服务端完成。
+项目使用腾讯云 PyPI 镜像作为 uv 默认源。模型输入输出安全审核由 DeepSeek 服务端完成。
 
 ### 配置
 
@@ -137,7 +137,7 @@ cp mcp.json.example mcp.json
 bash run.sh
 ```
 
-Windows 使用 `.\run.ps1`。两个脚本都会设置默认 `HF_ENDPOINT`，然后循环执行 `uv run nb run`，进程退出 5 秒后自动重启。
+Windows 使用 `.\run.ps1`。两个脚本都会循环执行 `uv run --locked nb run`，进程退出 5 秒后自动重启。
 
 ### Docker
 

@@ -1,6 +1,6 @@
 # 配置参考
 
-HyperBot 的应用配置在 `env.toml`。从 [快速启动示例](../env.toml.example) 复制后，填写主模型、辅助模型和所用供应商的密钥，并设置 Dashboard 密码。其余字段可以按需添加，省略的段和字段使用默认值。真实配置文件含密钥，不进入版本库。
+HyperBot 的应用配置在 `env.toml`。从 [完整配置示例](../env.toml.example) 复制后，填写主模型、辅助模型和所用供应商的密钥，并设置 Dashboard 密码。其余字段按需修改，省略的段和字段使用默认值。真实配置文件含密钥，不进入版本库。
 
 本页描述当前实现；字段校验以 `utils/configs.py` 为准，能力与路由以 `utils/llm_factory.py` 和各服务代码为准。
 
@@ -33,7 +33,7 @@ HyperBot 的应用配置在 `env.toml`。从 [快速启动示例](../env.toml.ex
 | `[models]` / `[providers.*]` | 模型角色、供应商 profile、密钥和协议 | 本页 |
 | `[document_parsing]` | DeepSeek 文件 OCR 解析 | [DeepSeek 媒体能力](deepseek-media.md) |
 | `[key]` | NASA、GitHub 等非模型服务密钥 | 本页 |
-| `[features]` | 功能开关与可选 Laya 候选预筛 | 本页 |
+| `[features]` | 对话、绘画和视频功能开关 | 本页 |
 | `[agent]` | 长文转图阈值、Fake-IP 媒体回退 | [消息媒体网络](message-media-network.md) |
 | `[search]` | 独立网页搜索和读取工具 | [DeepSeek 联网](deepseek-web-search.md) |
 | `[speech_recognition]` | DeepSeek 云端语音识别 | [DeepSeek 媒体能力](deepseek-media.md) |
@@ -118,13 +118,11 @@ DeepSeek 可分别配置为 `deepseek + chat_completions`、`openai + responses`
 
 ### `[features]`
 
-`agent_enabled`、`paint_enabled`、`video_enabled` 控制对应入口；`qq_text_canary_enabled` 仅为旧配置兼容字段，不再控制路由；`laya_candidate_*` 控制可选的 Laya 候选预筛（默认关闭，详见 [Laya 决策 Provider](laya-decision-provider.md)）。`LAYA_API_KEY` 只从进程环境读取。
-
-使用 Laya 时设置 `laya_candidate_enabled = true`。`laya_candidate_model` 默认 `auto`，`laya_candidate_device` 默认 `cpu`，`laya_candidate_base_url` 留空时使用本地 SDK。`laya_candidate_threshold` 默认 0.5，`laya_candidate_timeout_seconds` 默认 5 秒。
+`agent_enabled`、`paint_enabled`、`video_enabled` 控制对应入口。`qq_text_canary_enabled` 仅为旧配置兼容字段。
 
 ### `[key]`
 
-仅保存非模型服务密钥：`nasa_api_key`（默认 `DEMO_KEY`）、`github_pat`。模型密钥放在对应供应商 profile；`LAYA_API_KEY` 等连接器密钥只从进程环境读取。
+这里保存 `nasa_api_key`（默认 `DEMO_KEY`）和 `github_pat`。模型密钥放在对应供应商 profile。
 
 ### `[agent]`
 

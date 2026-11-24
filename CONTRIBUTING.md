@@ -40,6 +40,10 @@ resulting diff. When changing configuration or a message boundary, add a
 focused regression test. Avoid broad formatting churn and do not include real
 credentials in fixtures or logs.
 
+Run the offline Agent behavior regressions with `uv run --locked pytest -m agent_eval -q`.
+They use scripted model responses to check QQ reply decisions, skill tool authorization,
+and daily news evidence without API keys.
+
 ## Change descriptions
 
 Commit messages should state the affected area and the behavior change, for

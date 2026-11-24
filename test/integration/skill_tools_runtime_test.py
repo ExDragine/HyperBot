@@ -5,7 +5,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 
+
+@pytest.mark.agent_eval
+@pytest.mark.usefixtures("offline_agent_eval")
 def test_domain_tools_require_a_skill_read_and_reset_at_the_next_turn(tmp_path):
     script = r'''
 import asyncio
@@ -16,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 
 import yaml
+from agentevals.trajectory.match import create_trajectory_match_evaluator
 from deepagents import create_deep_agent
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, ToolMessage
@@ -29,6 +34,7 @@ from utils.providers.deepseek.tools import balance
 
 TARGET = "get_china_earthquake"
 SKILL = "weather-hazards"
+SKILL_FILE = f"{SKILLS_BACKEND_PATH}/{SKILL}/SKILL.md"
 DIRECT_TOOLS = {"get_deepseek_api_balance", "deepseek_ocr"}
 
 def tool_call(name, id_, **args):
@@ -85,9 +91,10 @@ model = RecordingModel(responses=[
         {"name": "get_deepseek_api_balance", "args": {}, "id": "balance"},
         {"name": "deepseek_ocr", "args": {"file_path": "/missing.pdf"}, "id": "ocr"},
     ]),
-    tool_call("read_file", "read-skill", file_path=f"{SKILLS_BACKEND_PATH}/{SKILL}/SKILL.md"),
+    tool_call("read_file", "read-skill", file_path=SKILL_FILE),
     tool_call(TARGET, "after"),
     AIMessage("First answer"),
+    tool_call(TARGET, "next-turn"),
     AIMessage("Unrelated answer"),
     AIMessage("Pinned answer"),
     AIMessage("Unrelated after pin"),
@@ -112,13 +119,33 @@ async def main():
     assert all(DIRECT_TOOLS <= visible for visible in model.visible)
     assert outputs["read-skill"].status == "success"
     assert outputs["after"].content == "earthquake-data"
-    await agent.ainvoke({"messages": [{"role": "user", "content": "聊点别的"}]}, config)
+    next_turn = await agent.ainvoke({"messages": [{"role": "user", "content": "聊点别的"}]}, config)
+    next_outputs = {
+        message.tool_call_id: message for message in next_turn["messages"] if isinstance(message, ToolMessage)
+    }
+    assert next_outputs["next-turn"].status == "error"
+    assert calls == [TARGET]
+    successful_skill_calls = [
+        AIMessage(content="", tool_calls=[call])
+        for message in next_turn["messages"] if isinstance(message, AIMessage)
+        for call in message.tool_calls
+        if call["name"] in {"read_file", TARGET} and next_outputs[call["id"]].status == "success"
+    ]
+    match = create_trajectory_match_evaluator(trajectory_match_mode="strict")
+    evaluation = match(
+        outputs=successful_skill_calls,
+        reference_outputs=[
+            tool_call("read_file", "reference-read", file_path=SKILL_FILE),
+            tool_call(TARGET, "reference-weather"),
+        ],
+    )
+    assert evaluation["score"], evaluation
     await agent.ainvoke(
         {"messages": [{"role": "user", "content": "查雷达"}], "pinned_skills": [SKILL]}, config,
     )
     await agent.ainvoke({"messages": [{"role": "user", "content": "继续闲聊"}]}, config)
     assert [visible & declared for visible in model.visible] == [
-        set(), set(), manifests[SKILL], manifests[SKILL], set(), manifests[SKILL], set(),
+        set(), set(), manifests[SKILL], manifests[SKILL], set(), set(), manifests[SKILL], set(),
     ]
 
 asyncio.run(main())

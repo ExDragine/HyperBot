@@ -12,16 +12,14 @@ dependencies = [
   "nb-cli",
   "langchain-core",
   "langchain-openai",
-  "langchain[mcp]>=1.4.0,<1.5",
+  "langchain[mcp]>=1.5.2,<1.6",
   "langchain-google-genai",
   "langchain-anthropic",
   "langchain-deepseek",
-  "deepagents>=0.7.36,<0.8",
+  "deepagents>=0.7.41,<0.8",
   "beautifulsoup4",
   "playwright",
   "httpx2[http2]",
-  "laya>=0.3.20,<0.4",
-  "torch", # used only through laya; listed so [tool.uv.sources] can pin the CPU wheel index
   "imageio-ffmpeg",
   "gitpython",
   "sqlmodel",
@@ -36,22 +34,10 @@ dependencies = [
   "filelock>=4.0.12",
 ]
 
-[tool.uv.sources]
-torch = [
-  { index = "pytorch-cpu", marker = "sys_platform != 'darwin'" },
-  { index = "tencent", marker = "sys_platform == 'darwin'" },
-]
-
 [[tool.uv.index]]
 name = "tencent"
 url = "https://mirrors.cloud.tencent.com/pypi/simple/"
 default = true
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://mirror.sjtu.edu.cn/pytorch-wheels/cpu"
-explicit = true
-
 
 [tool.nonebot]
 plugin_dirs = ["plugins"]
@@ -103,7 +89,14 @@ line-length = 119
 indent-width = 4
 
 [dependency-groups]
-dev = ["nonebug>=0.4.3", "pytest", "pytest-asyncio>=1.3.0", "ruff", "ty"]
+dev = [
+    "agentevals>=0.0.6,<0.1",
+    "nonebug>=0.4.3",
+    "pytest",
+    "pytest-asyncio>=1.3.0",
+    "ruff",
+    "ty",
+]
 lint = ["ruff"]
 
 [tool.ruff.lint]

@@ -9,7 +9,7 @@ from nonebot.adapters.milky.event import MessageEvent
 
 from utils.configs import EnvConfig
 from utils.database import GroupSettingsManager, MessageDatabase, get_engine
-from utils.decision import LayaDecisionProvider, LLMDecisionProvider, score_reply_gate
+from utils.decision import LLMDecisionProvider, score_reply_gate
 
 messages_db = MessageDatabase()
 
@@ -105,8 +105,6 @@ ACTIVE_TRIGGER_STRIP_CHARS = " \t\r\n:：,，.。!！?？~～…、/\\|[]()（�
 
 
 _reply_check_last_checked_at: dict[int, float] = {}
-_laya_candidate_provider: LayaDecisionProvider | None = None
-_laya_candidate_provider_revision: int | None = None
 
 
 def _reply_check_content_text(content: Any) -> str:
@@ -183,47 +181,6 @@ async def _reply_check_group_is_active(group_id: int, now_ms: int) -> bool:
     return message_count > REPLY_CHECK_ACTIVE_GROUP_MESSAGE_LIMIT
 
 
-def _get_laya_candidate_provider() -> LayaDecisionProvider | None:
-    """Build the optional Laya candidate provider after configuration is loaded."""
-
-    global _laya_candidate_provider, _laya_candidate_provider_revision
-    if not EnvConfig.LAYA_CANDIDATE_ENABLED:
-        return None
-    revision = EnvConfig.REVISION
-    if _laya_candidate_provider is None or _laya_candidate_provider_revision != revision:
-        api_key = EnvConfig.LAYA_CANDIDATE_API_KEY
-        _laya_candidate_provider = LayaDecisionProvider(
-            model=EnvConfig.LAYA_CANDIDATE_MODEL,
-            device=EnvConfig.LAYA_CANDIDATE_DEVICE,
-            base_url=EnvConfig.LAYA_CANDIDATE_BASE_URL or None,
-            api_key=api_key.get_secret_value() if api_key else None,
-            timeout=EnvConfig.LAYA_CANDIDATE_TIMEOUT_SECONDS,
-        )
-        _laya_candidate_provider_revision = revision
-    return _laya_candidate_provider
-
-
-async def _laya_candidate_should_reply(plaintext: str, messages: list) -> bool:
-    """Expand the candidate set without bypassing the final decision gate."""
-
-    provider = _get_laya_candidate_provider()
-    if provider is None:
-        return False
-    try:
-        score = await score_reply_gate(
-            provider,
-            plaintext,
-            messages,
-            threshold=EnvConfig.LAYA_CANDIDATE_THRESHOLD,
-        )
-    except Exception as error:  # noqa: BLE001 - candidate failures must fall back to lexical rules
-        from nonebot import logger
-
-        logger.warning("Laya reply candidate prefilter failed, keeping lexical gate: {}", error)
-        return False
-    return score.should_reply
-
-
 async def _reply_check_should_reply(group_id: int, plaintext: str, messages: list) -> bool:
     now = time.monotonic()
     last_checked_at = _reply_check_last_checked_at.get(group_id)
@@ -232,10 +189,7 @@ async def _reply_check_should_reply(group_id: int, plaintext: str, messages: lis
 
     now_ms = int(time.time() * 1000)
     active_group = await _reply_check_group_is_active(group_id, now_ms)
-    lexical_candidate = _looks_like_reply_check_candidate(plaintext, active_group=active_group)
-    if not lexical_candidate and len("".join(plaintext.lower().split())) >= REPLY_CHECK_MIN_TEXT_LENGTH:
-        lexical_candidate = await _laya_candidate_should_reply(plaintext, messages)
-    if not lexical_candidate:
+    if not _looks_like_reply_check_candidate(plaintext, active_group=active_group):
         return False
     now = time.monotonic()
     last_checked_at = _reply_check_last_checked_at.get(group_id)

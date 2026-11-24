@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def test_quoted_images_reach_deepseek_as_supported_encoded_images(tmp_path):
     script = r'''
@@ -304,7 +306,9 @@ assert (Path(agent.working_dir) / "memory" / workspace_key / "SOUL.md").is_file(
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_real_news_agent_uses_json_contract_for_research_and_revision(tmp_path):
+@pytest.mark.agent_eval
+@pytest.mark.usefixtures("offline_agent_eval")
+def test_real_news_agent_uses_json_contract_and_checks_evidence(tmp_path):
     script = r'''
 import asyncio
 import json
@@ -314,10 +318,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, sys.argv[1])
+import pytest
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage
 from plugins.news import editor
-from plugins.news.schemas import NewsPayload
+from plugins.news.repository import NewsRepository
+from plugins.news.schemas import Article, Edition, NewsPayload
+from plugins.news.service import NewsService
 from utils.agents import cognitive
 from utils.agents.runtime_gateway import FrontierAgentRuntime
 from utils.configs import EnvConfig
@@ -352,23 +359,59 @@ class Model(FakeMessagesListChatModel):
         assert "`mode=revision` 时，只使用给定的 `articles` 修订" in pinned.text
         return super()._generate(messages, *args, **kwargs)
 
-now = datetime.now(UTC)
-edition = SimpleNamespace(start=now - timedelta(days=1), scheduled_at=now, report_id="test", namespace="test")
-news = editor.NewsEditor(SimpleNamespace(target_stories=1, min_stories=1))
-article_id = "https://example.com/evidence"
+now = datetime(2026, 11, 20, 12, tzinfo=UTC)
+edition = Edition("test", now, namespace="test")
+cfg = SimpleNamespace(
+    target_stories=1, min_stories=1, queries=["test"], generation_timeout=30, max_generation_attempts=1,
+)
+news = editor.NewsEditor(cfg, research_agent=True)
+url = "https://example.com/evidence"
 quote = "The city opened its new public library."
-expected = NewsPayload(top_stories=[{
-    "title": "Library opened", "category": "Local", "summary": quote,
-    "evidence": [{"article_id": article_id, "quote": quote}],
-}], worth_reading=[])
-for research in (True, False):
-    model = Model(research=research, responses=[AIMessage(expected.model_dump_json())])
-    cognitive.create_llm = lambda **_: model
-    data = {"queries": ["test"]} if research else {
-        "articles": [{"article_id": article_id, "text": quote}], "validation_error": None,
-    }
-    messages = asyncio.run(news._run_skill(edition, data, research=research))
-    assert NewsPayload.model_validate_json(messages[-1].text) == expected
+search = {
+    "type": "web_search_call", "status": "completed", "kind": "search",
+    "action": {"type": "search", "sources": [{
+        "url": url, "title": "Library opened", "snippet": f"{quote} The reading room opens next week.",
+        "published_at": (now - timedelta(hours=1)).isoformat(),
+    }]},
+}
+read = {"type": "web_search_call", "status": "completed", "kind": "read_link",
+        "action": {"type": "open_page"}, "page": {"url": url}}
+
+def draft(source, evidence_quote):
+    return NewsPayload(top_stories=[{
+        "title": "Library opened", "category": "Local", "summary": quote,
+        "evidence": [{"article_id": source, "quote": evidence_quote}],
+    }], worth_reading=[])
+
+async def main():
+    for case, source, evidence_quote in (
+        ("accepted", url + "?utm_source=eval", quote),
+        ("missing-source", "https://example.com/unknown", quote),
+        ("fabricated-quote", url, "The town opened a new airport."),
+    ):
+        repo = NewsRepository(Path(f"{case}.db"))
+        await repo.initialize()
+        service = NewsService(repo, None, news, cfg)
+        answer = {"type": "text", "text": draft(source, evidence_quote).model_dump_json()}
+        model = Model(research=True, responses=[AIMessage(content=[search, read, answer])])
+        cognitive.create_llm = lambda **_: model
+        if case != "accepted":
+            with pytest.raises(ValueError, match="missing or fabricated evidence quote"):
+                await service.generate_report(edition)
+            report = await repo.get(edition.report_id)
+            assert report["status"] == "failed" and report["payload"] is None
+            continue
+        report = await service.generate_report(edition)
+        assert report["status"] == "ready"
+        article, = [Article.model_validate(item) for item in report["evidence"]]
+        assert article.url == url
+        expected = draft(article.article_id, quote)
+        assert NewsPayload.model_validate(report["payload"]) == expected
+
+        model = Model(research=False, responses=[AIMessage(expected.model_dump_json())])
+        assert await news.edit(edition, [article]) == expected
+
+asyncio.run(main())
 '''
     result = subprocess.run(  # noqa: S603
         [sys.executable, "-c", script, str(Path(__file__).resolve().parents[2])],

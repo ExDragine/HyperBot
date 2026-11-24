@@ -967,45 +967,47 @@ async def test_message_gateway_test_group_skips_casual_messages(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_laya_candidate_prefilter_expands_lexical_candidates(monkeypatch):
-    laya_calls = []
-    signal_calls = 0
+@pytest.mark.agent_eval
+@pytest.mark.usefixtures("offline_agent_eval")
+@pytest.mark.parametrize(
+    ("text", "mentioned", "active_group", "decision_calls", "should_reply"),
+    [
+        pytest.param("今天大家都在讨论新的项目", False, False, 0, False, id="casual-chat"),
+        pytest.param("这个配置项为什么不起作用？", False, False, 1, True, id="quiet-group-question"),
+        pytest.param("这个配置项为什么不起作用？", False, True, 0, False, id="busy-group-question"),
+        pytest.param("求助，这个报错怎么解决？", False, True, 1, True, id="busy-group-help-request"),
+        pytest.param("不要回复，我正在测试", True, False, 0, False, id="explicit-stop"),
+        pytest.param("帮我解释这个配置项", True, False, 0, True, id="explicit-request"),
+    ],
+)
+async def test_qq_reply_gate_agent_eval(monkeypatch, text, mentioned, active_group, decision_calls, should_reply):
+    calls = []
 
-    async def fake_laya(plaintext, messages):
-        laya_calls.append((plaintext, messages))
-        return True
-
-    async def fake_signal_structured(*_args, **_kwargs):
-        nonlocal signal_calls
-        signal_calls += 1
+    async def decide(_self, state, _questions):
+        calls.append(state)
         return DummyReplyCheckTrue()
 
-    monkeypatch.setattr(gateway_module.EnvConfig, "LAYA_CANDIDATE_ENABLED", True)
-    monkeypatch.setattr(gateway_module, "_laya_candidate_should_reply", fake_laya)
-    monkeypatch.setattr(gateway_module.LLMDecisionProvider, "decide", fake_signal_structured)
-    patch_reply_check_prompt(monkeypatch, "{name}")
+    count = gateway_module.REPLY_CHECK_ACTIVE_GROUP_MESSAGE_LIMIT + 1 if active_group else 0
+    monkeypatch.setattr(gateway_module, "messages_db", DummyReplyCheckDb(message_count=count))
+    monkeypatch.setattr(gateway_module.EnvConfig, "AGENT_WHITELIST_MODE", False)
+    monkeypatch.setattr(gateway_module.EnvConfig, "AGENT_BLACKLIST_GROUP_LIST", [])
+    monkeypatch.setattr(gateway_module.EnvConfig, "AGENT_BLACKLIST_PERSON_LIST", [])
+    monkeypatch.setattr(gateway_module.LLMDecisionProvider, "decide", decide)
+    event = DummyTestGroupEvent(text, is_tome=mentioned)
 
-    result = await gateway_module._reply_check_should_reply(5, "这段输入需要助手处理", [{"role": "user", "content": "历史"}])
-
-    assert result is True
-    assert laya_calls == [("这段输入需要助手处理", [{"role": "user", "content": "历史"}])]
-    assert signal_calls == 1
+    assert await _message_gateway(event, []) is should_reply
+    assert len(calls) == decision_calls
 
 
 @pytest.mark.asyncio
-async def test_laya_candidate_prefilter_does_not_bypass_signal(monkeypatch):
-    async def fake_laya(*_args, **_kwargs):
-        return True
+async def test_reply_check_skips_long_messages_without_candidate_signals(monkeypatch):
+    async def unexpected_decision(*_args, **_kwargs):
+        pytest.fail("a message without candidate signals should bypass the Decision LLM")
 
-    async def reject_signal(*_args, **_kwargs):
-        return DummyReplyCheckFalse()
-
-    monkeypatch.setattr(gateway_module.EnvConfig, "LAYA_CANDIDATE_ENABLED", True)
-    monkeypatch.setattr(gateway_module, "_laya_candidate_should_reply", fake_laya)
-    monkeypatch.setattr(gateway_module.LLMDecisionProvider, "decide", reject_signal)
+    monkeypatch.setattr(gateway_module.LLMDecisionProvider, "decide", unexpected_decision)
     patch_reply_check_prompt(monkeypatch, "{name}")
 
-    result = await gateway_module._reply_check_should_reply(5, "这段输入需要助手处理", [])
+    result = await gateway_module._reply_check_should_reply(5, "今天大家一起讨论了几个新的项目", [])
 
     assert result is False
 
@@ -1032,27 +1034,6 @@ async def test_message_gateway_test_group_reply_check_has_group_cooldown(monkeyp
     assert first is False
     assert second is False
     assert calls == 1
-
-
-@pytest.mark.asyncio
-async def test_group_cooldown_skips_laya_candidate_prefilter(monkeypatch):
-    async def fake_signal_structured(*_args, **_kwargs):
-        return DummyReplyCheckFalse()
-
-    async def fail_if_laya_called(*_args, **_kwargs):
-        raise AssertionError("group cooldown should run before Laya")
-
-    monkeypatch.setattr(gateway_module.EnvConfig, "LAYA_CANDIDATE_ENABLED", True)
-    monkeypatch.setattr(gateway_module, "_laya_candidate_should_reply", fail_if_laya_called)
-    monkeypatch.setattr(gateway_module.LLMDecisionProvider, "decide", fake_signal_structured)
-    monkeypatch.setattr(gateway_module.time, "monotonic", lambda: 1000.0)
-    patch_reply_check_prompt(monkeypatch, "{name}")
-
-    first = await gateway_module._reply_check_should_reply(5, "求助，这个报错怎么解决？", [])
-    second = await gateway_module._reply_check_should_reply(5, "这段输入需要助手处理", [])
-
-    assert first is False
-    assert second is False
 
 
 @pytest.mark.asyncio

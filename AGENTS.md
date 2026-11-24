@@ -90,7 +90,7 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 | `providers/` | Provider 协议与实现：`base.py` 定义 `Route`、`ChatAdapter`（按 `type` 构造模型）和 `Vendor`（官方端点的请求语义）；`openai/`、`anthropic/`、`google/` 和 `deepseek/` 各自实现；详见 `docs/providers.md` |
 | `agent_protocol/` | 平台无关契约：`models.py` 值对象（消息段、参与者、会话、请求/响应、投递回执）、`ports.py` 的 `AgentCore`/`ReplyPolicy`/`HistoryStore`/`DeliveryPort`/`PlatformToolProvider`、`identity.py` 的 workspace key 归一化 |
 | `agent_orchestration.py` | `ConversationOrchestrator`：历史 → 门控 → Agent → 投递的平台中性单轮生命周期；QQ 生产入口已接入 |
-| `decision/` | 平台无关 Decision provider：`llm.py`（LLM 决策）、`laya.py`（Laya 候选预筛，默认关闭）、`reply_gate.py`（回复门控打分）、`models.py`；导入不加载 torch/transformers 权重 |
+| `decision/` | 平台无关 Decision provider：`llm.py`（LLM 决策）、`reply_gate.py`（回复门控打分）、`models.py`（决策契约） |
 | `database/` | SQLite/SQLModel 包：`engine`（连接、线程调度）、`models`（表模型）、`schema`（索引与结构校验）、`fts`（FTS5）、`rows`/`store`（历史构造与 `MessageDatabase`）、`attachments`、`search`、`settings`、`events`、`maintenance`；公开 API 由 `__init__.py` 再导出 |
 | `agents/execution.py` / `agents/runtime_gateway.py` | 内置 Agent 的统一请求/结果、运行 ID、超时和取消边界 |
 | `delivery.py` | 不可变投递结果 |
@@ -163,7 +163,7 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 Prompt 加载链：
 - `FrontierCognitive.load_system_prompt()` 组合 `prompts/AGENTS.md` 的全局规范与入口专属说明。QQ 使用 `[bot].system_prompt` 基础人设、`prompts/qq.md` 和当前会话风格，`{name}` 按唤醒词注入。定时任务和日报归档使用各自的任务说明。
 - 自定义 `MemoryMiddleware` 从当前 workspace 的 `/memory/{workspace_key}/SOUL.md` 注入动态人设及其写入约束。日报归档不注入 SOUL。
-- QQ 主回复与兼容 QQ 入口每轮在输入状态中传 `pinned_skills=["rich-markdown"]`（Deep Agents >= 0.7.36），由 Skills middleware 在首个模型调用前注入精简的排版决策正文，无需模型先调用 `read_file`。本轮后续工具循环不重复注入。显式非 QQ 平台按需加载该技能。
+- QQ 主回复与兼容 QQ 入口每轮在输入状态中传 `pinned_skills=["rich-markdown"]`，由 Skills middleware 在首个模型调用前注入精简的排版决策正文，无需模型先调用 `read_file`。本轮后续工具循环不重复注入。显式非 QQ 平台按需加载该技能。
 - 框架注入的技能 HumanMessage 带 `lc_source=pinned_skill`，属于当轮操作说明。持久会话保存本人输入和确认送达的回复正文。
 - `/skills/rich-markdown/SKILL.md` 定义内容关系与基本 Markdown 组件语法；正文直接写 Markdown，按需插入 `::card`、分区、分栏、步骤或媒体，基本卡片无需先读取参考文件。详细字段、数据与媒体契约位于其 `references/`；旧 ui JSON 契约位于 `references/legacy-ui.md`。短聊天与需要复制的回复保持文字，500 字转图规则只控制发送方式。
 - `plugins/agent/prompts/reply_check.md` 用于群聊是否应主动回复的 Decision LLM 判断。

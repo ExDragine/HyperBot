@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from utils.decision import DecisionResult, LayaDecisionProvider, LayaProviderError, score_reply_gate
+from utils.decision import DecisionResult, score_reply_gate
 from utils.decision.validation import validate_answers
 
 QUESTIONS = {"should_reply": {"type": "predicate"}}
@@ -62,22 +62,3 @@ async def test_gate_keeps_probability_confidence_and_refusal_separate(answer, ex
     assert score.should_reply is expected
     assert score.probability == answer.get("probability")
     assert score.confidence == answer.get("confidence")
-
-
-@pytest.mark.asyncio
-async def test_laya_translates_wire_contract_without_mutating_questions():
-    def predict(state, questions):
-        assert questions["should_reply"]["type"] == "noul"
-        return {"answers": {"should_reply": {"type": "noul", "noul": True}}}
-
-    provider = LayaDecisionProvider(router=SimpleNamespace(predict=predict))
-    result = await provider.decide("help", QUESTIONS)
-    assert result.answers == {"should_reply": {"type": "predicate", "probability": 1.0}}
-    assert QUESTIONS["should_reply"]["type"] == "predicate"
-
-
-@pytest.mark.asyncio
-async def test_laya_rejects_missing_answers():
-    provider = LayaDecisionProvider(router=SimpleNamespace(predict=lambda *_: {"answers": {}}))
-    with pytest.raises(LayaProviderError, match="IDs"):
-        await provider.decide("help", QUESTIONS)

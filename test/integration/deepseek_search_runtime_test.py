@@ -5,7 +5,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 
+
+@pytest.mark.agent_eval
+@pytest.mark.usefixtures("offline_agent_eval")
 def test_deepseek_native_web_tools_round_trip_through_the_real_sdk(tmp_path):
     script = r"""
 import asyncio

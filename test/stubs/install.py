@@ -16,12 +16,9 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from .dummies import (
     DummyCompositeBackend,
-    DummyContext,
     DummyFilesystemBackend,
     DummyLocalShellBackend,
-    DummyModel,
     DummyScheduler,
-    DummyTokenizer,
     fake_tool,
 )
 
@@ -195,25 +192,3 @@ def install_all_third_party_stubs():
     )
 
     install_stub("nonebot_plugin_apscheduler", scheduler=DummyScheduler())
-
-    install_stub(
-        "torch",
-        inference_mode=lambda: DummyContext(),
-        cuda=types.SimpleNamespace(is_available=lambda: False, get_device_name=lambda *_: ""),
-    )
-    install_stub(
-        "torchao.quantization",
-        Int8WeightOnlyConfig=type("Int8WeightOnlyConfig", (), {"__init__": lambda self, **_kw: None}),
-        quantize_=lambda *_args, **_kwargs: None,
-    )
-    install_stub(
-        "transformers",
-        AutoModelForCausalLM=DummyModel,
-        AutoModelForImageClassification=DummyModel,
-        AutoTokenizer=DummyTokenizer,
-        ViTImageProcessor=type(
-            "ViTImageProcessor",
-            (),
-            {"from_pretrained": classmethod(lambda cls, *_a, **_k: cls()), "__call__": lambda self, **_k: {}},
-        ),
-    )

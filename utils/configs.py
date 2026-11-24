@@ -111,12 +111,6 @@ class FeatureConfig(_FrozenConfig):
     paint_enabled: bool = True
     video_enabled: bool = True
     qq_text_canary_enabled: bool = False
-    laya_candidate_enabled: bool = False
-    laya_candidate_model: str = "auto"
-    laya_candidate_device: str = "cpu"
-    laya_candidate_base_url: str = ""
-    laya_candidate_threshold: float = Field(default=0.5, ge=0, le=1)
-    laya_candidate_timeout_seconds: float = Field(default=5.0, gt=0)
 
 
 class AgentConfig(_FrozenConfig):
@@ -470,7 +464,16 @@ def parse_config(config: Mapping[str, Any]) -> FrontierSettings:
         for key in FrontierSettings.model_fields
         if key not in {"config_version", "models", "providers", "keys"}
     }
-    for key in ("answer_rubric_enabled", "answer_rubric_max_iterations"):
+    for key in (
+        "answer_rubric_enabled",
+        "answer_rubric_max_iterations",
+        "laya_candidate_enabled",
+        "laya_candidate_model",
+        "laya_candidate_device",
+        "laya_candidate_base_url",
+        "laya_candidate_threshold",
+        "laya_candidate_timeout_seconds",
+    ):
         normalized["features"].pop(key, None)
     normalized["limits"].pop("agent_ptc_call_limit", None)
     normalized["agent"].pop("tool_long_text_forward_threshold", None)
@@ -566,13 +569,6 @@ class EnvConfig:
     PAINT_MODULE_ENABLED: ClassVar[bool]
     VIDEO_MODULE_ENABLED: ClassVar[bool]
     QQ_TEXT_CANARY_ENABLED: ClassVar[bool]
-    LAYA_CANDIDATE_ENABLED: ClassVar[bool]
-    LAYA_CANDIDATE_MODEL: ClassVar[str]
-    LAYA_CANDIDATE_DEVICE: ClassVar[str]
-    LAYA_CANDIDATE_BASE_URL: ClassVar[str]
-    LAYA_CANDIDATE_THRESHOLD: ClassVar[float]
-    LAYA_CANDIDATE_TIMEOUT_SECONDS: ClassVar[float]
-    LAYA_CANDIDATE_API_KEY: ClassVar[SecretStr]
     AGENT_CAPABILITY: ClassVar[str]
     MESSAGE_MEDIA_FAKE_IP_FALLBACK: ClassVar[bool]
     AGENT_WHITELIST_MODE: ClassVar[bool]
@@ -672,13 +668,6 @@ class EnvConfig:
             "PAINT_MODULE_ENABLED": settings.features.paint_enabled,
             "VIDEO_MODULE_ENABLED": settings.features.video_enabled,
             "QQ_TEXT_CANARY_ENABLED": settings.features.qq_text_canary_enabled,
-            "LAYA_CANDIDATE_ENABLED": settings.features.laya_candidate_enabled,
-            "LAYA_CANDIDATE_MODEL": settings.features.laya_candidate_model,
-            "LAYA_CANDIDATE_DEVICE": settings.features.laya_candidate_device,
-            "LAYA_CANDIDATE_BASE_URL": settings.features.laya_candidate_base_url,
-            "LAYA_CANDIDATE_THRESHOLD": settings.features.laya_candidate_threshold,
-            "LAYA_CANDIDATE_TIMEOUT_SECONDS": settings.features.laya_candidate_timeout_seconds,
-            "LAYA_CANDIDATE_API_KEY": SecretStr(os.getenv("LAYA_API_KEY", "")),
             "AGENT_CAPABILITY": model.advanced.reasoning_effort.strip() or settings.agent.reasoning_effort,
             "MESSAGE_IMAGE_TEXT_THRESHOLD": settings.agent.message_image_text_threshold,
             "MESSAGE_MEDIA_FAKE_IP_FALLBACK": settings.agent.message_media_fake_ip_fallback,

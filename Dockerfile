@@ -20,9 +20,6 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=0 \
     PATH="/app/.venv/bin:${PATH}" \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
-    HF_HOME=/app/cache/huggingface \
-    TORCH_HOME=/app/cache/torch \
-    HF_ENDPOINT=https://hf-mirror.com \
     PYTHONUNBUFFERED=1
 
 RUN apt-get update \
