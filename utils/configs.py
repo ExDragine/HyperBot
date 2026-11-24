@@ -5,7 +5,7 @@ import os
 import secrets
 import sys
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
@@ -13,9 +13,10 @@ import dotenv
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from utils.event_policy import EventConfig
-from utils.providers import adapter_protocol, default_profiles, validate_profile_fields
+from utils.providers import adapter_protocol, default_profiles, infer_adapter, validate_profile_fields
 from utils.providers.base import API_MODES
 from utils.providers.deepseek.constants import DEFAULT_BASE_URL as DEEPSEEK_BASE_URL
+from utils.providers.openai import validate_native_decisions
 
 dotenv.load_dotenv()
 
@@ -38,6 +39,10 @@ class ModelConfig(_FrozenConfig):
     capabilities: tuple[str, ...] = ()
 
 
+class ReasoningModelConfig(ModelConfig):
+    reasoning_effort: str = ""
+
+
 class MediaModelConfig(_FrozenConfig):
     model: str = ""
     provider: str = ""
@@ -54,7 +59,7 @@ class VideoModelConfig(MediaModelConfig):
 
 
 class ModelsConfig(_FrozenConfig):
-    basic: ModelConfig = Field(default_factory=ModelConfig)
+    basic: ReasoningModelConfig = Field(default_factory=ReasoningModelConfig)
     decision: ModelConfig = Field(
         default_factory=lambda: ModelConfig(
             model="deepseek-flash",
@@ -62,7 +67,7 @@ class ModelsConfig(_FrozenConfig):
             capabilities=("text",),
         )
     )
-    advanced: ModelConfig = Field(default_factory=ModelConfig)
+    advanced: ReasoningModelConfig = Field(default_factory=ReasoningModelConfig)
     daily_news: ModelConfig = Field(
         default_factory=lambda: ModelConfig(
             model="deepseek-flash",
@@ -71,12 +76,7 @@ class ModelsConfig(_FrozenConfig):
         )
     )
     paint: PaintModelConfig = Field(default_factory=lambda: PaintModelConfig(provider="openai"))
-    video: VideoModelConfig = Field(
-        default_factory=lambda: VideoModelConfig(
-            model="sora-2",
-            provider="openai",
-        )
-    )
+    video: VideoModelConfig = Field(default_factory=lambda: VideoModelConfig(provider="openai"))
 
     @property
     def signal(self) -> ModelConfig:
@@ -93,6 +93,8 @@ class ProviderProfile(BaseModel):
     base_url: str = ""
     api_key: str = ""
     native_web_search: bool | None = None
+    native_tool_search: bool | None = Field(default=None, strict=True)
+    responses_store: bool = Field(default=False, strict=True)
     native_decisions: bool = Field(default=False, strict=True)
     structured_output_method: Literal["auto", "json_schema", "function_calling", "json_mode", "text_json"] = "auto"
     decision_extra_body: dict[str, Any] = Field(default_factory=dict)
@@ -392,9 +394,34 @@ def _normalize_provider_profiles(providers: Mapping[str, Any]) -> dict[str, dict
     return profiles
 
 
+def rename_model_reasoning_fields(models: MutableMapping[str, Any]) -> None:
+    """Read earlier spellings while giving the current fields precedence."""
+    for role in ("basic", "advanced"):
+        old_key = f"{role}_model_reasoning_effort"
+        key = f"{role}_reasoning_effort"
+        if old_key in models:
+            if key not in models:
+                models[key] = models[old_key]
+            del models[old_key]
+
+
+def _model_toml_key(role: str, field: str) -> str:
+    suffix = {"provider": "model_provider", "capabilities": "model_capabilities"}.get(field, field)
+    return f"{role}_{suffix}"
+
+
+def models_to_toml_fields(models: ModelsConfig) -> dict[str, Any]:
+    return {
+        _model_toml_key(role, field): value
+        for role, fields in models.model_dump(mode="json").items()
+        for field, value in fields.items()
+    }
+
+
 def _normalize_models(models: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     """Map current flat TOML model fields onto typed model roles."""
     model_fields = dict(models)
+    rename_model_reasoning_fields(model_fields)
     for suffix in ("model", "model_provider", "model_capabilities"):
         old_key = f"signal_{suffix}"
         new_key = f"decision_{suffix}"
@@ -410,12 +437,7 @@ def _normalize_models(models: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
         model = getattr(defaults, role)
         values = {}
         for field in type(model).model_fields:
-            suffix = {
-                "model": "model",
-                "provider": "model_provider",
-                "capabilities": "model_capabilities",
-            }.get(field, field)
-            key = f"{role}_{suffix}"
+            key = _model_toml_key(role, field)
             known_fields.add(key)
             values[field] = model_fields.get(key, getattr(model, field))
         normalized[role] = values
@@ -454,13 +476,18 @@ def parse_config(config: Mapping[str, Any]) -> FrontierSettings:
     normalized["agent"].pop("tool_long_text_forward_threshold", None)
     normalized["features"].setdefault("video_enabled", normalized["features"].get("paint_enabled", True))
     normalized["storage"].setdefault("media_ttl_days", normalized["storage"].get("image_ttl_days", 30))
-    return FrontierSettings.model_validate({
+    settings = FrontierSettings.model_validate({
         **normalized,
         "config_version": version,
         "models": _normalize_models(models),
         "providers": _normalize_provider_profiles(providers),
         "keys": keys,
     })
+    decision = settings.models.decision
+    profile = settings.providers.get(decision.provider.strip() or infer_adapter(decision.model))
+    if profile is not None and profile.native_decisions:
+        validate_native_decisions(decision.model, profile.model_dump())
+    return settings
 
 
 def load_config(path: Path = CONFIG_PATH) -> dict[str, Any]:
@@ -508,6 +535,7 @@ class EnvConfig:
     BASIC_MODEL: ClassVar[str]
     BASIC_MODEL_PROVIDER: ClassVar[str]
     BASIC_MODEL_CAPABILITIES: ClassVar[list[str]]
+    BASIC_REASONING_EFFORT: ClassVar[str]
     DECISION_MODEL: ClassVar[str]
     DECISION_MODEL_PROVIDER: ClassVar[str]
     DECISION_MODEL_CAPABILITIES: ClassVar[list[str]]
@@ -517,6 +545,7 @@ class EnvConfig:
     ADVAN_MODEL: ClassVar[str]
     ADVAN_MODEL_PROVIDER: ClassVar[str]
     ADVAN_MODEL_CAPABILITIES: ClassVar[list[str]]
+    ADVANCED_REASONING_EFFORT: ClassVar[str]
     DAILY_NEWS_MODEL: ClassVar[str]
     DAILY_NEWS_MODEL_PROVIDER: ClassVar[str]
     DAILY_NEWS_MODEL_CAPABILITIES: ClassVar[list[str]]
@@ -614,6 +643,7 @@ class EnvConfig:
             "BASIC_MODEL": model.basic.model,
             "BASIC_MODEL_PROVIDER": model.basic.provider,
             "BASIC_MODEL_CAPABILITIES": list(model.basic.capabilities),
+            "BASIC_REASONING_EFFORT": model.basic.reasoning_effort.strip(),
             "DECISION_MODEL": model.decision.model,
             "DECISION_MODEL_PROVIDER": model.decision.provider,
             "DECISION_MODEL_CAPABILITIES": list(model.decision.capabilities),
@@ -623,6 +653,7 @@ class EnvConfig:
             "ADVAN_MODEL": model.advanced.model,
             "ADVAN_MODEL_PROVIDER": model.advanced.provider,
             "ADVAN_MODEL_CAPABILITIES": list(model.advanced.capabilities),
+            "ADVANCED_REASONING_EFFORT": model.advanced.reasoning_effort.strip(),
             "DAILY_NEWS_MODEL": model.daily_news.model,
             "DAILY_NEWS_MODEL_PROVIDER": model.daily_news.provider,
             "DAILY_NEWS_MODEL_CAPABILITIES": list(model.daily_news.capabilities),
@@ -648,7 +679,7 @@ class EnvConfig:
             "LAYA_CANDIDATE_THRESHOLD": settings.features.laya_candidate_threshold,
             "LAYA_CANDIDATE_TIMEOUT_SECONDS": settings.features.laya_candidate_timeout_seconds,
             "LAYA_CANDIDATE_API_KEY": SecretStr(os.getenv("LAYA_API_KEY", "")),
-            "AGENT_CAPABILITY": settings.agent.reasoning_effort,
+            "AGENT_CAPABILITY": model.advanced.reasoning_effort.strip() or settings.agent.reasoning_effort,
             "MESSAGE_IMAGE_TEXT_THRESHOLD": settings.agent.message_image_text_threshold,
             "MESSAGE_MEDIA_FAKE_IP_FALLBACK": settings.agent.message_media_fake_ip_fallback,
             "SPEECH_RECOGNITION": settings.speech_recognition,

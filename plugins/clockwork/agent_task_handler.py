@@ -10,7 +10,6 @@ from plugins.agent.adapters.qq import qq_artifact_messages
 from utils.agents import FrontierCognitive
 from utils.agents.message_envelope import build_agent_message_payload, serialize_agent_payload
 from utils.agents.runtime_gateway import AgentRuntimeRequest, FrontierAgentRuntime
-from utils.configs import EnvConfig
 from utils.message import outgoing_message_content, sanitize_outgoing_text
 
 from .task_models import TaskRunResult
@@ -88,11 +87,8 @@ async def run_agent_task(job_id: str = "", **kwargs) -> TaskRunResult:  # noqa: 
         messages=tuple(messages),
         user_id=owner_user_id,
         user_name=f"ScheduledTask:{job_id}",
-        capability=EnvConfig.AGENT_CAPABILITY,
         group_id=group_id,
-        access_profile="frontier",
         job_prompt="scheduled-task",
-        enable_acp_subagents=True,
     ))
     _require_agent_success(result)
     if result.get("should_reply") is False:

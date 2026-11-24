@@ -53,5 +53,5 @@
 
 - `utils/providers/__init__.py` 与 `base.py` 在导入时不加载任何厂商 SDK；适配器在首次使用时加载（配置加载读取内置 profile 时会触发）。
 - DeepSeek 的余额和手动 OCR 工具放在 `deepseek/tools/`，由 Provider 注册表加入主 Agent 的直接工具。
-- DeepSeek 的余额、OCR、语音及独立联网接口由各服务模块实现。OpenAI 的 Images 和 Videos 协议分别位于 `openai/images.py` 和 `openai/videos.py`，共享绘图和视频服务仍是应用入口。
+- DeepSeek 的余额、OCR、语音及独立联网接口由各服务模块实现。`openai/images.py` 接入官方 Images API 和兼容网关绘图。`openai/videos.py` 只接入兼容视频网关。共享绘图和视频服务仍是应用入口。
 - 托管媒体接口的 `credentials_profile` 只用于选择密钥；只有 `type = "deepseek"` 的 profile 在 `base_url` 为空时默认使用官方地址，其他 profile 必须显式填写 `base_url`，避免把别家的密钥发到 DeepSeek。

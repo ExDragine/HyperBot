@@ -50,7 +50,7 @@ async def main():
         result = await agent.chat_agent(
             [*history, current], user_id='10', user_name='test', thread_id_override='same-execution-thread',
             group_id=20, conversation=ConversationRef('qq', '99', 'group', '20'),
-            allow_local_tools=False, allow_native_web_search=False, enable_acp_subagents=False, include_messages=True,
+            allow_local_tools=False, allow_native_web_search=False, include_messages=True,
         )
         assert result['status'] == 'success', result
         assert [m.content for m in result['response']['messages'] if m.type == 'ai'] == ['final'], result

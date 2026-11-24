@@ -179,10 +179,12 @@ const SettingsPage = {
         const saveSection = async () => {
             saving.value = true;
             try {
-                const sectionData = configData[activeTab.value];
+                const section = activeTab.value;
+                const sectionData = configData[section];
                 if (!sectionData) return;
 
-                await ApiClient.put(`/settings/${activeTab.value}`, { config: sectionData });
+                const saved = await ApiClient.put(`/settings/${section}`, { config: sectionData });
+                configData[section] = saved.config;
                 showToast('配置已保存并生效', 'success');
             } catch (err) {
                 showToast('保存失败: ' + err.message, 'error');

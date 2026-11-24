@@ -43,7 +43,7 @@ class DeepSeekAdapter(BaseChatAdapter):
     }
     model_prefixes = ("deepseek",)
     valid_kwargs = frozenset(
-        {"streaming", "max_retries", "timeout", "temperature", "model_kwargs", "extra_body", "profile"}
+        {"streaming", "max_retries", "timeout", "temperature", "reasoning_effort", "model_kwargs", "extra_body", "profile"}
     )
     api_key_field = "api_key"
     base_url_field = "api_base"
@@ -102,8 +102,8 @@ class DeepSeekVendor(BaseVendor):
         return {"model_kwargs": {"metadata": {"user_id": user_id}, **features}}
 
     def normalize_reasoning_effort(self, route: Route, effort: str) -> str:
-        """DeepSeek Responses accepts ``low``, ``high`` and ``max``."""
-        if route.api_mode != RESPONSES:
+        """Use the same HyperBot levels across the two OpenAI-format protocols."""
+        if route.api_mode not in {RESPONSES, CHAT_COMPLETIONS}:
             return effort
         return _EFFORT_ALIASES.get(effort, effort)
 
@@ -118,6 +118,10 @@ class DeepSeekVendor(BaseVendor):
         return "text_json"
 
     def prepare_chat_model(self, route: Route, model_class: Any, params: dict[str, Any]) -> Any:
+        if route.api_mode == CHAT_COMPLETIONS and params.get("reasoning_effort") not in (None, "none"):
+            from .chat_completions import DeepSeekThinkingChat
+
+            return DeepSeekThinkingChat
         if not self.native_web_search(route)[0]:
             return model_class
 

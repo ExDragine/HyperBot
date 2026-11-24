@@ -23,6 +23,7 @@ from .models import (
     QuotePart,
     TextPart,
     VideoPart,
+    WebCitation,
 )
 from .ports import AgentCore, DeliveryPort, HistoryStore, PlatformToolProvider, ReplyPolicy
 
@@ -53,5 +54,6 @@ __all__ = [
     "ReplyPolicy",
     "TextPart",
     "VideoPart",
+    "WebCitation",
     "normalize_workspace_key",
 ]

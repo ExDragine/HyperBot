@@ -16,6 +16,7 @@ def native_decisions(monkeypatch):
     profile = {
         "type": "openai",
         "api_mode": "responses",
+        "base_url": "https://api.openai.com/v1",
         "api_key": "sk-test",
         "native_decisions": True,
         "decision_extra_body": {"reasoning": {"effort": "none"}},
@@ -126,6 +127,15 @@ def test_native_decisions_rejects_proxy_profile(native_decisions):
 
     with pytest.raises(ValueError, match="native_decisions 需要支持该功能的官方 provider"):
         LLMDecisionProvider()
+
+
+def test_native_decisions_rejects_wrong_model_when_parsing_config():
+    with pytest.raises(ValueError, match="decision_model 必须是 gpt-6-luna"):
+        parse_config({
+            "config_version": 2,
+            "models": {"decision_model_provider": "openai", "decision_model": "gpt-5-mini"},
+            "providers": {"openai": {"base_url": "https://api.openai.com", "native_decisions": True, "api_key": "fixture-key"}},
+        })
 
 
 @pytest.mark.asyncio

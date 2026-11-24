@@ -34,7 +34,7 @@ from .runtime_gateway import (
     AgentRuntimeRequest,
     AgentRuntimeResult,
     FrontierAgentRuntime,
-    _message_text,
+    _message_output,
     _runtime_artifacts,
 )
 from .session_context import QQ_TRIGGER_ID_PREFIX
@@ -217,7 +217,7 @@ def _current_media(request: AgentRequest) -> tuple[
 def _mapping_result(result: Mapping[str, Any]) -> AgentRuntimeResult:
     response = result.get("response")
     messages = response.get("messages", []) if isinstance(response, Mapping) else []
-    text = _message_text(messages[-1]) if messages else str(result.get("text", ""))
+    text, citations = _message_output(messages[-1]) if messages else (str(result.get("text", "")), ())
     raw_artifacts = result.get("artifacts", result.get("uni_messages", ()))
     artifacts = list(_runtime_artifacts(raw_artifacts))
     status = str(result.get("status", "failed" if result.get("error") else "success"))
@@ -230,6 +230,7 @@ def _mapping_result(result: Mapping[str, Any]) -> AgentRuntimeResult:
         status=status,
         run_id=str(result["run_id"]) if result.get("run_id") is not None else None,
         usage=result.get("usage"),
+        citations=citations,
     )
 
 
@@ -287,9 +288,6 @@ class FrontierAgentCore:
             messages=tuple(messages),
             user_id=sender.id,
             user_name=sender.display_name,
-            capability=request.execution_profile,
-            access_profile="acp" if request.execution_profile == "acp" else "frontier",
-            enable_acp_subagents=request.execution_profile != "acp",
             allow_silent_reply=request.allow_silent_reply,
             image_inputs=tuple(item.data for item in images),
             audio_inputs=tuple(item.data for item in audio),
@@ -322,6 +320,7 @@ class FrontierAgentCore:
             should_reply=result.status != "silent",
             run_id=result.run_id,
             usage=result.usage or {},
+            citations=result.citations,
         )
 
 

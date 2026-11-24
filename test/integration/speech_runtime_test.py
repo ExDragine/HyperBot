@@ -60,7 +60,7 @@ async def main():
     agent.load_system_prompt = lambda group_id: 'Read the requested text aloud.'
     result = await agent.chat_agent(
         [{'role': 'user', 'content': 'Read hello aloud'}],
-        user_id='contract', user_name='Contract', enable_acp_subagents=False,
+        user_id='contract', user_name='Contract',
     )
     assert calls == [('hello', True)], calls
     assert result['status'] == 'success' and len(result['artifacts']) == 1, result

@@ -74,7 +74,7 @@ async def run(responses, tools):
     agent.document_subagent = None
     agent.working_dir = str(Path.cwd() / 'sandbox')
     agent.load_system_prompt = lambda group_id: 'Answer the current request.'
-    return await agent.chat_agent([{'role': 'user', 'content': 'help'}], user_id='contract', user_name='Contract', enable_acp_subagents=False)
+    return await agent.chat_agent([{'role': 'user', 'content': 'help'}], user_id='contract', user_name='Contract')
 
 async def main():
     EnvConfig.AGENT_MODEL_CALL_LIMIT = 1

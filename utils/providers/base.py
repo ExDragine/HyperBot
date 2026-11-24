@@ -78,8 +78,14 @@ def targets_https_api(
     if not base_url:
         return allow_default
 
-    parsed = urlsplit(base_url)
+    return is_https_api_base(base_url, hostname, paths=paths)
+
+
+def is_https_api_base(
+    base_url: str, hostname: str, *, paths: frozenset[str] = frozenset({"", "/v1"}),
+) -> bool:
     try:
+        parsed = urlsplit(base_url)
         port = parsed.port
     except ValueError:
         return False

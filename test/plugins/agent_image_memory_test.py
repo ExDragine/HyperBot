@@ -1819,7 +1819,7 @@ async def test_gateway_queue_routing(case, monkeypatch):  # noqa: C901
 
 
 @pytest.mark.asyncio
-async def test_process_agent_request_passes_configured_capability_directly(monkeypatch):
+async def test_process_agent_request_leaves_main_model_effort_to_cognitive(monkeypatch):
     import nonebot
 
     monkeypatch.setattr(nonebot, "require", lambda *_args, **_kwargs: None)
@@ -1843,7 +1843,6 @@ async def test_process_agent_request_passes_configured_capability_directly(monke
     monkeypatch.setattr(agent, "f_cognitive", DummyCognitive())
     monkeypatch.setattr(agent, "send_messages", _delivered)
     monkeypatch.setattr("utils.message.send_artifacts", _delivered)
-    monkeypatch.setattr(agent.EnvConfig, "AGENT_CAPABILITY", "high")
 
     context = agent.AgentRequestContext(
         event=cast(Any, types.SimpleNamespace)(self_id="1"),
@@ -1860,7 +1859,7 @@ async def test_process_agent_request_passes_configured_capability_directly(monke
 
     await agent._process_agent_request(context)
 
-    assert captured["capability"] == "high"
+    assert captured["capability"] is None
 
 
 @pytest.mark.asyncio

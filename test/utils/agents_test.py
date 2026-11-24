@@ -534,6 +534,78 @@ async def test_assistant_agent_uses_basic_model_config(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        ({}, "high"),
+        ({"use_model": "deepseek-flash"}, "high"),
+        ({"reasoning_effort": "xhigh"}, "max"),
+        ({"model_provider": "deepseek"}, "high"),
+        ({"model_provider": "deepseek", "reasoning_effort": "low"}, "low"),
+        ({"model_provider": "anthropic"}, None),
+        ({"use_model": "deepseek-flash", "model_role": "advanced"}, "low"),
+        ({"use_model": "deepseek-flash", "model_role": "decision"}, None),
+    ],
+)
+async def test_assistant_agent_passes_reasoning_effort_for_the_selected_role(monkeypatch, kwargs, expected):
+    class DummyAgent:
+        async def ainvoke(self, _payload):
+            return {"messages": [AIMessage(content="ok")]}
+
+    captured = {}
+
+    def fake_create_llm(**params):
+        captured.update(params)
+        return object()
+
+    monkeypatch.setattr(assistant_mod, "create_agent", lambda **_kwargs: DummyAgent())
+    monkeypatch.setattr(assistant_mod, "create_llm", fake_create_llm)
+    env = assistant_mod.EnvConfig
+    monkeypatch.setattr(env, "BASIC_MODEL", "deepseek-flash")
+    monkeypatch.setattr(env, "ADVAN_MODEL", "deepseek-flash")
+    monkeypatch.setattr(env, "BASIC_MODEL_PROVIDER", "deepseek_responses")
+    monkeypatch.setattr(env, "ADVAN_MODEL_PROVIDER", "deepseek_responses")
+    monkeypatch.setattr(env, "DECISION_MODEL_PROVIDER", "deepseek_responses")
+    monkeypatch.setattr(env, "BASIC_REASONING_EFFORT", "medium")
+    monkeypatch.setattr(env, "AGENT_CAPABILITY", "low")
+
+    await assistant_mod.assistant_agent(user_prompt="hello", **kwargs)
+
+    assert captured.get("reasoning_effort") == expected
+    if expected is None:
+        assert "reasoning_effort" not in captured
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model_provider", ["openai", "deepseek"])
+async def test_direct_basic_model_callers_use_the_same_reasoning_effort(monkeypatch, model_provider):
+    from utils import reverse_geocode
+    from utils.agents.subagents import document
+
+    captured = []
+
+    class DummyModel:
+        async def ainvoke(self, _messages):
+            return AIMessage(content="菲律宾海")
+
+    def fake_create_llm(**params):
+        captured.append(params)
+        return DummyModel()
+
+    monkeypatch.setattr(document, "create_llm", fake_create_llm)
+    monkeypatch.setattr(reverse_geocode, "create_llm", fake_create_llm)
+    for module in (document, reverse_geocode):
+        monkeypatch.setattr(module.EnvConfig, "BASIC_MODEL", "deepseek-flash" if model_provider == "deepseek" else "gpt-4")
+        monkeypatch.setattr(module.EnvConfig, "BASIC_MODEL_PROVIDER", model_provider)
+        monkeypatch.setattr(module.EnvConfig, "BASIC_REASONING_EFFORT", "low")
+
+    document.build_document_subagent()
+    assert await reverse_geocode.reverse_geocode(15, 130) == "菲律宾海"
+
+    assert [params["reasoning_effort"] for params in captured] == ["low", "low"]
+
+
+@pytest.mark.asyncio
 async def test_assistant_agent_uses_signal_model_config(monkeypatch):
     import types
 
@@ -619,8 +691,11 @@ async def test_assistant_agent_parses_structured_response_from_ai_json_text(monk
 
 
 @pytest.mark.asyncio
-async def test_chat_agent_drops_reasoning_params_when_chat_completions(monkeypatch):
+@pytest.mark.parametrize(("configured", "override", "expected"), [("", None, None), ("high", None, "high"), ("high", "low", "low")])
+async def test_chat_agent_sends_only_explicit_effort_when_chat_completions(monkeypatch, configured, override, expected):
     import types
+
+    from utils import llm_factory
 
     class DummyAgent:
         async def astream_events(self, payload, config=None, context=None, version=None):
@@ -648,7 +723,11 @@ async def test_chat_agent_drops_reasoning_params_when_chat_completions(monkeypat
 
     monkeypatch.setattr(cognitive_mod, "create_llm", capturing_create_llm)
     monkeypatch.setattr(cognitive_mod.EnvConfig, "ADVAN_MODEL_PROVIDER", "openrouter")
-    monkeypatch.setattr(cognitive_mod, "provider_uses_responses_api", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(cognitive_mod.EnvConfig, "ADVANCED_REASONING_EFFORT", configured)
+    monkeypatch.setattr(cognitive_mod.EnvConfig, "AGENT_CAPABILITY", "medium")
+    monkeypatch.setitem(llm_factory.EnvConfig.LLM_PROVIDERS, "openrouter", {
+        "type": "openai", "api_mode": "chat_completions", "base_url": "https://proxy.example.test/v1",
+    })
     monkeypatch.setattr(cognitive_mod, "provider_request_overrides", lambda *_args, **_kwargs: {})
     monkeypatch.setattr(
         cognitive_mod, "native_web_search_support", lambda *_args, **_kwargs: (False, "test route")
@@ -674,6 +753,7 @@ async def test_chat_agent_drops_reasoning_params_when_chat_completions(monkeypat
         ],
         user_id="u1",
         user_name="test",
+        capability=override,
         group_id=123,
         audio_inputs=[b"audio"],
     )
@@ -681,7 +761,9 @@ async def test_chat_agent_drops_reasoning_params_when_chat_completions(monkeypat
     assert "use_responses_api" not in captured
     assert captured.get("provider") == "openrouter"
     assert "endpoint" not in captured
-    assert "reasoning_effort" not in captured
+    assert captured.get("reasoning_effort") == expected
+    if expected is None:
+        assert "reasoning_effort" not in captured
     assert "verbosity" not in captured
     assert "model_kwargs" not in captured
     assert captured["payload"]["messages"][0]["content"] == (
@@ -794,7 +876,7 @@ async def test_chat_agent_uses_group_id_scoped_workspace(monkeypatch, tmp_path, 
 
 
 @pytest.mark.asyncio
-async def test_chat_agent_acp_profile_removes_platform_tools_and_delegation(
+async def test_chat_agent_without_local_tools_skips_platform_tools_and_delegation(
     monkeypatch, tmp_path
 ):
     captured = {}
@@ -821,14 +903,9 @@ async def test_chat_agent_acp_profile_removes_platform_tools_and_delegation(
     monkeypatch.setattr(prompts_mod.EnvConfig, "SYSTEM_PROMPT", "QQ-only persona for {name}.")
 
     async def unexpected_capture_check(_text):
-        raise AssertionError("ACP profile must not run the QQ browser-capture gate")
+        raise AssertionError("A job without local tools must not run the browser-capture gate")
 
     monkeypatch.setattr(cognitive_mod, "detect_browser_capture_intent", unexpected_capture_check)
-    monkeypatch.setattr(
-        cognitive_mod,
-        "build_acp_subagents",
-        lambda: (_ for _ in ()).throw(AssertionError("ACP profile must not delegate to ACP")),
-    )
 
     frontier = cognitive_mod.FrontierCognitive.__new__(cognitive_mod.FrontierCognitive)
     frontier.tools = [types.SimpleNamespace(name="send_group_message")]
@@ -837,17 +914,17 @@ async def test_chat_agent_acp_profile_removes_platform_tools_and_delegation(
 
     await frontier.chat_agent(
         messages=[{"role": "user", "content": "hi"}],
-        user_id="acp-session",
-        user_name="ACP client",
-        access_profile="acp",
+        user_id="news-job",
+        user_name="Daily news",
+        allow_local_tools=False,
+        job_prompt="daily-news",
     )
 
     assert captured["tools"] == []
     assert "pinned_skills" not in captured["payload"]
-    assert captured["subagents"] == [frontier.document_subagent]
+    assert captured["subagents"] == []
     prompt = captured["system_prompt"]
-    assert "可信身份或平台授权" in prompt
-    assert "访问聊天历史" in prompt
+    assert "日报归档或预览" in prompt
     assert "QQ-only persona" not in prompt
     assert "frontier.message_context.v1" not in prompt
     assert "get_recent_conversation" not in prompt
@@ -1012,7 +1089,8 @@ def test_conversation_workspace_key_isolated_by_scope():
 
 
 @pytest.mark.asyncio
-async def test_chat_agent_includes_reasoning_params_when_responses_api(monkeypatch):
+@pytest.mark.parametrize(("override", "expected"), [(None, "high"), ("medium", "medium")])
+async def test_chat_agent_includes_reasoning_params_when_responses_api(monkeypatch, override, expected):
     import types
 
     class DummyAgent:
@@ -1038,6 +1116,7 @@ async def test_chat_agent_includes_reasoning_params_when_responses_api(monkeypat
 
     monkeypatch.setattr(cognitive_mod, "create_llm", capturing_create_llm)
     monkeypatch.setattr(cognitive_mod, "provider_uses_responses_api", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(cognitive_mod.EnvConfig, "AGENT_CAPABILITY", "high")
     monkeypatch.setattr(
         cognitive_mod,
         "provider_request_overrides",
@@ -1052,17 +1131,16 @@ async def test_chat_agent_includes_reasoning_params_when_responses_api(monkeypat
         messages=[{"role": "user", "content": "hi"}],
         user_id="u1",
         user_name="test",
-        capability="medium",
+        capability=override,
     )
 
     assert "use_responses_api" not in captured
-    assert captured.get("reasoning_effort") == "medium"
+    assert captured.get("reasoning_effort") == expected
     assert captured.get("verbosity") == "low"
     cache_key = captured["model_kwargs"]["prompt_cache_key"]
     assert cache_key == cognitive_mod._prompt_cache_key(
         model=cognitive_mod.EnvConfig.ADVAN_MODEL,
         workspace_key=runtime_mod.conversation_workspace_key("u1", None),
-        access_profile="frontier",
     )
     assert "u1" not in cache_key
     assert len(cache_key) <= 64
@@ -1072,24 +1150,17 @@ def test_prompt_cache_key_is_stable_and_scoped_without_plaintext_identity():
     first = cognitive_mod._prompt_cache_key(
         model="gpt-5.4",
         workspace_key="123456789",
-        access_profile="frontier",
     )
 
     assert first == cognitive_mod._prompt_cache_key(
         model="gpt-5.4",
         workspace_key="123456789",
-        access_profile="frontier",
     )
     assert first != cognitive_mod._prompt_cache_key(
         model="gpt-5.4",
         workspace_key="987654321",
-        access_profile="frontier",
     )
-    assert first != cognitive_mod._prompt_cache_key(
-        model="gpt-5.4",
-        workspace_key="123456789",
-        access_profile="acp",
-    )
+    assert first != cognitive_mod._prompt_cache_key(model="gpt-5.4-mini", workspace_key="123456789")
     assert "123456789" not in first
 
 
@@ -1116,14 +1187,12 @@ def test_provider_request_overrides_isolates_official_deepseek_routes(
     workspace_key = "group-123456789"
     pseudonym = cognitive_mod._provider_user_id(
         workspace_key=workspace_key,
-        access_profile="frontier",
     )
 
     overrides = cognitive_mod._provider_request_overrides(
         model="deepseek-v4-pro",
         provider="deepseek_route",
         workspace_key=workspace_key,
-        access_profile="frontier",
     )
 
     expected = {
@@ -1137,23 +1206,16 @@ def test_provider_request_overrides_isolates_official_deepseek_routes(
     assert len(pseudonym) <= 64
 
 
-def test_provider_user_id_is_stable_and_separates_scope_and_access_profile():
+def test_provider_user_id_is_stable_and_scoped_to_the_workspace():
     private = cognitive_mod._provider_user_id(
         workspace_key="dm-123",
-        access_profile="frontier",
     )
 
     assert private == cognitive_mod._provider_user_id(
         workspace_key="dm-123",
-        access_profile="frontier",
     )
     assert private != cognitive_mod._provider_user_id(
         workspace_key="group-123",
-        access_profile="frontier",
-    )
-    assert private != cognitive_mod._provider_user_id(
-        workspace_key="dm-123",
-        access_profile="acp",
     )
 
 
@@ -1171,14 +1233,12 @@ def test_provider_request_overrides_keeps_anthropic_cache_control_off_proxies(mo
         model="claude-sonnet-4",
         provider="proxy",
         workspace_key="dm-u1",
-        access_profile="frontier",
     ) == {}
 
     assert cognitive_mod._provider_request_overrides(
         model="claude-sonnet-4",
         provider="anthropic",
         workspace_key="dm-u1",
-        access_profile="frontier",
     ) == {"model_kwargs": {"cache_control": {"type": "ephemeral"}}}
 
 
@@ -1207,7 +1267,6 @@ def test_provider_request_overrides_adds_deepseek_chatbot_features(
         model="deepseek-flash",
         provider="deepseek_route",
         workspace_key="group-1",
-        access_profile="frontier",
     )
 
     payload = overrides[expected_key]
@@ -1216,7 +1275,7 @@ def test_provider_request_overrides_adds_deepseek_chatbot_features(
     assert set(payload) >= {"safety_check", "title"}
     if api_mode == "responses":
         assert overrides["model_kwargs"]["user"] == cognitive_mod._provider_user_id(
-            workspace_key="group-1", access_profile="frontier",
+            workspace_key="group-1",
         )
 
 
@@ -1266,14 +1325,6 @@ async def test_chat_agent_stabilizes_tool_order_and_keeps_gated_tools_at_tail(mo
         "detect_browser_capture_intent",
         capture_intent,
     )
-    monkeypatch.setattr(
-        cognitive_mod,
-        "build_acp_subagents",
-        lambda: [
-            {"name": "acp-z", "description": "z", "runnable": object()},
-            {"name": "acp-a", "description": "a", "runnable": object()},
-        ],
-    )
     monkeypatch.setattr(cognitive_mod.EnvConfig, "ADVAN_MODEL", "custom-model")
 
     frontier = cognitive_mod.FrontierCognitive.__new__(cognitive_mod.FrontierCognitive)
@@ -1301,7 +1352,7 @@ async def test_chat_agent_stabilizes_tool_order_and_keeps_gated_tools_at_tail(mo
         middleware for middleware in captured["middleware"] if isinstance(middleware, cognitive_mod.TurnSkillsMiddleware)
     )
     assert [tool.name for tool in skill_middleware.tools] == ["ens_normal", "get_china_earthquake"]
-    assert [item["name"] for item in captured["subagents"][-2:]] == ["acp-a", "acp-z"]
+    assert captured["subagents"] == [frontier.document_subagent]
 
 
 @pytest.mark.asyncio
@@ -1730,6 +1781,11 @@ async def test_provider_tool_search_excludes_native_provider_tools(monkeypatch, 
             captured_searchable_tools.append(searchable_tools)
 
     monkeypatch.setattr(cognitive_mod, "ProviderToolSearchMiddleware", DummyProviderToolSearchMiddleware)
+    from utils import llm_factory
+
+    monkeypatch.setattr(llm_factory.EnvConfig, "LLM_PROVIDERS", {"openai": {
+        "type": "openai", "api_mode": "responses", "base_url": "https://api.openai.com/v1",
+    }})
     await _run_chat_agent_with_web_search(
         monkeypatch,
         tmp_path,
@@ -2306,8 +2362,7 @@ async def test_components_refresh_when_mcp_recovers_without_config_change(monkey
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("access_profile", ["frontier", "acp"])
-async def test_main_agent_owns_network_tools_with_read_only_errors(monkeypatch, tmp_path, access_profile):
+async def test_main_agent_owns_network_tools_with_read_only_errors(monkeypatch, tmp_path):
     captured = {}
     network_tools = [types.SimpleNamespace(name=name) for name in sorted(cognitive_mod.WEB_SEARCH_TOOL_NAMES)]
     query_tool = types.SimpleNamespace(name="get_china_earthquake")
@@ -2332,10 +2387,9 @@ async def test_main_agent_owns_network_tools_with_read_only_errors(monkeypatch, 
     agent.working_dir = str(tmp_path / "sandbox")
     result = await agent.chat_agent(
         messages=[{"role": "user", "content": "搜索最新消息"}], user_id="1", user_name="test",
-        access_profile=access_profile, enable_acp_subagents=False,
     )
     assert result["status"] == "success"
-    assert captured["tools"] == (sorted(agent.tools, key=lambda tool: tool.name) if access_profile == "frontier" else [])
+    assert captured["tools"] == sorted(agent.tools, key=lambda tool: tool.name)
     assert captured["subagents"] == [agent.document_subagent]
     errors = next(item for item in captured["middleware"] if type(item).__name__ == "ToolErrorMiddleware")
     attempts = []
@@ -2358,13 +2412,9 @@ async def test_main_agent_owns_network_tools_with_read_only_errors(monkeypatch, 
         raise TimeoutError("private-credential")
 
     request = types.SimpleNamespace(tool=query_tool, tool_call={"name": query_tool.name, "id": "query", "args": {}})
-    if access_profile == "frontier":
-        reply = await errors.awrap_tool_call(request, unavailable)
-        assert reply.status == "error"
-        assert "private-credential" not in reply.content
-    else:
-        with pytest.raises(ToolExecutionUncertainError):
-            await errors.awrap_tool_call(request, unavailable)
+    reply = await errors.awrap_tool_call(request, unavailable)
+    assert reply.status == "error"
+    assert "private-credential" not in reply.content
     for name in ("send_message", "unknown_tool"):
         request.tool_call["name"] = name
         with pytest.raises(ToolExecutionUncertainError):

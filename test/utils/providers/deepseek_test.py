@@ -63,16 +63,17 @@ def test_adapter_filters_unsupported_parameters(monkeypatch):
     assert captured["tags"] == ["t"]
     assert captured["profile"] == {"tool_calling": True}
     assert "unsupported" not in captured
-    assert "reasoning_effort" not in captured
+    assert captured["reasoning_effort"] == "high"
 
 
 @pytest.mark.parametrize(
     ("api_mode", "effort", "expected"),
     [("responses", "medium", "high"), ("responses", "xhigh", "max"), ("responses", "low", "low"),
-     ("chat_completions", "medium", "medium")],
+     ("chat_completions", "medium", "high"), ("chat_completions", "xhigh", "max"),
+     ("chat_completions", "none", "none"), ("messages", "medium", "medium")],
 )
-def test_reasoning_effort_aliases_apply_to_responses_only(api_mode, effort, expected):
-    adapter = "openai" if api_mode == "responses" else "deepseek"
+def test_reasoning_effort_aliases_apply_to_openai_format_routes(api_mode, effort, expected):
+    adapter = {"responses": "openai", "chat_completions": "deepseek", "messages": "anthropic"}[api_mode]
     route = _route("deepseek-v4-pro", adapter, api_mode, base_url="https://api.deepseek.com")
 
     assert get_vendor("deepseek").normalize_reasoning_effort(route, effort) == expected

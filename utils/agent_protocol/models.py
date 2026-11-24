@@ -178,6 +178,12 @@ class AgentArtifact:
 
 
 @dataclass(frozen=True, slots=True)
+class WebCitation:
+    title: str
+    url: str
+
+
+@dataclass(frozen=True, slots=True)
 class AgentResponse:
     """Result returned by Agent Core before platform delivery."""
 
@@ -187,6 +193,7 @@ class AgentResponse:
     should_reply: bool = True
     run_id: str | None = None
     usage: Mapping[str, object] = field(default_factory=dict)
+    citations: tuple[WebCitation, ...] = ()
 
 
 class DeliveryStatus(StrEnum):
@@ -231,4 +238,5 @@ __all__ = [
     "QuotePart",
     "TextPart",
     "VideoPart",
+    "WebCitation",
 ]

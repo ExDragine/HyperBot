@@ -7,6 +7,7 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, call
 
 import pytest
+from langchain_core.messages import AIMessage
 
 from plugins.agent.attachments import StagedMessageFile
 from utils.agent_protocol import AgentArtifact
@@ -103,6 +104,53 @@ async def test_history_only_records_delivered_response_after_send(monkeypatch, d
 
     assert await agent._process_agent_request(context) is delivered
     assert calls == ([("send", "answer"), ("store", "answer")] if delivered else [("send", "answer")])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("links_delivered", [True, False])
+async def test_qq_native_web_references_are_delivered_as_plain_text(monkeypatch, links_delivered):
+    import nonebot
+
+    monkeypatch.setattr(nonebot, "require", lambda *_args, **_kwargs: None)
+    from plugins.agent import handlers as agent
+
+    calls = []
+    source = "https://example.com/page?a=1&b=2"
+
+    class Cognitive:
+        async def chat_agent(self, *_args, **_kwargs):
+            return {"response": {"messages": [AIMessage(content=[
+                {"type": "reasoning", "text": "private"},
+                {"type": "text", "text": "事实。还有事实。", "annotations": [
+                    {"type": "url_citation", "end_index": 3, "title": "出处", "url": source},
+                    {"type": "citation", "end_index": 8, "title": "出处", "url": source},
+                    {"type": "file_citation", "url": "https://example.com/file"},
+                    {"type": "url_citation", "url": "file:///citation.txt"},
+                ]},
+            ])]}}
+
+    class Database:
+        async def insert(self, **kwargs):
+            calls.append(("store", kwargs["content"]))
+
+    async def body_sender(_group, _reply, response):
+        calls.append(("body", response["messages"][0].content))
+        return DeliveryResult(attempted=1, sent=1, message_ids=(900,))
+
+    async def sources_sender(text):
+        calls.append(("links", text))
+        return DeliveryResult(attempted=1, sent=1, message_ids=(901,)) if links_delivered else DeliveryResult(attempted=1)
+
+    monkeypatch.setattr(agent, "f_cognitive", Cognitive())
+    monkeypatch.setattr(agent, "messages_db", Database())
+    monkeypatch.setattr(agent, "send_messages", body_sender)
+    monkeypatch.setattr("utils.message.send_plain_message", sources_sender)
+
+    assert await agent._process_agent_request(_context(agent)) is links_delivered
+    assert calls == [
+        ("body", "事实。〔1〕还有事实。〔1〕"), ("links", f"来源\n〔1〕出处\n{source}"),
+        ("store", "事实。〔1〕还有事实。〔1〕"),
+    ]
 
 
 @pytest.mark.asyncio

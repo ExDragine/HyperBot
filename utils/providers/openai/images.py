@@ -22,6 +22,7 @@ from PIL import Image
 from utils.configs import EnvConfig, get_provider_profile
 from utils.http_client import get_http_client
 from utils.markdown_media import PublicFetcher, failure_reason
+from utils.providers.openai import is_official_openai_base, resolve_openai_base_url
 
 _MAX_IMAGE_BYTES = 20_000_000
 
@@ -33,17 +34,6 @@ def _normalize_reference_image(image: bytes) -> bytes:
         with io.BytesIO() as png_bytes:
             normalized.save(png_bytes, format="PNG")
             return png_bytes.getvalue()
-
-
-def _build_openai_client() -> AsyncOpenAI:
-    profile = get_provider_profile(EnvConfig.PAINT_MODEL_PROVIDER)
-    if str(profile.get("type", "")).strip().lower() != "openai":
-        raise ValueError("paint_model_provider 必须引用 type = 'openai' 的 provider")
-    api_key = str(profile.get("api_key", ""))
-    base_url = str(profile.get("base_url", "")).strip()
-    if base_url:
-        return AsyncOpenAI(api_key=api_key, base_url=base_url)
-    return AsyncOpenAI(api_key=api_key)
 
 
 def _image_generation_tool(reference_images: list[bytes]) -> ImageGeneration:
@@ -72,7 +62,7 @@ def _responses_input(prompt: str, reference_images: list[bytes]) -> ResponseInpu
                 },
             )
         )
-    return cast(ResponseInputParam, [EasyInputMessageParam(type="message", role="user", content=content)])
+    return [EasyInputMessageParam(type="message", role="user", content=content)]
 
 
 def _response_value(value: Any, key: str) -> Any:
@@ -162,19 +152,23 @@ async def _paint_responses(client: AsyncOpenAI, prompt: str, reference_images: l
 
 
 async def _paint_with_openai(prompt: str, reference_images: list[bytes]) -> bytes | None:
-    api_mode = get_provider_profile(EnvConfig.PAINT_MODEL_PROVIDER).get("api_mode", "chat_completions")
+    profile = get_provider_profile(EnvConfig.PAINT_MODEL_PROVIDER)
+    if str(profile.get("type", "")).strip().lower() != "openai":
+        raise ValueError("paint_model_provider 必须引用 type = 'openai' 的 provider")
+    base_url = resolve_openai_base_url(profile.get("base_url"))
+    use_responses = profile.get("api_mode") == "responses" and not is_official_openai_base(base_url)
     logger.info(
         "🎨 调用 {} 绘图 API, model={}, prompt_length={}, references={}",
-        "Responses" if api_mode == "responses" else "Images",
+        "Responses" if use_responses else "Images",
         EnvConfig.PAINT_MODEL, len(prompt), len(reference_images),
     )
-    client = _build_openai_client()
+    client = AsyncOpenAI(api_key=str(profile.get("api_key", "")), base_url=base_url)
     try:
-        if api_mode == "responses":
+        if use_responses:
             return await _paint_responses(client, prompt, reference_images)
         return await _paint_images(client, prompt, reference_images)
     except APIError as exc:
-        logger.warning(f"绘图 {api_mode} API 调用失败: {exc}")
+        logger.warning("绘图 API 调用失败: {}", type(exc).__name__)
         return None
     finally:
         await client.close()
@@ -190,5 +184,5 @@ async def paint(prompt: str, reference_images: list[bytes] | None = None) -> byt
     try:
         return await _paint_with_openai(prompt, reference_images)
     except Exception as exc:
-        logger.exception(f"💥 调用绘图 API 失败: {exc}")
+        logger.warning("调用绘图 API 失败: {}", type(exc).__name__)
         return None

@@ -2,12 +2,12 @@
 
 ## Unreleased
 
-- Renamed the project branding from Frontier to HyperBot. Existing Frontier-prefixed runtime identifiers, configuration names, database filenames, and ACP compatibility entry points remain unchanged for upgrade compatibility.
+- Removed the ACP plugin, including the `/acp` command, external subagents, and the built-in stdio server.
+- Renamed the project branding from Frontier to HyperBot. The project continues to use existing Frontier-prefixed runtime identifiers, configuration names, and database filenames for upgrade compatibility.
 
 - Reorganized the documentation: `README.md` is now a concise project entry
   point, `docs/README.md` indexes every document by audience, and the detailed
-  configuration and ACP material moved to `docs/configuration.md` and
-  `docs/acp.md`. Historical design and review documents now live under
+  configuration material moved to `docs/configuration.md`. Historical design and review documents now live under
   `docs/archive/` with an archive README and updated links.
 - Removed the explanatory source comments from the Python code, `renderer/src`,
   the Dashboard web client and template CSS/HTML/inline JavaScript: 874 Python
@@ -19,11 +19,10 @@
 - Updated the official model catalog to the October 8, 2026 snapshot with 18 new
   model cards, refreshed LobeHub display names, corrected DeepSeek token limits,
   and recorded the Intern-S2 and MiMo V2.5 lifecycle transitions.
-- Removed QQ private and group progress messages (also for `/acp` tasks), including thinking, tool
+- Removed QQ private and group progress messages, including thinking, tool
   calls, subagent activity and assistant preambles, plus the group status
   classifier and its background task. Final replies, artifacts and failure
-  notices retain their existing delivery behavior; ACP progress remains
-  available through the optional runtime reporter.
+  notices retain their existing delivery behavior.
 - Added repository maintenance documentation and a local Markdown-link check.
 - CI now checks Python formatting, local documentation links, and the bundled
   Markdown renderer in addition to lint, type, and test checks.

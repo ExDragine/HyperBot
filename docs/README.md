@@ -1,6 +1,6 @@
 # 文档索引
 
-本页是 HyperBot 全部项目文档的导航入口。项目入口和快速开始见 [README](../README.md)；配置字段以 `env.toml.example` 和 `utils/configs.py` 为准，行为以代码和测试为准。新增 `docs/*.md` 时请同时在此登记。
+本页是 HyperBot 全部项目文档的导航入口。项目入口和快速开始见 [README](../README.md)。`env.toml.example` 用于快速启动，完整字段由 [配置参考](configuration.md) 和 `utils/configs.py` 说明。新增 `docs/*.md` 时请同时在此登记。
 
 ## 入门
 
@@ -8,7 +8,7 @@
 | --- | --- |
 | [README](../README.md) | 项目入口：简介、能力概览、架构流程图、技术栈、快速开始、配置概览与文档导航。 |
 | [AGENTS.md](../AGENTS.md) | 面向 Agent 与贡献者的项目全景：请求生命周期、模块地图、关键约定、配置要点与测试方式。 |
-| [配置参考](configuration.md) | `.env` / `env.toml` / `mcp.json` / `acp.json` 的职责，配置段、供应商 profile、模型路由、访问策略、Dashboard 保存与重载语义。 |
+| [配置参考](configuration.md) | `.env`、`env.toml` 和 `mcp.json` 的职责，供应商 profile、模型路由、访问策略及 Dashboard 重载。 |
 | [CONTRIBUTING](../CONTRIBUTING.md) | 本地开发、提交前检查清单和提交/PR 描述约定。 |
 | [SECURITY](../SECURITY.md) | 漏洞私密报告流程，以及分享日志前必须移除的敏感数据。 |
 | [CHANGELOG](../CHANGELOG.md) | 未发布变更和按主题记录的历史实现说明。 |
@@ -39,10 +39,6 @@
 
 | 文档 | 说明 |
 | --- | --- |
-| [ACP 接入](acp.md) | `acp.json` 客户端配置、`/acp` 命令、子代理桥接、HyperBot 内置 v1/v2 stdio server、DSH 接入与安全边界。 |
-| [ACP 插件说明](../plugins/acp/README.md) | ACP 插件的文件职责、CLI 启动命令和测试入口。 |
-| [ACP v1 接入规范](../plugins/acp/docs/acp-v1.md) | v1 客户端生命周期、媒体能力、权限默认值和 HyperBot 作为 Agent 的支持范围。 |
-| [ACP v2 Draft 接入规范](../plugins/acp/docs/acp-v2.md) | v2 与 v1 的字段差异、`state_update` 生命周期、会话恢复/回放和草案限制。 |
 | [Milky 1.3 适配](milky-1.3.md) | Milky 1.3 协议变更对应的 HyperBot 行为与兼容性边界。 |
 | [Milky 申请事件](platform-events.md) | 四类申请事件的 `ignore/record/rule/shadow/decision` 模式、`/events` 管理和执行恢复。 |
 | [新闻插件运维](news-plugin.md) | 新闻管线的配置、投递语义、恢复与保留策略、运维命令和回滚方式（英文）。 |

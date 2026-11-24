@@ -89,7 +89,7 @@ async def main():
         ]},
     ]
     result = await agent.chat_agent(messages, image_inputs=originals, user_id='contract',
-                                    user_name='Contract', enable_acp_subagents=False)
+                                    user_name='Contract')
     assert calls == [('change only the background', originals)], (mode, supports_vision, calls)
     assert result['status'] == 'success' and len(result['artifacts']) == 1, result
     assert result['artifacts'][0].data == originals[0], result

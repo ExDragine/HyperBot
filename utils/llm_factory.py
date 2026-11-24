@@ -5,6 +5,7 @@ from langchain_core.language_models import ModelProfile
 from models import ApiMode, ModelFeature, ModelInput, ModelOutput, get_model, load_catalog
 from utils.configs import EnvConfig
 from utils.providers import Route, adapter_protocol, get_adapter, infer_adapter, vendor_for
+from utils.providers.openai import openai_tool_search_supported, resolve_openai_base_url
 
 if TYPE_CHECKING:
     from langchain.agents.middleware import AgentMiddleware
@@ -110,11 +111,20 @@ def _route(model: str, provider: str | None) -> Route:
     """Resolve the profile and protocol once; providers only ever see this."""
     _, profile = _provider_profile(model, provider)
     adapter, api_mode = _provider_protocol(model, profile)
+    if adapter == "openai":
+        profile = {**profile, "base_url": resolve_openai_base_url(profile.get("base_url"))}
     return Route(model, profile, adapter, api_mode, _infer_provider(model))
 
 
 def provider_uses_responses_api(model: str, provider: str | None = None) -> bool:
     return _route(model, provider).api_mode == ApiMode.RESPONSES.value
+
+
+def provider_supports_tool_search(model: str, provider: str | None = None) -> bool:
+    route = _route(model, provider)
+    if route.adapter == "openai":
+        return openai_tool_search_supported(route)
+    return any(marker in model.lower() for marker in get_adapter(route.adapter).tool_search_model_markers)
 
 
 def normalize_reasoning_effort(
@@ -125,9 +135,25 @@ def normalize_reasoning_effort(
     """Map HyperBot's generic effort names to the route's vendor-native values."""
     if effort is None:
         return None
-    route = _route(model, provider)
+    return _normalize_reasoning_effort(_route(model, provider), effort)
+
+
+def _normalize_reasoning_effort(route: Route, effort: str) -> str:
     vendor = vendor_for(route)
     return vendor.normalize_reasoning_effort(route, effort) if vendor else effort
+
+
+def chat_reasoning_kwargs(
+    model: str, provider: str | None, effort: str | None, *, responses_fallback: str | None = None,
+) -> dict[str, str]:
+    if not effort and not responses_fallback:
+        return {}
+    route = _route(model, provider)
+    if route.api_mode == ApiMode.RESPONSES.value:
+        effort = effort or responses_fallback
+    elif route.api_mode != ApiMode.CHAT_COMPLETIONS.value:
+        return {}
+    return {"reasoning_effort": _normalize_reasoning_effort(route, effort)} if effort else {}
 
 
 def provider_request_overrides(
@@ -159,6 +185,8 @@ def native_web_search_support(
     with ``native_web_search = true`` after their upstream capability is verified.
     """
     route = _route(model, provider)
+    if route.profile.get("native_web_search") is False:
+        return False, "native_web_search is disabled for this provider profile"
     vendor = vendor_for(route)
     verdict = vendor.native_web_search(route) if vendor else None
     if verdict is not None:

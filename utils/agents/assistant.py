@@ -8,41 +8,28 @@ from langchain.agents import create_agent
 from pydantic import ValidationError
 
 from utils.configs import EnvConfig
-from utils.llm_factory import (
-    create_llm,
-    model_supports,
-    normalize_reasoning_effort,
-    provider_uses_responses_api,
-)
+from utils.llm_factory import chat_reasoning_kwargs, create_llm, model_supports
 from utils.message import extract_message_text
 
 from .inputs import build_user_content
 
+type ModelRole = Literal["basic", "decision", "signal", "advanced", "daily_news"]
 
-def configured_model_route(
-    model: str,
-    role: Literal["basic", "decision", "signal", "advanced", "daily_news"] | None = None,
-) -> dict[str, str]:
-    role_routes = {
-        "basic": EnvConfig.BASIC_MODEL_PROVIDER,
-        "decision": EnvConfig.DECISION_MODEL_PROVIDER,
-        "signal": EnvConfig.SIGNAL_MODEL_PROVIDER,
-        "advanced": EnvConfig.ADVAN_MODEL_PROVIDER,
-        "daily_news": EnvConfig.DAILY_NEWS_MODEL_PROVIDER,
+
+def _configured_model_route(model: str, role: ModelRole | None) -> tuple[ModelRole | None, str | None]:
+    role_routes: dict[ModelRole, tuple[str, str]] = {
+        "basic": (EnvConfig.BASIC_MODEL, EnvConfig.BASIC_MODEL_PROVIDER),
+        "advanced": (EnvConfig.ADVAN_MODEL, EnvConfig.ADVAN_MODEL_PROVIDER),
+        "decision": (EnvConfig.DECISION_MODEL, EnvConfig.DECISION_MODEL_PROVIDER),
+        "signal": (EnvConfig.SIGNAL_MODEL, EnvConfig.SIGNAL_MODEL_PROVIDER),
+        "daily_news": (EnvConfig.DAILY_NEWS_MODEL, EnvConfig.DAILY_NEWS_MODEL_PROVIDER),
     }
-    if role in role_routes:
-        return {"provider": role_routes[role]}
-    model_routes: dict[str, str] = {}
-    for configured_model, configured_provider in (
-        (EnvConfig.BASIC_MODEL, EnvConfig.BASIC_MODEL_PROVIDER),
-        (EnvConfig.ADVAN_MODEL, EnvConfig.ADVAN_MODEL_PROVIDER),
-        (EnvConfig.DECISION_MODEL, EnvConfig.DECISION_MODEL_PROVIDER),
-        (EnvConfig.SIGNAL_MODEL, EnvConfig.SIGNAL_MODEL_PROVIDER),
-        (EnvConfig.DAILY_NEWS_MODEL, EnvConfig.DAILY_NEWS_MODEL_PROVIDER),
-    ):
-        model_routes.setdefault(configured_model, configured_provider)
-    provider = model_routes.get(model)
-    return {"provider": provider} if provider is not None else {}
+    if role is not None:
+        return role, role_routes[role][1]
+    for configured_role, (configured_model, provider) in role_routes.items():
+        if model == configured_model:
+            return configured_role, provider
+    return None, None
 
 
 def json_document_candidates(text: str, *, prefer_object: bool = False) -> list[str]:
@@ -87,7 +74,7 @@ async def assistant_agent(  # noqa: C901
     system_prompt: str = "",
     user_prompt: str = "",
     use_model: str | None = None,
-    model_role: Literal["basic", "decision", "signal", "advanced", "daily_news"] | None = None,
+    model_role: ModelRole | None = None,
     tools=None,
     response_format=None,
     middleware=None,
@@ -104,25 +91,26 @@ async def assistant_agent(  # noqa: C901
     if use_model is None:
         use_model = EnvConfig.BASIC_MODEL
         model_role = model_role or "basic"
-    route = configured_model_route(use_model, model_role)
+    configured_role, provider = _configured_model_route(use_model, model_role)
     if model_provider is not None:
-        route = {"provider": model_provider}
+        provider = model_provider
+    responses_fallback = None
+    if reasoning_effort is None:
+        if configured_role == "basic":
+            reasoning_effort = EnvConfig.BASIC_REASONING_EFFORT
+        elif configured_role == "advanced":
+            reasoning_effort = EnvConfig.ADVANCED_REASONING_EFFORT
+            responses_fallback = EnvConfig.AGENT_CAPABILITY
     llm_kwargs: dict[str, Any] = {
         "model": use_model,
         "streaming": False,
         "max_retries": 2,
         "timeout": model_timeout,
         "tags": ["frontier:assistant"],
-        **route,
+        **chat_reasoning_kwargs(use_model, provider, reasoning_effort, responses_fallback=responses_fallback),
     }
-    if reasoning_effort is not None and provider_uses_responses_api(use_model, route.get("provider")):
-        normalized_effort = normalize_reasoning_effort(
-            use_model,
-            route.get("provider"),
-            reasoning_effort,
-        )
-        if normalized_effort is not None:
-            llm_kwargs["reasoning_effort"] = normalized_effort
+    if provider is not None:
+        llm_kwargs["provider"] = provider
     if temperature is not None:
         llm_kwargs["temperature"] = temperature
     if model_kwargs is not None:

@@ -36,14 +36,18 @@ async def main():
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, port))]
     asyncio.get_running_loop().getaddrinfo = dns
 
-    for case in ("generate", "edit", "url", "bad_url_body", "private_url", "404", "responses", "responses_edit"):
+    for case in ("official", "official_edit", "generate", "edit", "url", "bad_url_body", "private_url", "404", "responses", "responses_edit"):
         calls, clients, downloads = [], [], []
-        mode = "responses" if case.startswith("responses") else "chat_completions"
+        official = case.startswith("official")
+        mode = "responses" if official or case.startswith("responses") else "chat_completions"
+        paint_model = "gpt-image-2.6-flare" if official else "contract-image"
+        edit = case in {"edit", "official_edit"}
         EnvConfig.reload({"config_version": 2, "models": {
-            "paint_model": "contract-image", "paint_model_provider": "media",
+            "paint_model": paint_model, "paint_model_provider": "media",
             "paint_size": "1536x1024", "paint_quality": "high",
         }, "providers": {"media": {
-            "type": "openai", "api_mode": mode, "api_key": "contract-key", "base_url": "https://api.example/v1",
+            "type": "openai", "api_mode": mode, "api_key": "contract-key",
+            "base_url": "https://api.openai.com" if official else "https://api.example/v1",
         }}})
 
         def handler(request):
@@ -51,7 +55,7 @@ async def main():
             assert request.headers["authorization"] == "Bearer contract-key"
             if case == "404":
                 return Response(404, json={"error": {"message": "unsupported", "type": "not_found"}})
-            if case == "edit":
+            if edit:
                 assert request.url.path == "/v1/images/edits"
                 content_type = request.headers["content-type"]
                 assert content_type.startswith("multipart/form-data;")
@@ -69,12 +73,12 @@ async def main():
                     else:
                         fields[name] = part.get_payload(decode=True).decode()
                 assert files == ["reference-1.png", "reference-2.png"]
-                assert fields["model"] == "contract-image" and fields["prompt"] == "a blue circle"
+                assert fields["model"] == paint_model and fields["prompt"] == "a blue circle"
                 assert fields["size"] == "auto" and fields["quality"] == "high"
             else:
                 body = json.loads(request.content)
-                assert body["model"] == "contract-image"
-                if mode == "responses":
+                assert body["model"] == paint_model
+                if mode == "responses" and not official:
                     assert request.url.path == "/v1/responses" and "prompt" not in body
                     assert body["tool_choice"] == {"type": "image_generation"}
                     assert body["tools"][0]["action"] == ("edit" if case == "responses_edit" else "generate")
@@ -107,7 +111,7 @@ async def main():
         service.AsyncOpenAI = build
         async with AsyncClient(transport=MockTransport(download)) as downloader:
             service.get_http_client = lambda name: downloader
-            result = await paint("a blue circle", [png, png] if case in {"edit", "responses_edit"} else [])
+            result = await paint("a blue circle", [png, png] if edit or case == "responses_edit" else [])
         assert len(calls) == 1, (case, len(calls))
         assert all(client.is_closed() for client in clients)
         if case in {"404", "private_url", "bad_url_body"}:

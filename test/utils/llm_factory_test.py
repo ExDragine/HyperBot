@@ -308,6 +308,61 @@ def test_openai_native_web_search_requires_responses_api(monkeypatch):
     assert factory.model_supports_native_web_search("gpt-5.4", "openai_chat_completions") is False
 
 
+def test_openai_web_search_respects_switch_and_model_capabilities(monkeypatch):
+    profile = {"type": "openai", "api_mode": "responses", "base_url": "https://api.openai.com", "native_web_search": False}
+    monkeypatch.setattr(factory.EnvConfig, "LLM_PROVIDERS", {"openai": profile})
+    assert factory.model_supports_native_web_search("gpt-5.4", "openai") is False
+    profile["native_web_search"] = True
+    assert factory.model_supports_native_web_search("gpt-image-2", "openai") is False
+    assert factory.model_supports_native_web_search("gpt-5.4", "openai") is True
+
+
+@pytest.mark.parametrize(
+    "model,mode,base_url,setting,expected",
+    [
+        ("gpt-5.4", "responses", "https://api.openai.com", None, True),
+        ("gpt-5.4", "responses", "https://api.openai.com", False, False),
+        ("gpt-5-mini", "responses", "https://api.openai.com", True, False),
+        ("gpt-5.4", "chat_completions", "https://api.openai.com", True, False),
+        ("gpt-5.4", "responses", "https://gateway.example.com/v1", None, False),
+        ("gateway-model", "responses", "https://gateway.example.com/v1", True, True),
+    ],
+)
+def test_tool_search_uses_effective_provider_route(monkeypatch, model, mode, base_url, setting, expected):
+    monkeypatch.setattr(factory.EnvConfig, "LLM_PROVIDERS", {"openai": {
+        "type": "openai", "api_mode": mode, "base_url": base_url, "native_tool_search": setting,
+    }})
+    assert factory.provider_supports_tool_search(model, "openai") is expected
+
+
+def test_openai_environment_endpoint_and_retention_are_used_by_the_same_route(monkeypatch):
+    profile = {"type": "openai", "api_mode": "responses", "api_key": "fixture-key"}
+    monkeypatch.setattr(factory.EnvConfig, "LLM_PROVIDERS", {"openai": profile})
+    monkeypatch.setenv("OPENAI_API_BASE", "https://gateway.example.com/v1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://other.example.com/v1")
+    client = MagicMock()
+    monkeypatch.setattr("utils.providers.openai.ChatOpenAI", client)
+
+    factory.create_llm("gpt-5.4", "openai")
+    assert _first_party("gpt-5.4", "openai") != "openai"
+    assert not factory.model_supports_native_web_search("gpt-5.4", "openai")
+    assert client.call_args.kwargs["openai_api_base"] == "https://gateway.example.com/v1"
+    assert client.call_args.kwargs["store"] is False
+    assert "include" not in client.call_args.kwargs
+
+    profile["base_url"] = "https://api.openai.com"
+    factory.create_llm("gpt-5.4", "openai")
+    assert _first_party("gpt-5.4", "openai") == "openai"
+    assert client.call_args.kwargs["openai_api_base"] == "https://api.openai.com/v1"
+    assert client.call_args.kwargs["store"] is False
+    assert client.call_args.kwargs["include"] == ["reasoning.encrypted_content"]
+
+    profile["responses_store"] = True
+    factory.create_llm("gpt-5.4", "openai")
+    assert client.call_args.kwargs["store"] is True
+    assert "include" not in client.call_args.kwargs
+
+
 def test_responses_proxy_can_explicitly_enable_native_web_search(monkeypatch):
     monkeypatch.setattr(
         factory.EnvConfig,

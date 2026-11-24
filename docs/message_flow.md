@@ -47,7 +47,7 @@ Agent 先用 `get_recent_conversation` 或 `search_messages` 确定消息和发�
 
 `send_artifacts()` 只接收可发送的 `UniMessage`，结构化 MCP 字典不会进入发送路径。多媒体工件拆分后保留所有文本说明和原有顺序，串行发送，遇到失败停止剩余工件。
 
-`send_messages()` 和 `send_artifacts()` 返回 `DeliveryResult(attempted, sent, errors, message_ids)`；最终回复的 `message_ids` 从 Milky 发送回执提取。文本失败可回退为图片；错误提示本身送达不代表原内容送达。QQ 的最终文本回执是 assistant 历史的提交边界：文本送达但前置附件失败时保留附件错误诊断并记录已收到的文本，文本失败时即使附件已送达也不写入文本历史；不会为这些情况重新执行 Agent。数据库写入失败不会重发已送达的内容；ACP 命令同样检查投递结果，并报告发送失败。
+`send_messages()` 和 `send_artifacts()` 返回 `DeliveryResult(attempted, sent, errors, message_ids)`；最终回复的 `message_ids` 从 Milky 发送回执提取。文本失败可回退为图片；错误提示本身送达不代表原内容送达。QQ 的最终文本回执是 assistant 历史的提交边界：文本送达但前置附件失败时保留附件错误诊断并记录已收到的文本，文本失败时即使附件已送达也不写入文本历史；不会为这些情况重新执行 Agent。数据库写入失败不会重发已送达的内容。
 
 中性投递回执使用 `partial` 表示部分成功，并通过 `delivered_text` 单独声明已确认送达的文字。轮次保存部分投递结果及已确认的正文。字符串回复按正文发送和入库，原文结构可用于后续引用。
 

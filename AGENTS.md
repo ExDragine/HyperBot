@@ -10,7 +10,7 @@ HyperBot 是一个基于 NoneBot2 + Milky 适配器的 AI QQ 聊天机器人。�
 
 **运行入口**: `pyproject.toml` 声明 `plugins/` 为 NoneBot 插件目录；`run.sh` / `run.ps1` 最终通过 `uv run nb run` 启动。
 
-**文档入口**: [README](README.md) 提供快速开始，[文档索引](docs/README.md) 汇总全部文档；配置字段见 [配置参考](docs/configuration.md)，ACP 接入见 [ACP 接入](docs/acp.md)。
+**文档入口**见 [README](README.md)、[文档索引](docs/README.md) 和 [配置参考](docs/configuration.md)。
 
 ---
 
@@ -53,7 +53,7 @@ Milky MessageEvent → NoneBot on_message(priority=10)
 - 同一群的不同成员共享 workspace 锁；不同群和不同私聊可并发。QQ 锁顺序是 `delivery:` → `workspace:`，不可反向嵌套。
 - 平台消息按机器人和会话去重；当前消息/引用/历史分别分配媒体预算，当前输入优先。
 - QQ 最终文本确认发送成功后才写入 assistant 历史；队列与投递失败规则见 `docs/message_flow.md`。
-- QQ 私聊和群聊（含 `/acp` 任务）只投递最终回复、媒体工件或必要的失败提示，不发送思考、工具调用、子代理或过程发言等状态消息，也不为群聊状态分类调用 Signal。QQ 入口不传 `progress_reporter`；中性编排与运行时仍保留可选进度回调，供 ACP 协议客户端等需要进度的调用方使用。
+- QQ 私聊和群聊只投递最终回复、媒体工件或必要的失败提示，不发送思考、工具调用、子代理或过程发言等状态消息，也不为群聊状态分类调用 Signal。中性编排与运行时提供可选的 `progress_reporter`，QQ 入口省略该参数。
 
 ---
 
@@ -65,7 +65,6 @@ Milky MessageEvent → NoneBot on_message(priority=10)
 |------|------|
 | `plugins/agent` | 核心对话入口：消息提取、引用上下文、文件暂存、DB 写入、回复门控、内容安全、Agent 调度、回复发送 |
 | `plugins/events` | 四类 Milky 申请事件：独立持久化收件箱、规则/受限决策、执行校验与恢复；默认只记录，`/events` 仅超级用户私聊管理，详见 `docs/platform-events.md` |
-| `plugins/acp` | ACP v1/v2 客户端与服务端、`/acp` 命令、子代理桥接和进程维护；`/acp` 仅超级用户可用 |
 | `plugins/clockwork` | APScheduler 定时任务系统：内置任务、用户自动任务、任务命令、执行历史；只负责注册 `daily_news` 任务，处理器位于 `plugins.news` |
 | `plugins/dashboard` | FastAPI Dashboard：`/api/dashboard/*` API、`/dashboard` 静态前端、JWT 鉴权、状态/消息/设置/任务管理 |
 | `plugins/news` | 通过主 Agent 调用 `daily-news` 技能，负责证据校验、归档、渲染与逐目标投递；`/news` 仅超级用户可用 |
@@ -138,7 +137,7 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 
 `FrontierCognitive.chat_agent()` 的关键行为：
 - 构造函数不创建模型或连接 MCP。首轮初始化组件，`EnvConfig.REVISION` 变化后在下一轮重建。
-- QQ、用户定时任务和内置 ACP 服务经 `FrontierAgentRuntime.run()` 调用；`chat_agent()` 保留兼容入口。
+- QQ、用户定时任务和日报经 `FrontierAgentRuntime.run()` 调用。`chat_agent()` 保留兼容入口。
 - 使用 `EnvConfig.ADVAN_MODEL` 创建主对话模型；`assistant_agent()` 默认使用 `EnvConfig.BASIC_MODEL`，决策判断使用 `EnvConfig.DECISION_MODEL`。
 - 当模型引用的供应商 `api_mode` 为 `responses` 时，主 Agent 会传 `reasoning_effort` 和 `verbosity`；其他协议路径会跳过这些参数。
 - 根据模型自身的 `capabilities` 判断是否保留视觉输入；不支持 vision 时会移除图片并追加“图片已省略”提示。
@@ -160,9 +159,9 @@ Milky `light_app` / `xml` 卡片通过 `utils/card_message.py` 本地解析常�
 - 内置 skills 路径通过 FilesystemPermission 禁止写入。
 
 Prompt 加载链：
-- `FrontierCognitive.load_system_prompt()` 组合 `prompts/AGENTS.md` 的全局规范与入口专属说明。QQ 使用 `[bot].system_prompt` 基础人设、`prompts/qq.md` 和当前会话风格；`{name}` 按唤醒词注入。ACP、定时任务和日报归档使用各自的任务说明。
+- `FrontierCognitive.load_system_prompt()` 组合 `prompts/AGENTS.md` 的全局规范与入口专属说明。QQ 使用 `[bot].system_prompt` 基础人设、`prompts/qq.md` 和当前会话风格，`{name}` 按唤醒词注入。定时任务和日报归档使用各自的任务说明。
 - 自定义 `MemoryMiddleware` 从当前 workspace 的 `/memory/{workspace_key}/SOUL.md` 注入动态人设及其写入约束。日报归档不注入 SOUL。
-- QQ 主回复与兼容 QQ 入口每轮在输入状态中传 `pinned_skills=["rich-markdown"]`（Deep Agents >= 0.7.36），由 Skills middleware 在首个模型调用前注入精简的排版决策正文，无需模型先调用 `read_file`。本轮后续工具循环不重复注入；ACP 档与显式非 QQ 平台不固定加载该技能。
+- QQ 主回复与兼容 QQ 入口每轮在输入状态中传 `pinned_skills=["rich-markdown"]`（Deep Agents >= 0.7.36），由 Skills middleware 在首个模型调用前注入精简的排版决策正文，无需模型先调用 `read_file`。本轮后续工具循环不重复注入。显式非 QQ 平台按需加载该技能。
 - 框架注入的技能 HumanMessage 带 `lc_source=pinned_skill`，属于当轮操作说明。持久会话保存本人输入和确认送达的回复正文。
 - `/skills/rich-markdown/SKILL.md` 定义内容关系与基本 Markdown 组件语法；正文直接写 Markdown，按需插入 `::card`、分区、分栏、步骤或媒体，基本卡片无需先读取参考文件。详细字段、数据与媒体契约位于其 `references/`；旧 ui JSON 契约位于 `references/legacy-ui.md`。短聊天与需要复制的回复保持文字，500 字转图规则只控制发送方式。
 - `plugins/agent/prompts/reply_check.md` 用于群聊是否应主动回复的 Decision LLM 判断。
@@ -193,7 +192,7 @@ Prompt 加载链：
 
 消息媒体默认兼容 Clash TUN 的 Fake-IP DNS：仅域名解析结果全部位于 `198.18.0.0/15` 或 `2001:2::/48` 时，通过固定公网引导的 DoH 查询真实公网 IP，再校验并固定连接。`[agent].message_media_fake_ip_fallback` 可关闭；不能直接放行 Fake-IP 或真实内网地址。详见 [消息媒体网络](docs/message-media-network.md)。
 
-`env.toml.example` 是配置项参考；仅接受显式 `config_version = 2`，旧配置分区、provider 别名、`use_responses_api` 和绘图尺寸迁移已移除。代码中不要硬编码模型名、provider、base URL 或 API key，使用 `EnvConfig`。
+`env.toml.example` 是快速启动模板，按需覆盖的字段见 `docs/configuration.md` 和 `utils/configs.py`。仅接受显式 `config_version = 2`，旧配置分区、provider 别名、`use_responses_api` 和绘图尺寸迁移已移除。代码中不要硬编码模型名、provider、base URL 或 API key，使用 `EnvConfig`。
 
 `[speech_recognition]` 与 `[speech_synthesis]` 默认关闭，启用后调用 DeepSeek 托管接口，`credentials_profile` 指向提供密钥的
 供应商 profile。识别结果标记为用户语音转写后进入 Agent；原始音频保留为附件，避免重复内联给主模型。

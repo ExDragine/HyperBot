@@ -58,6 +58,64 @@ async def test_concurrent_settings_updates_merge_without_lost_writes(settings_fi
     assert not list(settings_file.parent.glob("*.tmp"))
 
 
+async def test_model_settings_save_renames_existing_reasoning_fields(settings_file, monkeypatch):
+    settings_file.write_text(
+        'config_version = 2\n\n[models]\nbasic_model_reasoning_effort = "low" # keep this comment\n'
+        'advanced_model_reasoning_effort = "medium"\n',
+        encoding="utf-8",
+    )
+    reloads = []
+    monkeypatch.setattr(settings_routes, "_reload_env_config", reloads.append)
+
+    result = await settings_routes.update_section(
+        "models", settings_routes.SectionUpdate(config={"advanced_reasoning_effort": "high"}), user={},
+    )
+
+    saved = settings_file.read_text()
+    assert 'basic_reasoning_effort = "low" # keep this comment' in saved
+    assert tomllib.loads(saved)["models"] == {"basic_reasoning_effort": "low", "advanced_reasoning_effort": "high"}
+    assert reloads == [tomllib.loads(saved)]
+    assert result["activation"] == "next_request"
+
+    await settings_routes.update_section(
+        "models", settings_routes.SectionUpdate(config={"advanced_model_reasoning_effort": "low"}), user={},
+    )
+    assert tomllib.loads(settings_file.read_text())["models"]["advanced_reasoning_effort"] == "low"
+    assert "advanced_model_reasoning_effort" not in tomllib.loads(settings_file.read_text())["models"]
+
+
+async def test_minimal_settings_only_persist_changes_to_inherited_values(settings_file, monkeypatch):
+    settings_file.write_text('config_version = 2\n[features]\npaint_enabled = false\n', encoding="utf-8")
+    activated = []
+    monkeypatch.setattr(settings_routes, "_reload_env_config", activated.append)
+
+    config = (await settings_routes.get_settings(user={}))['config']
+    assert config['features']['video_enabled'] is False
+    assert config['limits']['agent_model_call_limit'] == 20
+    assert config['providers']['google']['api_key'] == '****'
+
+    untouched = await settings_routes._update_section('limits', config['limits'])
+    assert untouched['activation'] == 'unchanged'
+    assert not settings_routes.BACKUP_DIR.exists()
+
+    await settings_routes._update_section('limits', {**config['limits'], 'agent_model_call_limit': 10})
+    providers = config['providers']
+    providers['google']['api_key'] = 'example-api-key'
+    saved_providers = await settings_routes._update_section('providers', providers)
+    assert saved_providers['config']['google']['api_key'] == '****-key'
+
+    assert tomllib.loads(settings_file.read_text()) == activated[-1] == {
+        'config_version': 2,
+        'features': {'paint_enabled': False},
+        'limits': {'agent_model_call_limit': 10},
+        'providers': {'google': {'api_key': 'example-api-key'}},
+    }
+
+    saved_features = await settings_routes._update_section('features', {**config['features'], 'paint_enabled': True})
+    assert saved_features['config']['video_enabled'] is True
+    assert tomllib.loads(settings_file.read_text())['features'] == {'paint_enabled': True}
+
+
 async def test_settings_reload_failure_atomically_restores_file_and_runtime(settings_file, monkeypatch):
     original = settings_file.read_bytes()
     reloads = []
@@ -194,4 +252,7 @@ async def test_settings_reader_waits_until_failed_reload_has_rolled_back(setting
     release.set()
     with pytest.raises(HTTPException):
         await update
-    assert (await read)["config"] == {**original, "sessions": SessionConfig().model_dump()}
+    settings = (await read)["config"]
+    assert settings["config_version"] == original["config_version"]
+    assert settings["limits"]["agent_job_timeout_seconds"] == original["limits"]["agent_job_timeout_seconds"]
+    assert settings["sessions"] == SessionConfig().model_dump()

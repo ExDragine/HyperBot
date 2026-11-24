@@ -13,7 +13,7 @@ import re
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from utils.configs import EnvConfig
-from utils.llm_factory import create_llm
+from utils.llm_factory import chat_reasoning_kwargs, create_llm
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,9 @@ async def reverse_geocode(lat: float, lng: float) -> str:
             provider=EnvConfig.BASIC_MODEL_PROVIDER,
             temperature=0.1,
             streaming=False,
+            **chat_reasoning_kwargs(
+                EnvConfig.BASIC_MODEL, EnvConfig.BASIC_MODEL_PROVIDER, EnvConfig.BASIC_REASONING_EFFORT,
+            ),
         )
         response = await llm.ainvoke(
             [

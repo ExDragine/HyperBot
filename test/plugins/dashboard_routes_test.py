@@ -271,6 +271,27 @@ async def test_settings_section_recursively_masks_provider_api_key(monkeypatch):
     assert result["config"]["openrouter"]["api_key"] == "****cret"
 
 
+@pytest.mark.asyncio
+async def test_model_settings_expose_reasoning_efforts_for_existing_configs(monkeypatch):
+    monkeypatch.setattr(
+        settings_routes,
+        "_read_toml",
+        lambda: {"models": {
+            "basic_model": "gpt-5-mini", "basic_model_reasoning_effort": "low", "signal_model": "deepseek-flash",
+        }},
+    )
+
+    result = await settings_routes.get_section("models", user={})
+
+    models = result["config"]
+    assert models["basic_model"] == "gpt-5-mini"
+    assert models["basic_reasoning_effort"] == "low"
+    assert models["advanced_reasoning_effort"] == ""
+    assert models["signal_model"] == "deepseek-flash"
+    assert "decision_model" not in models
+    assert "basic_model_reasoning_effort" not in models
+
+
 def test_settings_update_preserves_masked_nested_provider_api_key():
     result = settings_routes._resolve_update_value(
         "providers",

@@ -50,7 +50,9 @@ def test_env_config_defaults(monkeypatch):
     assert EnvConfig.settings.config_version == 2
     assert EnvConfig.BASIC_MODEL_PROVIDER == ""
     assert EnvConfig.BASIC_MODEL_CAPABILITIES == []
+    assert EnvConfig.BASIC_REASONING_EFFORT == ""
     assert EnvConfig.ADVAN_MODEL_PROVIDER == ""
+    assert EnvConfig.AGENT_CAPABILITY == "medium"
     assert EnvConfig.DECISION_MODEL == "deepseek-flash"
     assert EnvConfig.DECISION_MODEL_PROVIDER == "deepseek"
     assert EnvConfig.DECISION_MODEL_CAPABILITIES == ["text"]
@@ -67,7 +69,7 @@ def test_env_config_defaults(monkeypatch):
     assert EnvConfig.LLM_PROVIDERS["openai"]["api_key"] == ""
     assert "paint" not in EnvConfig.LLM_PROVIDERS
     assert "video" not in EnvConfig.LLM_PROVIDERS
-    assert EnvConfig.VIDEO_MODEL == "sora-2"
+    assert EnvConfig.VIDEO_MODEL == ""
     assert EnvConfig.PAINT_SIZE == "auto"
     assert EnvConfig.PAINT_QUALITY == "auto"
     assert EnvConfig.VIDEO_SIZE == "1280x720"
@@ -355,6 +357,37 @@ def test_v2_config_loads_new_sections_and_keeps_keys_in_toml(monkeypatch):
     assert EnvConfig.IMAGE_ENABLED is False
 
 
+def test_model_reasoning_efforts_are_independent_on_reload():
+    from utils.configs import EnvConfig
+
+    config = {
+        "config_version": 2,
+        "agent": {"reasoning_effort": "high"},
+        "models": {"advanced_reasoning_effort": "xhigh", "basic_reasoning_effort": "low"},
+    }
+    EnvConfig.reload(config)
+    assert EnvConfig.AGENT_CAPABILITY == "xhigh"
+    assert EnvConfig.ADVANCED_REASONING_EFFORT == "xhigh"
+    assert EnvConfig.BASIC_REASONING_EFFORT == "low"
+
+    EnvConfig.reload({**config, "models": {"advanced_reasoning_effort": ""}})
+    assert EnvConfig.AGENT_CAPABILITY == "high"
+    assert EnvConfig.BASIC_REASONING_EFFORT == ""
+
+
+def test_model_reasoning_effort_names_keep_earlier_configs_readable():
+    from utils.configs import parse_config
+
+    settings = parse_config({"config_version": 2, "models": {
+        "advanced_model_reasoning_effort": "high",
+        "basic_model_reasoning_effort": "low",
+        "basic_reasoning_effort": "",
+    }})
+
+    assert settings.models.advanced.reasoning_effort == "high"
+    assert settings.models.basic.reasoning_effort == ""
+
+
 def test_reload_validation_is_atomic():
     from utils.configs import EnvConfig
 
@@ -387,13 +420,14 @@ def test_env_toml_example_is_valid_v2_config():
     assert settings.providers["deepseek_responses"].api_mode == "responses"
     assert settings.providers["deepseek_anthropic"].type == "anthropic"
     assert settings.providers["deepseek_anthropic"].api_mode == "messages"
-    assert settings.models.advanced.provider == "openai"
+    assert settings.models.advanced.provider == ""
     assert settings.models.daily_news.model == "deepseek-flash"
     assert settings.models.daily_news.provider == "deepseek_responses"
     assert settings.models.paint.provider == "openai"
+    assert settings.models.paint.model == "gpt-image-2.6-flare"
     assert settings.models.paint.size == "auto"
     assert settings.models.video.provider == "openai"
-    assert settings.models.video.model == "sora-2"
+    assert settings.models.video.model == ""
 
 
 @pytest.mark.parametrize(

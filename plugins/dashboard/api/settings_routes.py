@@ -3,7 +3,7 @@ import os
 import shutil
 import tempfile
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +11,13 @@ import tomlkit
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from utils.configs import CONFIG_PATH, parse_config
+from utils.configs import (
+    CONFIG_PATH,
+    CONFIG_VERSION,
+    models_to_toml_fields,
+    parse_config,
+    rename_model_reasoning_fields,
+)
 
 from ..auth import require_auth
 
@@ -93,6 +99,58 @@ def _resolve_update_value(section: str, key: str, original_value, new_value):
     return new_value
 
 
+def _settings_view(config: dict) -> dict:
+    """Expose inherited settings without inserting them into the TOML file."""
+    view = dict(config)
+    if isinstance(models := view.get("models"), dict):
+        view["models"] = dict(models)
+        rename_model_reasoning_fields(view["models"])
+    try:
+        settings = parse_config({"config_version": CONFIG_VERSION, **view})
+    except (TypeError, ValueError):
+        return view  # An edited, invalid file can still be inspected and repaired.
+
+    effective = settings.model_dump(mode="json", exclude={"config_version", "models", "keys", "providers"})
+    effective["models"] = models_to_toml_fields(settings.models)
+    for suffix in ("model", "model_provider", "model_capabilities"):
+        if f"signal_{suffix}" in view.get("models", {}):
+            effective["models"].pop(f"decision_{suffix}")
+    effective["key"] = {
+        "nasa_api_key": settings.keys.nasa_api_key.get_secret_value(),
+        "github_pat": settings.keys.github_pat.get_secret_value(),
+    }
+    for section, values in effective.items():
+        view[section] = {**values, **view.get(section, {})}
+    providers = view.get("providers", {})
+    view["providers"] = {
+        name: {
+            "type": profile.type,
+            "api_mode": profile.api_mode,
+            "base_url": profile.base_url,
+            "api_key": profile.api_key,
+            **providers.get(name, {}),
+        }
+        for name, profile in settings.providers.items()
+    }
+    return view
+
+
+def _settings_delta(section: str, current: Mapping, updates: Mapping) -> dict:
+    changes = {}
+    for key, value in updates.items():
+        if _is_sensitive_key(section, key) and _is_masked(value):
+            continue
+        old = current.get(key)
+        if isinstance(value, Mapping) and (value or isinstance(old, Mapping)):
+            value = _settings_delta(section, old if isinstance(old, Mapping) else {}, value)
+            if not value:
+                continue
+        elif key in current and value == old and isinstance(value, bool) == isinstance(old, bool):
+            continue
+        changes[key] = value
+    return changes
+
+
 def _table_values(value: Any, section: str) -> dict[str, Any]:
     unwrapped = value.unwrap()
     if not isinstance(unwrapped, dict):
@@ -142,10 +200,7 @@ async def get_settings(user: dict = AUTH_DEPENDENCY):
 async def _read_settings() -> dict:
     async with _settings_write_lock:
         config = await asyncio.to_thread(_read_toml)
-        from utils.configs import SessionConfig
-
-        config["sessions"] = {**SessionConfig().model_dump(), **config.get("sessions", {})}
-        return config
+        return _settings_view(config)
 
 
 @router.get("/{section}")
@@ -195,13 +250,23 @@ def _persist_section(section: str, new_values: dict) -> tuple[dict, dict, Path |
     with open(TOML_PATH, encoding="utf-8") as stream:
         doc = tomlkit.load(stream)
     old_config = doc.unwrap()
-    if section not in doc:
-        if section != "sessions":
+    current = _settings_view(old_config)
+    exists = section in doc
+    if not exists:
+        if section not in current:
             raise HTTPException(status_code=404, detail=f"配置段 '{section}' 不存在")
         doc.add(section, tomlkit.table())
-    original = _table_values(doc[section], section)
+    table = doc[section]
+    if section == "models" and isinstance(table, MutableMapping):
+        new_values = dict(new_values)
+        rename_model_reasoning_fields(new_values)
+        rename_model_reasoning_fields(table)
+    original = _table_values(table, section)
+    new_values = _settings_delta(section, current.get(section, original), new_values)
+    if not exists and not new_values:
+        return old_config, old_config, None, []
     for key, value in new_values.items():
-        doc[section][key] = _resolve_update_value(section, key, original.get(key), value)  # type: ignore
+        table[key] = _resolve_update_value(section, key, original.get(key), value)  # type: ignore
     new_config = doc.unwrap()
     try:
         parse_config(new_config)
@@ -255,6 +320,7 @@ async def _update_section(section: str, new_values: dict) -> dict:
             await _reload_or_restore(new_config, old_config, backup_path)
         return {
             "message": f"配置段 '{section}' 已更新" if changed_fields else f"配置段 '{section}' 无变更",
+            "config": _sanitize_section(section, _settings_view(new_config)[section]),
             "backup": str(backup_path) if backup_path is not None else None,
             "changed_fields": changed_fields,
             "config_revision": EnvConfig.REVISION,

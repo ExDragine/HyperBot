@@ -5,7 +5,7 @@
 当前实现进度（2026-10-03）：
 
 - P0 已落地：`utils/agent_protocol/` 提供平台无关值对象、Agent 请求/结果和应用端口，并有导入边界测试。
-- P1 已落地：`AgentRuntimeRequest`、`FrontierRuntimeContext` 和 `FrontierCognitive` 接受中性会话、参与者、能力和 workspace key；旧 QQ/ACP 调用保持兼容。
+- P1 已落地：`AgentRuntimeRequest`、`FrontierRuntimeContext` 和 `FrontierCognitive` 接受中性会话、参与者、能力和 workspace key，兼容旧的 QQ 调用形状。
 - P2 已落地：`ConversationOrchestrator` 定义中立的历史→门控→Agent→投递生命周期；`plugins/agent/adapters/qq.py` 提供可注入的 QQ message、history、reply policy、delivery 和 tool facade，并已接入 QQ 生产入口。
 - P3 已落地：工具注册器为 QQ/Milky 模块声明 capability，`FrontierCognitive` 按显式能力筛选 direct 工具快照（原 direct/PTC 双通道已随 quickjs 解释器一同移除）；QQ 入口声明中性会话、参与者、workspace 和 `platform:qq` 能力。`FrontierAgentCore` 将中性 `AgentRequest` 桥接到现有 runtime；群聊和私聊的文本、已下载媒体、当前已暂存文件、已解析引用、已完成 hydration 的近期媒体和 session 统一进入编排层。旧 `qq_text_canary_enabled` 字段只保留配置兼容性，不再控制路由。
 - 飞书参考实现已从主干移除（`plugins/agent/adapters/feishu*.py`、`feishu_http.py`、`feishu_lifecycle.py` 及 `[platforms.feishu]` 配置），需要时可从 git 历史恢复。下文的飞书内容保留为第二平台的设计参考，不代表当前代码。
@@ -68,12 +68,10 @@ HyperBot 不直接复制这些项目的全部结构，而是采用其中共同�
 flowchart LR
     QQ[QQ / Milky]
     FS[飞书]
-    ACP[ACP]
     CW[定时任务]
 
     QQ --> IN[Platform Inbound Adapter]
     FS --> IN
-    ACP --> IN
     CW --> IN
 
     IN --> ORCH[Conversation Orchestrator]
@@ -86,7 +84,6 @@ flowchart LR
     RESP --> OUT[Delivery Port]
     OUT --> QQ
     OUT --> FS
-    OUT --> ACP
     OUT --> CW
 ```
 
@@ -117,7 +114,7 @@ Agent Core 不得反向依赖平台适配器。
 ```python
 @dataclass(frozen=True, slots=True)
 class ConversationRef:
-    platform: str                 # qq / feishu / acp / scheduled
+    platform: str                 # qq / feishu / scheduled
     account_id: str               # 机器人或应用账号
     kind: str                     # direct / group / channel / thread
     conversation_id: str
@@ -528,8 +525,8 @@ utils/agent_protocol/identity.py
 
 - `AgentRuntimeRequest` 增加 `ConversationRef`；
 - `group_id`、`group_member_role` 进入兼容转换层；
-- 中性输出使用 `utils.agent_protocol.AgentResponse` / `AgentArtifact`；旧 `AgentRuntimeResult` 继续保留给 ACP 等兼容调用；
-- 保留旧 `.run()`，避免 ACP、定时任务和现有测试同时迁移。
+- 中性输出使用 `utils.agent_protocol.AgentResponse` / `AgentArtifact`。`AgentRuntimeResult` 继续提供运行时适配层的结果类型。
+- 定时任务等调用方继续使用 `.run()`。
 
 ### P2：QQ 适配器和应用编排
 

@@ -34,6 +34,7 @@ from utils.agent_protocol import (
     QuotePart,
     TextPart,
     VideoPart,
+    WebCitation,
 )
 
 QQ_PLATFORMS = frozenset({"qq", "milky"})
@@ -624,6 +625,23 @@ class QqDelivery:
                 result = await result
         return _legacy_receipt(target, result)
 
+    @staticmethod
+    async def _send_citations(target: ConversationRef, citations: Sequence[WebCitation]) -> list[DeliveryReceipt]:
+        from utils.message import send_plain_message
+
+        receipts = []
+        lines = ["来源"]
+        for number, citation in enumerate(citations, 1):
+            line = f"〔{number}〕{citation.title}\n{citation.url}" if citation.title else f"〔{number}〕{citation.url}"
+            if len("\n".join([*lines, line])) > 1800:
+                result = await send_plain_message("\n".join(lines))
+                receipts.append(_legacy_receipt(target, result))
+                lines = ["来源"]
+            lines.append(line)
+        result = await send_plain_message("\n".join(lines))
+        receipts.append(_legacy_receipt(target, result))
+        return receipts
+
     async def send(self, target: ConversationRef, response: AgentResponse) -> DeliveryReceipt:  # noqa: C901
         _qq_conversation(target)
         if not response.should_reply:
@@ -646,6 +664,11 @@ class QqDelivery:
             except Exception as exc:
                 text_receipt = DeliveryReceipt(DeliveryStatus.FAILED, errors=(type(exc).__name__,))
                 receipts.append(text_receipt)
+        if response.citations and text_receipt is not None and text_receipt.status == DeliveryStatus.DELIVERED:
+            try:
+                receipts.extend(await self._send_citations(target, response.citations))
+            except Exception as exc:
+                receipts.append(DeliveryReceipt(DeliveryStatus.FAILED, errors=(type(exc).__name__,)))
         if not receipts:
             return DeliveryReceipt(DeliveryStatus.DELIVERED)
         statuses = {receipt.status for receipt in receipts}

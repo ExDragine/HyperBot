@@ -111,6 +111,117 @@ asyncio.run(run())
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_chat_completions_reasoning_effort_and_deepseek_tool_continuation(tmp_path):
+    script = r'''
+import json
+import sys
+
+sys.path.insert(0, sys.argv[1])
+
+import httpx
+from langchain.agents.middleware import ModelRequest, ProviderToolSearchMiddleware
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.tools import tool
+from langgraph.runtime import Runtime
+from openai import OpenAI
+from utils.configs import EnvConfig
+from utils.llm_factory import chat_reasoning_kwargs, create_llm, provider_supports_tool_search
+
+EnvConfig.reload({
+    "config_version": 2,
+    "providers": {
+        "openai": {"base_url": "https://api.openai.com", "api_key": "contract-key"},
+        "openai_chat": {"type": "openai", "api_mode": "chat_completions", "api_key": "contract-key"},
+        "deepseek": {"api_key": "contract-key"},
+    },
+})
+
+request = [HumanMessage(content="Use the lookup tool")]
+model = create_llm("gpt-5-mini", "openai_chat", **chat_reasoning_kwargs("gpt-5-mini", "openai_chat", "low"))
+payload = model._get_request_payload(request)
+assert payload["reasoning_effort"] == "low"
+assert "messages" in payload and "verbosity" not in payload
+without_effort = create_llm("gpt-5-mini", "openai_chat", **chat_reasoning_kwargs(
+    "gpt-5-mini", "openai_chat", "", responses_fallback="medium",
+))
+assert "reasoning_effort" not in without_effort._get_request_payload(request)
+
+@tool
+def lookup(term: str) -> str:
+    """Look up the requested term."""
+    return term
+
+for name, provider, should_defer in (
+    ("gpt-5-mini", "openai_chat", False),
+    ("gpt-5-mini", "openai", False),
+    ("gpt-5.4", "openai", True),
+):
+    model = create_llm(name, provider)
+    supports_defer = provider_supports_tool_search(name, provider)
+    assert supports_defer is should_defer
+    tools = [lookup]
+    if supports_defer:
+        model_request = ModelRequest(model=model, messages=request, tools=tools, runtime=Runtime())
+        tools = ProviderToolSearchMiddleware(searchable_tools=tools)._prepare_request(model_request).tools
+    body = model._get_request_payload(request, **model.bind_tools(tools).kwargs)
+    assert ("tool_search" in {item["type"] for item in body["tools"]}) is should_defer
+    if provider == "openai":
+        assert body["store"] is False and "reasoning.encrypted_content" in body["include"]
+    else:
+        assert "store" not in body and "include" not in body
+
+model = create_llm("gpt-5.4", "openai")
+stateless_message = AIMessage(content=[
+    {"type": "reasoning", "id": "rs_test", "encrypted_content": "fixture", "summary": []},
+    {"type": "text", "id": "msg_test", "text": "previous answer"},
+], response_metadata={"output_version": "responses/v1", "model_provider": "openai"})
+next_body = model._get_request_payload([*request, stateless_message, HumanMessage(content="continue")])
+assert any(item.get("encrypted_content") == "fixture" for item in next_body["input"])
+assert not any(item.get("id") == "msg_test" for item in next_body["input"])
+
+requests = []
+
+def handle(http_request):
+    assert http_request.url.path.endswith("/chat/completions")
+    requests.append(json.loads(http_request.content))
+    first = len(requests) == 1
+    message = {"role": "assistant", "content": None if first else "found", "reasoning_content": "test reasoning"}
+    if first:
+        message["tool_calls"] = [{
+            "id": "call_lookup", "type": "function", "function": {"name": "lookup", "arguments": "{}"},
+        }]
+    return httpx.Response(200, json={
+        "id": "chatcmpl-test", "object": "chat.completion", "created": 1, "model": "deepseek-flash",
+        "choices": [{"index": 0, "message": message, "finish_reason": "tool_calls" if first else "stop"}],
+    })
+
+deepseek = create_llm("deepseek-flash", "deepseek", **chat_reasoning_kwargs("deepseek-flash", "deepseek", "xhigh"))
+with OpenAI(api_key="contract-key", base_url="https://api.deepseek.com",
+            http_client=httpx.Client(transport=httpx.MockTransport(handle))) as client:
+    deepseek.client = client.chat.completions
+    bound = deepseek.bind_tools([{"type": "function", "function": {
+        "name": "lookup", "description": "Look up a value", "parameters": {"type": "object"},
+    }}])
+    history = [AIMessage(content="Earlier text-only reply"), *request]
+    tool_call = bound.invoke(history)
+    result = bound.invoke([*history, tool_call, ToolMessage(content="42", tool_call_id="call_lookup")])
+    assert result.content == "found"
+
+assert [request["reasoning_effort"] for request in requests] == ["max", "max"]
+assert requests[1]["messages"][0]["reasoning_content"] == ""
+assert requests[1]["messages"][-2]["reasoning_content"] == "test reasoning"
+assert requests[1]["messages"][-1]["tool_call_id"] == "call_lookup"
+'''
+    result = subprocess.run(  # noqa: S603 - fixed script and repository path
+        [sys.executable, "-c", script, str(Path(__file__).resolve().parents[2])],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_real_deep_agent_stream_and_media_artifact(tmp_path):
     script = r'''
 import asyncio
@@ -163,7 +274,7 @@ agent.load_system_prompt = lambda group_id: "Answer the current request."
 
 result = asyncio.run(agent.chat_agent(
     [{"role": "user", "content": "Create an illustration."}],
-    user_id="contract", user_name="Contract", enable_acp_subagents=False,
+    user_id="contract", user_name="Contract",
 ))
 assert not result.get("error"), result
 assert result["status"] == "success", result

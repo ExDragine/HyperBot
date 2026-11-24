@@ -28,7 +28,6 @@ import plugins.toolbox
 assert 'plugins.agent.handlers' not in sys.modules
 assert 'plugins.toolbox.settings' not in sys.modules
 assert 'plugins.toolbox.update' not in sys.modules
-assert 'plugins.acp.commands' not in sys.modules
 import nonebot
 try:
     nonebot.get_driver()
@@ -72,4 +71,5 @@ assert all(command in toolbox.matcher for command in (
 ))
 assert nonebot.require('plugins.agent') is agent.module
 assert nonebot.require('plugins.toolbox') is toolbox.module
+assert nonebot.get_plugin('acp') is None
 """)

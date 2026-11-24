@@ -120,7 +120,6 @@ class NewsEditor:
             workspace_key=f"daily-news-{edition.namespace}",
             user_name="Daily news",
             prompt=prompt,
-            access_profile="frontier",
             job_prompt="daily-news",
             pinned_skills=("daily-news",),
             include_messages=research,

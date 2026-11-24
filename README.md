@@ -1,8 +1,8 @@
 # HyperBot
 
-HyperBot 是一个基于 [NoneBot2](https://nonebot.dev/) 与 Milky 适配器的 AI QQ 聊天机器人。QQ 消息经归一化、存储和回复门控后，交给 LangGraph/deepagents 驱动的 Deep Agent 执行，支持多模型路由、工具调用、文件系统工作区、图片/视频生成、聊天记录检索、定时任务、ACP 子代理和 Web 管理面板。
+HyperBot 是一个基于 [NoneBot2](https://nonebot.dev/) 与 Milky 适配器的 AI QQ 聊天机器人。QQ 消息经归一化、存储和回复门控后，交给 LangGraph/deepagents 驱动的 Deep Agent 执行，支持多模型路由、工具调用、文件系统工作区、图片/视频生成、聊天记录检索、定时任务和 Web 管理面板。
 
-> 项目当前名称为 HyperBot。为兼容已有部署，代码中仍保留部分历史前缀的类名、环境变量、数据库文件名和 ACP 兼容入口（例如 `Frontier*`、`FRONTIER_CONFIG`、`frontier.db`、`frontier_cache`）；这些标识不影响项目当前名称。
+> 项目当前名称为 HyperBot。为兼容已有部署，代码保留了 `Frontier*`、`FRONTIER_CONFIG`、`frontier.db` 和 `frontier_cache` 等历史标识。
 
 维护入口：[贡献指南](CONTRIBUTING.md) · [安全策略](SECURITY.md) · [变更记录](CHANGELOG.md) · [文档索引](docs/README.md)。设计文档描述当前边界或历史决策；具体行为以代码和测试为准。
 
@@ -12,17 +12,16 @@ HyperBot 是一个基于 [NoneBot2](https://nonebot.dev/) 与 Milky 适配器的
 - **Deep Agent**：主模型驱动工具调用、文件系统 workspace、memory、子代理和内置 Skill；主 Agent 直接持有聊天历史检索、联网搜索、媒体生成与平台写操作工具。
 - **富文本回复**：Markdown 正文与轻量组件按需渲染成长图，支持卡片、分区、步骤、表格、图表、公式、Mermaid、地图与网页快照；本地资源不依赖 CDN。
 - **多模型路由**：OpenAI-compatible、Google Gemini、Anthropic Claude、DeepSeek 统一由供应商 profile 管理，模型目录提供上下文窗口与能力元数据。
-- **工具与集成**：`tools/` 下约 128 个 `@tool` 入口，覆盖平台操作、媒体生成、搜索、天文/地球、占卜、提醒与自动任务；MCP 工具通过 `mcp.json` 接入，ACP Agent 通过 `acp.json` 接入。
+- **工具与集成**：`tools/` 下约 128 个 `@tool` 入口，覆盖平台操作、媒体生成、搜索、天文/地球、占卜、提醒与自动任务。MCP 工具通过 `mcp.json` 接入。
 - **运维能力**：FastAPI Dashboard、APScheduler 定时任务、独立新闻管线、Milky 申请事件处理、Wolfx 地震预警、QQ 持久会话与执行用量统计。
 
 ## 内置插件
 
-`plugins/` 下由 NoneBot 加载 9 个插件包。管理命令中 `/update`、`/restart`、`/news` 和 `/acp` 仅超级用户可用；`/model` 向所有用户开放以查看当前模型配置；`/task` 在 handler 内按超级用户或任务属主判断。
+`plugins/` 下由 NoneBot 加载 8 个插件包。管理命令中 `/update`、`/restart` 和 `/news` 仅超级用户可用。所有用户可通过 `/model` 查看当前模型配置。`/task` 按超级用户或任务属主判断权限。
 
 | 插件 | 功能 |
 | --- | --- |
 | `plugins/agent` | 核心对话入口：消息提取、引用上下文、DB 写入、回复门控、内容安全、Agent 调度与回复发送 |
-| `plugins/acp` | ACP v1/v2 客户端与服务端、`/acp` 命令、子代理桥接和进程维护 |
 | `plugins/clockwork` | APScheduler 定时任务：内置任务、用户自动任务、任务命令和执行历史；`daily_news` 只注册任务，处理器位于 `plugins/news` |
 | `plugins/dashboard` | FastAPI Dashboard：JWT 鉴权、状态/消息/设置/任务管理 API 与 `/dashboard` 静态前端 |
 | `plugins/events` | Milky 申请事件：独立持久化收件箱、规则/受限决策、执行校验与恢复；默认只记录，`/events` 仅超级用户私聊管理 |
@@ -70,7 +69,7 @@ UniMessage 文本、图片、视频或文件回复
 | --- | --- |
 | 平台操作 | 发送消息/图片/视频/文件，好友、群组、群文件、公告、精华、反应、戳一戳 |
 | 历史记忆 | 当前会话最近对话、聊天记录搜索、平台分页历史、按消息读取附件 |
-| 子代理 | `document-agent` 只读分析本地文档；`expose_as_subagent` 的 ACP Agent 以 `acp-<名称>` 注册 |
+| 子代理 | `document-agent` 只读分析本地文档 |
 | 媒体生成 | AI 绘图、图片编辑、AI 视频 |
 | 自动任务 | 创建、列出、暂停、恢复、取消用户自动任务 |
 | 网络与资料 | 主模型原生联网，官方 DeepSeek Flash Responses 支持服务端搜索与链接读取 |
@@ -124,14 +123,13 @@ cp .env.example .env
 cp env.toml.example env.toml
 ```
 
-在 `.env` 中设置 `NICKNAME`、`SUPERUSERS`、`HOST`/`PORT` 等 NoneBot 参数；在 `env.toml` 中配置人设、模型、供应商 profile 与功能开关。配置必须显式声明 `config_version = 2`。需要 MCP 工具或 ACP Agent 时再复制：
+在 `.env` 中设置 `NICKNAME`、`SUPERUSERS`、`HOST`/`PORT` 等 NoneBot 参数。在 `env.toml` 中填写主模型、辅助模型和所用供应商的 API key，并设置 Dashboard 密码。Decision 默认使用 DeepSeek。其余选项按需覆盖，保留 `config_version = 2`。使用 MCP 工具时复制对应配置。
 
 ```bash
 cp mcp.json.example mcp.json
-cp plugins/acp/acp.json.example acp.json
 ```
 
-字段说明见 [配置参考](docs/configuration.md)，ACP 用法见 [ACP 接入](docs/acp.md)。真实配置文件包含密钥与聊天数据，不要提交。
+真实配置文件包含密钥，请保留在本地。[配置参考](docs/configuration.md)
 
 ### 启动
 
@@ -147,7 +145,7 @@ Windows 使用 `.\run.ps1`。两个脚本都会设置默认 `HF_ENDPOINT`，然�
 docker compose up -d
 ```
 
-镜像包含运行所需的 Python 依赖。首次部署前准备 `.env`、`env.toml`、`mcp.json` 和 `frontier.db`；`.dockerignore` 排除这些运行时文件，compose 通过 `env_file` 或 volume 在运行时提供它们，因此不会进入镜像层。启用 ACP 时还需准备 `acp.json`：compose 未挂载该文件，需要在构建前放入仓库根目录（会随镜像复制），或自行在 compose 中增加只读挂载。compose 默认把容器 `8080` 映射到宿主 `3000`，Dashboard 位于 `http://localhost:3000/dashboard`。
+镜像包含运行所需的 Python 依赖。首次部署前准备 `.env`、`env.toml`、`mcp.json` 和 `frontier.db`。Compose 通过 `env_file` 或卷在运行时提供这些文件，`.dockerignore` 将其排除在镜像外。Compose 默认把容器 `8080` 映射到宿主 `3000`，Dashboard 位于 `http://localhost:3000/dashboard`。
 
 ## 配置概览
 
@@ -156,7 +154,6 @@ docker compose up -d
 | `.env` | NoneBot 环境变量；`NICKNAME` 管理机器人全局名称和别名 |
 | `env.toml` | HyperBot 应用配置：system prompt、模型与供应商、功能开关、策略、限额和 Dashboard |
 | `mcp.json` | MCP 外部工具服务器定义 |
-| `acp.json` | ACP Agent 子进程、权限策略和超时 |
 
 `env.toml` 的要点：
 
@@ -176,7 +173,7 @@ docker compose up -d
 http://localhost:8080/dashboard
 ```
 
-API 前缀为 `/api/dashboard`，现有分组包括 auth、status、tasks、messages 和 settings。首次部署请修改默认密码并设置随机 JWT secret；配置保存与重载语义见 [配置参考](docs/configuration.md)。
+API 前缀为 `/api/dashboard`，现有分组包括 auth、status、tasks、messages 和 settings。首次部署时设置密码，省略 `jwt_secret` 时系统会生成随机密钥。配置保存与重载语义见 [配置参考](docs/configuration.md)。
 
 ## 项目结构
 
@@ -184,7 +181,6 @@ API 前缀为 `/api/dashboard`，现有分组包括 auth、status、tasks、mess
 HyperBot/
 ├── plugins/
 │   ├── agent/          # QQ 事件、引用、归一化、门控、附件和上下文
-│   ├── acp/            # ACP 客户端、v1/v2 服务端、QQ 命令与子代理桥接
 │   ├── clockwork/      # 定时任务系统（daily_news 处理器位于 plugins/news）
 │   ├── dashboard/      # FastAPI Dashboard 和静态前端
 │   ├── events/         # Milky 申请事件的收件箱、规则/决策与执行恢复
@@ -226,7 +222,7 @@ uv run python scripts/database_maintenance.py diagnose
 ## 文档导航
 
 - [文档索引](docs/README.md)：按入门、架构与运行时、平台与集成、存储与运维、历史归档分类的全部文档。
-- 常用入口：[配置参考](docs/configuration.md)、[ACP 接入](docs/acp.md)、[消息投递边界](docs/message_flow.md)、[Agent 执行控制](docs/agent-execution-controls.md)、[QQ 持久会话](docs/agent-sessions.md)。
+- 常用入口为 [配置参考](docs/configuration.md)、[消息投递边界](docs/message_flow.md)、[Agent 执行控制](docs/agent-execution-controls.md) 和 [QQ 持久会话](docs/agent-sessions.md)。
 - 插件、渲染器、模型目录与内置 Skill 的说明见各自目录下的 README/SKILL.md（已汇总到 [文档索引](docs/README.md)）；历史设计计划与审查记录保存在 [docs/archive/](docs/archive/README.md)，不作为当前行为依据。
 
 ## 开发提示

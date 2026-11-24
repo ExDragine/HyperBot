@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any
 
-from utils.agent_protocol import AgentArtifact, ConversationRef, Participant, normalize_workspace_key
+from utils.agent_protocol import AgentArtifact, ConversationRef, Participant, WebCitation, normalize_workspace_key
 from utils.agents.progress import ProgressReporter
 from utils.media import (
     MediaKind,
@@ -21,6 +21,8 @@ from utils.media import (
 if TYPE_CHECKING:
     from .execution import AgentResult
     from .prompts import JobPrompt
+
+from .citations import cited_message
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,12 +43,10 @@ class AgentRuntimeRequest:
     audio: tuple[AgentRuntimeMedia, ...] = ()
     messages: tuple[dict[str, Any], ...] = ()
     user_id: str | None = None
-    user_name: str = "ACP client"
+    user_name: str = ""
     group_id: int | None = None
     group_member_role: str | None = None
     capability: str | None = None
-    access_profile: Literal["frontier", "acp"] = "acp"
-    enable_acp_subagents: bool = False
     allow_silent_reply: bool = False
     image_inputs: tuple[bytes, ...] = ()
     audio_inputs: tuple[bytes, ...] = ()
@@ -71,15 +71,7 @@ class AgentRuntimeResult:
     status: str = "success"
     run_id: str | None = None
     usage: dict[str, Any] | None = None
-
-
-class AgentRuntime(Protocol):
-    async def prompt(
-        self,
-        request: AgentRuntimeRequest,
-        *,
-        progress_reporter: ProgressReporter | None = None,
-    ) -> AgentRuntimeResult: ...
+    citations: tuple[WebCitation, ...] = ()
 
 
 _VISIBLE_TEXT_BLOCK_TYPES = frozenset({"text", "output_text"})
@@ -135,6 +127,11 @@ def _message_text(value: object) -> str:
     if content is _MISSING or content is None:
         content = value
     return _content_text(content)
+
+
+def _message_output(message: object) -> tuple[str, tuple[WebCitation, ...]]:
+    text, citations = cited_message(message)
+    return (text if citations else _message_text(message)).strip(), citations
 
 
 def _runtime_artifact_kind(value: object) -> MediaKind | None:
@@ -258,10 +255,8 @@ def _legacy_identity(request: AgentRuntimeRequest) -> tuple[str, str, int | None
     principal = request.principal
     user_id = request.user_id or (principal.id if principal is not None else None)
     if user_id is None:
-        user_id = f"acp-{request.session_id or request.workspace_key or 'request'}"
-    user_name = request.user_name
-    if principal is not None and user_name == "ACP client":
-        user_name = principal.display_name
+        user_id = f"agent-{request.session_id or request.workspace_key or 'request'}"
+    user_name = request.user_name or (principal.display_name if principal is not None else "Agent client")
     group_id = request.group_id if request.group_id is not None else _qq_group_id(request.conversation)
     group_member_role = request.group_member_role or (principal.role if principal is not None else None)
     return str(user_id), user_name, group_id, group_member_role
@@ -286,8 +281,6 @@ class FrontierAgentRuntime:
         *,
         progress_reporter: ProgressReporter | None = None,
     ) -> AgentResult:
-        from utils.configs import EnvConfig
-
         content: list[dict] = [{"type": "text", "text": request.prompt}]
         content.extend(
             (
@@ -331,7 +324,7 @@ class FrontierAgentRuntime:
             list(request.messages) or [{"role": "user", "content": content}],
             user_id=user_id,
             user_name=user_name,
-            capability=request.capability if request.capability is not None else EnvConfig.AGENT_CAPABILITY,
+            capability=request.capability,
             group_id=group_id,
             group_member_role=group_member_role,
             image_inputs=list(request.image_inputs or tuple(item.data for item in request.images)),
@@ -340,8 +333,6 @@ class FrontierAgentRuntime:
             thread_id_override=request.session_id or workspace_key or None,
             progress_reporter=progress_reporter,
             user_text=request.prompt,
-            access_profile=request.access_profile,
-            enable_acp_subagents=request.enable_acp_subagents,
             allow_silent_reply=request.allow_silent_reply,
             **compatibility_kwargs,
         )
@@ -359,8 +350,9 @@ class FrontierAgentRuntime:
         status = result.get("status", "failed" if result.get("error") else "success") if isinstance(result, dict) else "failed"
         if isinstance(result, dict) and result.get("should_reply") is False and status == "success":
             status = "silent"
+        text, citations = _message_output(final_message)
         return AgentRuntimeResult(
-            text=_message_text(final_message).strip(),
+            text=text,
             artifacts=_runtime_artifacts(result.get("artifacts", result.get("uni_messages", [])))
             if isinstance(result, dict)
             else (),
@@ -368,11 +360,11 @@ class FrontierAgentRuntime:
             status=status,
             run_id=result.get("run_id"),
             usage=result.get("usage"),
+            citations=citations,
         )
 
 
 __all__ = [
-    "AgentRuntime",
     "AgentRuntimeMedia",
     "AgentRuntimeRequest",
     "AgentRuntimeResult",

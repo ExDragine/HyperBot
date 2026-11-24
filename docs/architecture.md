@@ -11,7 +11,6 @@ Agent 与平台解耦的目标架构、统一消息协议、端口和迁移阶�
 | 目录 | 组件 |
 |------|------|
 | `plugins/agent` | `handlers.py` 编排 QQ 事件；`message_normalizer.py` 展开消息段和转发；`reply_context.py` 处理引用；`chat_context.py` 分配上下文媒体预算；`gateway.py` 判断是否回复；`attachments.py` 暂存入站文件；`adapters/` 提供 QQ 与飞书平台适配器 |
-| `plugins/acp` | ACP 客户端、服务端、QQ 命令、子代理桥接、进程维护和协议文档 |
 | `plugins/clockwork` | 定时任务实现、任务命令和执行历史；`daily_news` 只注册任务，处理器指向 `plugins.news.scheduler` |
 | `plugins/dashboard` | FastAPI Dashboard API（auth/status/tasks/messages/settings）与 `/dashboard` 静态前端 |
 | `plugins/news` | 主 Agent 日报的证据校验、`news.db` 归档、`templates/daily_news.*` 渲染和逐目标投递 |
@@ -20,7 +19,7 @@ Agent 与平台解耦的目标架构、统一消息协议、端口和迁移阶�
 | `plugins/wolfx` | Wolfx CENC 地震预警 WebSocket 客户端、事件去重、渲染与推送 |
 | `utils` | Agent 执行引擎、DB、模型路由、媒体服务、消息提取、渲染和发送 |
 
-`agent`、`acp`、`toolbox` 和 `news` 的包入口只在 NoneBot 插件加载上下文中注册命令和生命周期钩子。
+`agent`、`toolbox` 和 `news` 的包入口只在 NoneBot 插件加载上下文中注册命令和生命周期钩子。
 普通导入 `plugins.agent.chat_context` 等组件不会注册 QQ 事件；NoneBot 应通过插件加载器加载
 包入口，测试事件逻辑时则显式引用对应 handler/command 模块。
 
@@ -29,8 +28,7 @@ Agent 与平台解耦的目标架构、统一消息协议、端口和迁移阶�
 
 ## 请求生命周期
 
-QQ、用户定时任务和内置 Agent 的 ACP 服务使用
-`FrontierAgentRuntime.run(AgentRuntimeRequest)`。ACP `prompt()` 是这一入口的协议转换层。
+QQ、用户定时任务和日报使用 `FrontierAgentRuntime.run(AgentRuntimeRequest)`。
 `FrontierCognitive.chat_agent()` 保留为兼容入口，执行同样的生命周期管理。
 
 1. 入口构造请求、可信用户/群身份及投递目标。

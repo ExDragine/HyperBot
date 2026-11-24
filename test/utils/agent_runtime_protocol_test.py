@@ -2,7 +2,7 @@
 
 Only the contracts this module actually owns are asserted here: that the
 runtime request stays a constructible immutable value object with the legacy
-ACP/QQ fields intact, and that the neutral identity fields stay optional for
+QQ fields intact, and that the neutral identity fields stay optional for
 existing callers.  How those fields are consumed is covered behaviourally by
 ``test/utils/agent_runtime_gateway_protocol_test.py``.
 """
@@ -44,8 +44,6 @@ def test_runtime_request_is_a_frozen_slots_value_object() -> None:
         group_id=42,
         group_member_role="member",
         capability="common.weather",
-        access_profile="frontier",
-        enable_acp_subagents=True,
         allow_silent_reply=True,
         image_inputs=(b"legacy-image",),
         audio_inputs=(b"legacy-audio",),
@@ -66,7 +64,7 @@ def test_runtime_request_is_a_frozen_slots_value_object() -> None:
 
 
 def test_runtime_request_keeps_legacy_constructor_compatible() -> None:
-    """New neutral fields stay optional so existing ACP/QQ callers still work."""
+    """New neutral fields stay optional for direct runtime callers."""
 
     request = AgentRuntimeRequest(session_id="legacy-session", prompt="legacy prompt")
 

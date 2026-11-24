@@ -88,6 +88,7 @@ async def test_bridge_maps_neutral_request_and_result(agent_request):
     assert runtime_request.conversation == agent_request.current.conversation
     assert runtime_request.principal == agent_request.current.sender
     assert runtime_request.capabilities == frozenset({"feishu:message"})
+    assert runtime_request.capability is None
     assert runtime_request.workspace_key == "feishu:tenant-1:chat-1"
     assert runtime_request.image_inputs == (b"image-bytes",)
     assert runtime_request.audio_inputs == (b"audio-bytes",)

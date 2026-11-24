@@ -6,7 +6,7 @@ from deepagents import FilesystemPermission, SubAgent
 from langchain.agents.middleware import ModelCallLimitMiddleware, ToolCallLimitMiddleware
 
 from utils.configs import EnvConfig
-from utils.llm_factory import create_llm
+from utils.llm_factory import chat_reasoning_kwargs, create_llm
 
 from ..media_inputs import MediaInputMiddleware
 from ..tool_errors import tool_error_middleware
@@ -21,6 +21,9 @@ def build_document_subagent() -> SubAgent:
         max_retries=2,
         timeout=300,
         tags=["frontier:document"],
+        **chat_reasoning_kwargs(
+            EnvConfig.BASIC_MODEL, EnvConfig.BASIC_MODEL_PROVIDER, EnvConfig.BASIC_REASONING_EFFORT,
+        ),
     )
     middleware: list[Any] = [
         tool_error_middleware(all_read_only=True),

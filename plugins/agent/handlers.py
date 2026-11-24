@@ -5,7 +5,7 @@ import os
 import re
 import time
 from contextlib import AsyncExitStack
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from importlib import import_module
 from pathlib import Path
@@ -311,14 +311,7 @@ class _QqNeutralCore:
         sanitized_text = sanitized or ""
         if sanitized_text == response.text:
             return response
-        return AgentResponse(
-            text=sanitized_text,
-            artifacts=response.artifacts,
-            status=response.status,
-            should_reply=response.should_reply,
-            run_id=response.run_id,
-            usage=response.usage,
-        )
+        return replace(response, text=sanitized_text)
 
 
 class _QqNeutralDelivery(QqDelivery):
@@ -455,7 +448,6 @@ async def _run_qq_neutral(
         tools=QqToolProvider(),
         workspace_key=_agent_workspace_key(context.user_id, context.group_id),
         capabilities=frozenset({"platform:qq", "qq:tools"}),
-        execution_profile=EnvConfig.AGENT_CAPABILITY,
         allow_silent_reply=_allows_silent_reply(context),
     )
     await delivery.settle(outcome)

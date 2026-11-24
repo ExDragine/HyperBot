@@ -339,9 +339,9 @@ def _receipt_message_ids(receipt: object) -> tuple[int, ...]:
     return tuple(sequences)
 
 
-async def _send_final_text(content: str, with_reply) -> DeliveryResult | None:
+async def _send_final_text(content: str, with_reply, *, plain_text: bool = False) -> DeliveryResult | None:
     try:
-        text = (await markdown_to_text(content)).rstrip("\r\n").strip()
+        text = (content if plain_text else await markdown_to_text(content)).strip()
     except Exception as exc:
         logger.warning("文本转换失败，尝试图片回退: {}", type(exc).__name__)
         return None
@@ -355,6 +355,12 @@ async def _send_final_text(content: str, with_reply) -> DeliveryResult | None:
         logger.warning("平台拒绝文本投递，尝试图片回退: {}{}", type(exc).__name__, details)
         return None
     return DeliveryResult(attempted=1, sent=1, message_ids=_receipt_message_ids(receipt))
+
+
+async def send_plain_message(content: str) -> DeliveryResult:
+    """Send literal text so clickable links are never rendered into an image."""
+    result = await _send_final_text(content, lambda message: message, plain_text=True)
+    return result if result is not None else DeliveryResult(attempted=1, errors=("text_delivery_failed",))
 
 
 async def send_messages(group_id: int | None, message_id, response: dict[str, list]) -> DeliveryResult:

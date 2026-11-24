@@ -85,7 +85,7 @@ async def run(extra=None):
     agent.working_dir = str(Path.cwd() / 'sandbox')
     agent.load_system_prompt = lambda group_id: 'Return the requested image.'
     return await agent.chat_agent([{'role': 'user', 'content': 'draw'}], user_id='contract',
-                                  user_name='Contract', enable_acp_subagents=False)
+                                  user_name='Contract')
 
 async def main():
     EnvConfig.ADVAN_MODEL = 'contract-model'

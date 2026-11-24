@@ -34,22 +34,22 @@ from langgraph.types import Command
 from wcmatch import glob
 
 import tools as _tool_registry
-from plugins.acp.subagent import build_acp_subagents
 from utils.agent_context import FrontierRuntimeContext
 from utils.agent_protocol import AgentArtifact, ConversationRef, Participant
 from utils.configs import EnvConfig
 from utils.ens_gate import _ens_prefix
 from utils.harness_profiles import register_frontier_harness_profiles
 from utils.llm_factory import (
+    chat_reasoning_kwargs,
     create_llm,
     native_web_search_middleware,
     native_web_search_support,
-    normalize_reasoning_effort,
     provider_request_overrides,
+    provider_supports_tool_search,
     provider_uses_responses_api,
 )
 from utils.media import detect_mime_type, inline_media_bytes, media_block_kind
-from utils.providers import model_supports_tool_search, standalone_web_search_hint
+from utils.providers import standalone_web_search_hint
 
 from .capture import detect_browser_capture_intent
 from .execution import current_run_id, managed_agent_turn
@@ -297,19 +297,19 @@ def _merge_named_items(*groups) -> list:
     return _stable_named_items(merged)
 
 
-def _prompt_cache_key(*, model: str, workspace_key: str, access_profile: str) -> str:
+def _prompt_cache_key(*, model: str, workspace_key: str) -> str:
     """Build a short pseudonymous OpenAI cache-routing key for one workspace."""
     material = "\0".join(
-        (_PROMPT_CACHE_NAMESPACE, "openai-prompt-cache", model, access_profile, workspace_key)
+        (_PROMPT_CACHE_NAMESPACE, "openai-prompt-cache", model, "frontier", workspace_key)
     )
     digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:40]
     return f"{_PROMPT_CACHE_NAMESPACE}:{digest}"
 
 
-def _provider_user_id(*, workspace_key: str, access_profile: str) -> str:
-    """Build a provider-safe pseudonym without exposing QQ or ACP identity."""
+def _provider_user_id(*, workspace_key: str) -> str:
+    """Build a provider-safe pseudonym for a workspace."""
     material = "\0".join(
-        (_PROMPT_CACHE_NAMESPACE, "provider-user", access_profile, workspace_key)
+        (_PROMPT_CACHE_NAMESPACE, "provider-user", "frontier", workspace_key)
     )
     digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:40]
     return f"{_PROMPT_CACHE_NAMESPACE}_user_{digest}"
@@ -320,14 +320,13 @@ def _provider_request_overrides(
     model: str,
     provider: str | None,
     workspace_key: str,
-    access_profile: str,
 ) -> dict[str, Any]:
     """Return request fields supported by the route's first-party API only."""
     return provider_request_overrides(
         model,
         provider,
-        user_id=_provider_user_id(workspace_key=workspace_key, access_profile=access_profile),
-        cache_key=_prompt_cache_key(model=model, workspace_key=workspace_key, access_profile=access_profile),
+        user_id=_provider_user_id(workspace_key=workspace_key),
+        cache_key=_prompt_cache_key(model=model, workspace_key=workspace_key),
     )
 
 
@@ -368,10 +367,8 @@ class FrontierCognitive:
     def _tools_for_capabilities(self, capabilities: frozenset[str]) -> list:
         """Select a tool snapshot for an explicit platform capability set.
 
-        Empty capabilities preserve the pre-separation behavior used by ACP,
-        scheduled tasks, and the existing QQ event path.  The registry method is
-        optional so injected test registries and staged callers that only expose
-        ``direct_tools`` continue to work.
+        Empty capabilities select the default tools for scheduled tasks and direct callers.
+        Injected registries may expose only ``direct_tools``.
         """
 
         legacy_tools = getattr(self, "tools", [])
@@ -460,7 +457,7 @@ class FrontierCognitive:
         messages,
         user_id,
         user_name,
-        capability: str = "none",
+        capability: str | None = None,
         group_id: int | None = None,
         image_inputs: list[bytes] | None = None,
         audio_inputs: list[bytes] | None = None,
@@ -469,8 +466,6 @@ class FrontierCognitive:
         group_member_role: str | None = None,
         progress_reporter: ProgressReporter | None = None,
         user_text: str | None = None,
-        access_profile: Literal["frontier", "acp"] = "frontier",
-        enable_acp_subagents: bool = True,
         allow_silent_reply: bool = False,
         conversation: ConversationRef | None = None,
         principal: Participant | None = None,
@@ -483,11 +478,7 @@ class FrontierCognitive:
         allow_native_web_search: bool = True,
         job_prompt: JobPrompt | None = None,
     ):
-        allowed_capture_tools = (
-            await detect_browser_capture_intent(user_text)
-            if access_profile == "frontier" and allow_local_tools
-            else set()
-        )
+        allowed_capture_tools = await detect_browser_capture_intent(user_text) if allow_local_tools else set()
         if allow_local_tools:
             await self._prepare_components()
         selected_tools = self._tools_for_capabilities(capabilities) if allow_local_tools else []
@@ -500,6 +491,12 @@ class FrontierCognitive:
             EnvConfig.ADVAN_MODEL,
             EnvConfig.ADVAN_MODEL_PROVIDER,
         )
+        reasoning = chat_reasoning_kwargs(
+            EnvConfig.ADVAN_MODEL,
+            EnvConfig.ADVAN_MODEL_PROVIDER,
+            EnvConfig.ADVANCED_REASONING_EFFORT if capability is None else capability,
+            responses_fallback=EnvConfig.AGENT_CAPABILITY if capability is None and uses_responses_api else None,
+        )
         model_kwargs: dict = {
             "model": EnvConfig.ADVAN_MODEL,
             "streaming": False,
@@ -507,22 +504,15 @@ class FrontierCognitive:
             "timeout": EnvConfig.AGENT_LLM_TIMEOUT_SECONDS,
             "provider": EnvConfig.ADVAN_MODEL_PROVIDER,
             "tags": ["frontier:main"],
+            **reasoning,
         }
         if uses_responses_api:
-            reasoning_effort = normalize_reasoning_effort(
-                EnvConfig.ADVAN_MODEL,
-                EnvConfig.ADVAN_MODEL_PROVIDER,
-                capability,
-            )
-            if reasoning_effort is not None:
-                model_kwargs["reasoning_effort"] = reasoning_effort
             model_kwargs["verbosity"] = "low"
         model_kwargs.update(
             _provider_request_overrides(
                 model=EnvConfig.ADVAN_MODEL,
                 provider=EnvConfig.ADVAN_MODEL_PROVIDER,
                 workspace_key=workspace_key,
-                access_profile=access_profile,
             )
         )
         model = create_llm(**model_kwargs)
@@ -536,9 +526,7 @@ class FrontierCognitive:
         memory_dir = os.path.join(working_dir, "memory", workspace_key)
         soul_path = f"/memory/{workspace_key}/SOUL.md"
         profile: PromptProfile
-        if access_profile == "acp":
-            profile = "acp"
-        elif job_prompt is not None:
+        if job_prompt is not None:
             profile = job_prompt
         else:
             profile = "qq" if conversation is None or conversation.platform == "qq" else "chat"
@@ -546,7 +534,7 @@ class FrontierCognitive:
 
         effective_tools = []
         skill_tools = []
-        if access_profile == "frontier" and allow_local_tools:
+        if allow_local_tools:
             effective_tools = _stable_named_items(selected_tools)
             if profile == "scheduled-task":
                 effective_tools = [tool for tool in effective_tools if tool.name != "send_plain_text"]
@@ -582,11 +570,8 @@ class FrontierCognitive:
             else:
                 logger.debug("当前请求未挂载服务端原生联网工具: %s", search_reason)
         subagents = []
-        if allow_local_tools:
-            if document_subagent := getattr(self, "document_subagent", None):
-                subagents.append(document_subagent)
-        if allow_local_tools and access_profile == "frontier" and enable_acp_subagents:
-            subagents.extend(_stable_named_items(build_acp_subagents()))
+        if allow_local_tools and (document_subagent := getattr(self, "document_subagent", None)):
+            subagents.append(document_subagent)
 
         messages = filter_messages_for_model_capabilities(
             messages,
@@ -656,9 +641,9 @@ class FrontierCognitive:
                 add_cache_control=True,
                 system_prompt=build_workspace_soul_prompt(soul_path),
             ))
-        if allow_silent_reply and access_profile == "frontier":
+        if allow_silent_reply:
             middleware.append(SilentReplyMiddleware())
-        if allow_local_tools and model_supports_tool_search(EnvConfig.ADVAN_MODEL):
+        if allow_local_tools and provider_supports_tool_search(EnvConfig.ADVAN_MODEL, EnvConfig.ADVAN_MODEL_PROVIDER):
             middleware.append(
                 ProviderToolSearchMiddleware(
                     searchable_tools=[tool for tool in effective_tools if tool is not skip_reply]
@@ -690,7 +675,8 @@ class FrontierCognitive:
             debug=EnvConfig.AGENT_DEBUG_MODE,
         )
         start_time = time.time()
-        logger.info(f"Agent烧烤中~🍖 思考等级: {capability} 用户: {user_name} (ID: {user_id})")
+        logger.info("Agent烧烤中~🍖 思考等级: %s 用户: %s (ID: %s)",
+                    reasoning.get("reasoning_effort", "default"), user_name, user_id)
         config: RunnableConfig = {
             "metadata": {"frontier_run_id": current_run_id.get()},
             "configurable": {

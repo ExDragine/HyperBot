@@ -73,15 +73,6 @@ def adapter_protocol(adapter_type: str) -> tuple[str, frozenset[str]]:
     return adapter.default_api_mode, adapter.api_modes
 
 
-def model_supports_tool_search(model: str) -> bool:
-    model = model.lower()
-    return any(
-        marker in model
-        for adapter_type in _ADAPTERS
-        for marker in get_adapter(adapter_type).tool_search_model_markers
-    )
-
-
 def provider_tools() -> tuple[tuple[BaseTool, bool], ...]:
     """Collect direct tools and their read-only flags from provider packages."""
     return tuple(entry for package in _TOOL_PACKAGES for entry in import_module(package).direct_tools())
@@ -125,7 +116,6 @@ __all__ = [
     "get_adapter",
     "get_vendor",
     "infer_adapter",
-    "model_supports_tool_search",
     "provider_tools",
     "standalone_web_search_hint",
     "validate_profile_fields",

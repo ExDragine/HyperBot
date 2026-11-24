@@ -13,9 +13,8 @@ cp .env.example .env
 cp env.toml.example env.toml
 ```
 
-Do not commit `.env`, `env.toml`, `mcp.json`, `acp.json`, databases, caches, or
-private chat data. The example files are the source of truth for configuration
-shape.
+Keep `.env`, `env.toml`, `mcp.json`, databases, caches, and private chat data local.
+Use the example files to get started and the configuration reference for optional settings.
 
 ## Before opening a pull request
 

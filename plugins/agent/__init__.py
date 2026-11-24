@@ -5,6 +5,5 @@ if globals().get("__plugin__") is not None:
 
     require("nonebot_plugin_alconna")
     require("nonebot_plugin_apscheduler")
-    require("plugins.acp")
 
     from . import handlers as handlers

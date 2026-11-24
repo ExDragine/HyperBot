@@ -22,4 +22,5 @@ cache
 .env
 env.toml
 mcp.json
+acp.json
 configs/backups

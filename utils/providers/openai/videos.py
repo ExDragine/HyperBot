@@ -3,18 +3,21 @@
 import asyncio
 import base64
 import binascii
-import inspect
 from dataclasses import dataclass
+from pathlib import Path
 from typing import cast
+from urllib.parse import urljoin, urlsplit
 
 from nonebot import logger
-from openai import AsyncOpenAI
+from openai import APIStatusError, AsyncOpenAI, DefaultAsyncHttpxClient
 from openai.types.video_create_params import InputReference, VideoCreateParams
 from openai.types.video_seconds import VideoSeconds
 from openai.types.video_size import VideoSize
 
 from utils.configs import EnvConfig, get_provider_profile
 from utils.http_client import get_http_client
+from utils.markdown_media import MAX_BYTES, PublicFetcher, failure_reason
+from utils.providers.openai import OPENAI_API_HOST, resolve_openai_base_url
 
 httpx_client = get_http_client("video_service")
 
@@ -76,11 +79,16 @@ def _build_openai_client() -> AsyncOpenAI:
     profile = get_provider_profile(EnvConfig.VIDEO_MODEL_PROVIDER)
     if str(profile.get("type", "")).strip().lower() != "openai":
         raise ValueError("video_model_provider 必须引用 type = 'openai' 的 provider")
-    api_key = str(profile.get("api_key", ""))
-    base_url = str(profile.get("base_url", "")).strip()
-    if base_url:
-        return AsyncOpenAI(api_key=api_key, base_url=base_url)
-    return AsyncOpenAI(api_key=api_key)
+    base_url = resolve_openai_base_url(profile.get("base_url"))
+    endpoint = urlsplit(base_url)
+    if endpoint.scheme not in {"http", "https"} or not endpoint.hostname:
+        raise ValueError("视频 provider 必须配置兼容网关的 HTTP(S) base_url")
+    if endpoint.hostname.rstrip(".").lower() == OPENAI_API_HOST:
+        raise ValueError("OpenAI 官方视频接口已停用，视频生成需要兼容网关")
+    return AsyncOpenAI(
+        api_key=str(profile.get("api_key", "")), base_url=base_url,
+        http_client=DefaultAsyncHttpxClient(follow_redirects=False),
+    )
 
 
 async def _create_video_job(
@@ -115,14 +123,14 @@ async def _create_video_job(
 
 async def _poll_video_job(client: AsyncOpenAI, job):
     timeout_seconds = EnvConfig.VIDEO_POLL_TIMEOUT_SECONDS
-    deadline = None if timeout_seconds <= 0 else asyncio.get_running_loop().time() + timeout_seconds
-
-    while getattr(job, "status", None) in {"queued", "in_progress"}:
-        if deadline is not None and asyncio.get_running_loop().time() >= deadline:
-            logger.warning(f"OpenAI 视频生成超时: timeout={timeout_seconds}s")
-            return None
-        await asyncio.sleep(max(0, EnvConfig.VIDEO_POLL_INTERVAL_SECONDS))
-        job = await client.videos.retrieve(job.id)
+    try:
+        async with asyncio.timeout(timeout_seconds if timeout_seconds > 0 else None):
+            while getattr(job, "status", None) in {"queued", "in_progress"}:
+                await asyncio.sleep(max(0, EnvConfig.VIDEO_POLL_INTERVAL_SECONDS))
+                job = await client.videos.retrieve(job.id)
+    except TimeoutError:
+        logger.warning("视频网关轮询超时: timeout={}s", timeout_seconds)
+        return None
 
     if getattr(job, "status", None) != "completed":
         error = getattr(job, "error", None) or getattr(job, "last_error", None)
@@ -131,50 +139,54 @@ async def _poll_video_job(client: AsyncOpenAI, job):
     return job
 
 
-async def _binary_response_bytes(response) -> bytes | None:
-    if isinstance(response, bytes):
-        return response
-    if isinstance(response, bytearray):
-        return bytes(response)
+async def _download_video_content(client: AsyncOpenAI, job_id: str) -> bytes:
+    data = bytearray()
+    async with client.videos.with_streaming_response.download_content(job_id) as response:
+        async for chunk in response.iter_bytes(chunk_size=65536):
+            if len(data) + len(chunk) > MAX_BYTES:
+                raise ValueError("视频超过大小限制")
+            data.extend(chunk)
+    return bytes(data)
 
-    read = getattr(response, "read", None)
-    if callable(read):
-        content = read()
-        if inspect.isawaitable(content):
-            content = await content
-        if isinstance(content, bytes):
-            return content
 
-    content = getattr(response, "content", None)
-    if isinstance(content, bytes):
-        return content
-    return None
+def _inline_video(encoded: object) -> bytes | None:
+    if not isinstance(encoded, str) or not 0 < len(encoded) <= ((MAX_BYTES + 2) // 3) * 4:
+        return None
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        logger.warning("视频网关返回了无效的 base64 内容")
+        return None
+    return raw if 0 < len(raw) <= MAX_BYTES else None
 
 
 async def _video_result(client: AsyncOpenAI, job) -> VideoGenerationResult | None:
+    redirect = None
     try:
-        response = await client.videos.download_content(job.id)
-        if raw := await _binary_response_bytes(response):
+        if raw := await _download_video_content(client, job.id):
             return VideoGenerationResult(raw=raw)
+    except APIStatusError as exc:
+        if exc.response.is_redirect and (location := exc.response.headers.get("location")):
+            redirect = urljoin(str(exc.request.url), location)
+        else:
+            logger.warning("视频网关内容接口返回 HTTP {}", exc.status_code)
     except Exception as exc:
-        logger.warning(f"下载 OpenAI 视频内容失败: {exc}")
+        logger.warning("读取视频网关内容失败: {}", type(exc).__name__)
 
-    if encoded := getattr(job, "b64_json", None):
-        try:
-            return VideoGenerationResult(raw=base64.b64decode(encoded, validate=True))
-        except (binascii.Error, ValueError):
-            logger.warning("OpenAI 视频 API 返回了无效的 base64 内容")
+    if raw := _inline_video(getattr(job, "b64_json", None)):
+        return VideoGenerationResult(raw=raw)
 
-    for field in ("url", "download_url"):
-        url = getattr(job, field, None)
-        if isinstance(url, str) and url.startswith(("http://", "https://")):
+    for url in (redirect, getattr(job, "url", None), getattr(job, "download_url", None)):
+        if isinstance(url, str) and url:
             try:
-                response = await httpx_client.get(url)
-                response.raise_for_status()
-                return VideoGenerationResult(raw=await response.aread())
+                fetcher = PublicFetcher(
+                    httpx_client, Path("cache/video"), fake_ip_fallback=EnvConfig.MESSAGE_MEDIA_FAKE_IP_FALLBACK,
+                )
+                raw, _mime = await fetcher.get(url, limit=MAX_BYTES)
+                if raw:
+                    return VideoGenerationResult(raw=raw)
             except Exception as exc:
-                logger.warning(f"下载 OpenAI 视频 URL 失败: {exc}")
-                return VideoGenerationResult(url=url)
+                logger.warning("下载视频来源失败: {}", failure_reason(exc))
 
     logger.warning("OpenAI 视频 API 响应缺少可发送的视频内容")
     return None
@@ -190,7 +202,7 @@ async def generate_video(
         logger.warning("VIDEO_MODEL 未配置，视频请求失败")
         return None
 
-    logger.info(f"🎬 调用 OpenAI 视频 API, model={EnvConfig.VIDEO_MODEL}, prompt_length={len(prompt)}")
+    logger.info("调用兼容视频网关, model={}, prompt_length={}", EnvConfig.VIDEO_MODEL, len(prompt))
     client: AsyncOpenAI | None = None
     try:
         client = _build_openai_client()
@@ -198,8 +210,11 @@ async def generate_video(
         if completed := await _poll_video_job(client, job):
             return await _video_result(client, completed)
         return None
+    except ValueError as exc:
+        logger.warning("视频网关配置或结果无效: {}", exc)
+        return None
     except Exception as exc:
-        logger.exception(f"💥 调用 OpenAI 视频 API 失败: {exc}")
+        logger.warning("调用兼容视频网关失败: {}", type(exc).__name__)
         return None
     finally:
         if client is not None:
