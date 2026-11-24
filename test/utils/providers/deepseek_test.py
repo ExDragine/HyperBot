@@ -89,13 +89,16 @@ def test_every_deepseek_route_keeps_the_schema_in_the_prompt():
     assert get_adapter("deepseek").structured_output_method(proxied, capabilities) == "text_json"
 
 
-def test_hosted_flash_search_can_be_disabled():
+@pytest.mark.parametrize(("adapter", "mode"), [
+    ("openai", "responses"), ("deepseek", "chat_completions"), ("anthropic", "messages"),
+])
+def test_hosted_flash_search_can_be_disabled(adapter, mode):
     vendor = get_vendor("deepseek")
-    base = {"base_url": "https://api.deepseek.com"}
+    base = {"base_url": "https://api.deepseek.com/anthropic" if mode == "messages" else "https://api.deepseek.com"}
 
-    assert vendor.native_web_search(_route("deepseek-v4-pro", "openai", "responses", **base))[0] is False
-    assert vendor.native_web_search(_route("deepseek-flash", "openai", "responses", **base))[0] is True
+    assert vendor.native_web_search(_route("deepseek-v4-pro", adapter, mode, **base))[0] is False
+    assert vendor.native_web_search(_route("deepseek-flash", adapter, mode, **base))[0] is True
     assert vendor.native_web_search(
-        _route("deepseek-flash", "openai", "responses", native_web_search=False, **base)
+        _route("deepseek-flash", adapter, mode, native_web_search=False, **base)
     )[0] is False
     assert vendor.native_search_tools == ("deepseek_web_search", "deepseek_read_url")

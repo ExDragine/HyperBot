@@ -90,7 +90,7 @@ HyperBot 的应用配置在 `env.toml`。从 [完整配置示例](../env.toml.ex
 profile 常用字段：
 
 - `base_url`、`api_key`：地址与密钥。OpenAI 适配器的地址依次取 profile 的 `base_url`、`OPENAI_API_BASE`、`OPENAI_BASE_URL` 和官方默认地址。官方能力判定与 SDK 使用同一个地址。
-- `native_web_search`：设置 `false` 关闭托管搜索。支持搜索的官方 OpenAI Responses 模型默认启用 `web_search`，官方 DeepSeek Flash Responses 默认启用其搜索和网页读取工具。兼容 Responses 网关需显式设置 `true`。QQ 回复会编号展示结果里的 URL 引用，来源链接以文本单独投递。
+- `native_web_search`：设置 `false` 关闭托管搜索。支持搜索的官方 OpenAI Responses 模型默认启用 `web_search`，官方 DeepSeek Flash 的 Chat Completions、Responses 和 Anthropic Messages 默认启用其搜索和网页读取工具。兼容 Responses 网关需显式设置 `true`。QQ 回复会编号展示结果里的 URL 引用，来源链接以文本单独投递。
 - `native_tool_search`：官方 OpenAI Responses 路由仅在目录确认具备工具调用能力的 GPT-5.4 及后续模型上启用。设置 `false` 可关闭。兼容 Responses 网关确认支持后，可用 `true` 显式启用。Chat Completions 使用普通工具绑定。
 - `responses_store`：OpenAI 适配器的 Responses 路由默认发送 `store=false`。设为 `true` 可为支持此选项的路由启用 API 端响应保存。官方 OpenAI 的无状态请求会请求加密推理项，用于后续工具调用。官方 DeepSeek Flash 托管搜索固定使用无状态模式。
 - 官方 OpenAI profile 可设 `native_decisions = true` 并填写官方 `api_key`，同时在 `[models]` 中配置 `decision_model = "gpt-6-luna"` 和对应的 `decision_model_provider`。回复门控、平台事件判断和截图意图将使用 `/v1/decisions`。这是独立于 `api_mode` 的 Decision 开关，默认关闭。接口使用原生判断题、选择题和评分题，无需设置 `decision_extra_body`。[OpenAI Decisions API](https://developers.openai.com/api/docs/guides/decisions)
@@ -108,7 +108,7 @@ DeepSeek 可分别配置为 `deepseek + chat_completions`、`openai + responses`
 - `models/` 模型目录为命中的模型卡注入上下文窗口、输出上限和能力元数据；目录外模型按未知模型降级。
 - 绘图使用 `type = "openai"`。官方端点通过 Images API 生成和编辑图片，独立于聊天协议。兼容网关按 `api_mode` 选择 Images API 或可重写顶层模型的 Responses `image_generation` 接口。
 - 视频仅供支持 Videos API 的兼容网关使用。配置 `video_model` 和 `video_model_provider`，并将该 `type = "openai"` profile 指向网关。下载限制为 20 MB，响应中的结果链接通过公网地址校验后下载。 [官方停用公告](https://developers.openai.com/api/docs/deprecations)
-- 每日新闻使用 `advanced_model` / `advanced_model_provider` 对应的主模型。归档预览和定时日报需要官方 DeepSeek Flash Responses，旧日报模型字段仍可解析。 [新闻插件运维](news-plugin.md)
+- 每日新闻使用 `advanced_model` / `advanced_model_provider` 对应的主模型。归档预览和定时日报需要启用服务端联网的官方 DeepSeek Flash，可走 Chat Completions、Responses 或 Anthropic Messages。旧日报模型字段仍可解析。 [新闻插件运维](news-plugin.md)
 
 ## 其余配置段
 

@@ -114,8 +114,50 @@ def news_e2e(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_daily_news_full_pipeline(news_e2e, tmp_path):
+@pytest.mark.parametrize("provider", ["deepseek_responses", "deepseek", "deepseek_anthropic"])
+async def test_daily_news_full_pipeline(news_e2e, tmp_path, monkeypatch, provider):
+    from plugins.news import editor
+    from utils.llm_factory import model_supports_native_web_search, native_web_search_tools
+
     scheduler = news_e2e
+    monkeypatch.setattr(editor.EnvConfig, "ADVAN_MODEL", "deepseek-flash")
+    monkeypatch.setattr(editor.EnvConfig, "ADVAN_MODEL_PROVIDER", provider)
+    monkeypatch.setattr(editor, "model_supports_native_web_search", model_supports_native_web_search)
+    monkeypatch.setattr(editor, "native_web_search_tools", native_web_search_tools)
+
+    if provider == "deepseek":
+        async def run_chat_completions(runtime, request):
+            result = await fake_main_agent(runtime, request)
+            message = result["response"]["messages"][0]
+            search, read, text = message.content
+            message.content = text["text"]
+            message.additional_kwargs = {"server_tool_calls": [{"calls": [
+                {**search, "type": "deepseek_web_search", "sources": search["action"]["sources"],
+                 "action": {"type": "search"}},
+                {**read, "type": "deepseek_read_url", "action": {"type": "read_link", "url": ARTICLE_URL}},
+            ]}]}
+            return result
+
+        monkeypatch.setattr(editor.FrontierAgentRuntime, "run", run_chat_completions)
+    elif provider == "deepseek_anthropic":
+        async def run_messages(runtime, request):
+            result = await fake_main_agent(runtime, request)
+            message = result["response"]["messages"][0]
+            search, read, text = message.content
+            message.content = [
+                {"type": "server_tool_use", "id": "web_search", "kind": "deep_search",
+                 "name": "deepseek_web_search", "input": {"action": "search"}},
+                {"type": "server_tool_use", "id": "web_read", "kind": "read_link",
+                 "name": "deepseek_read_url", "input": {"action": "read_link", "url": ARTICLE_URL}},
+                {"type": "web_fetch_tool_result", "tool_use_id": "web_read", "kind": "read_link",
+                 "content": {"type": "web_fetch_result", **read["page"]}},
+                {"type": "web_search_tool_result", "tool_use_id": "web_search", "kind": "deep_search",
+                 "content": [{"type": "web_search_result", **source} for source in search["action"]["sources"]]},
+                text,
+            ]
+            return result
+
+        monkeypatch.setattr(editor.FrontierAgentRuntime, "run", run_messages)
 
     result = await scheduler.daily_news(job_id="daily_news")
 

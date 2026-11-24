@@ -3,6 +3,7 @@
 import json
 import logging
 
+from anthropic import APIStatusError as AnthropicStatusError
 from langchain_core.exceptions import ModelAPIError, ModelInvalidRequestError
 from openai import UnprocessableEntityError
 
@@ -26,6 +27,7 @@ _DEEPSEEK_WEB_FALLBACK_HINT = (
 )
 
 _LOOKUP_FOLLOWUPS = frozenset({"找一下", "查一下", "搜一下", "帮我找一下", "帮我查一下", "帮我确认", "再找一下", "再查一下"})
+_WEB_REQUEST_ERRORS = (AnthropicStatusError, ModelAPIError, ModelInvalidRequestError, UnprocessableEntityError, ValueError)
 
 
 def _lookup_text(text: str, bot_user_id: str | None) -> str:
@@ -66,25 +68,80 @@ def _deepseek_web_request_failed(exc: Exception) -> bool:
         # DeepSeek also uses HTTP 400 for content review. Keep those refusals.
         return (
             getattr(exc, "code", None) not in {"content_filter", "content_policy_violation"}
+            and getattr(exc, "error_code", None) not in {"content_filter", "content_policy_violation"}
             and "content exists risk" not in str(exc).lower()
         )
     if isinstance(exc, ModelAPIError):
         return True
-    # ChatOpenAI raises ValueError(ResponseError) for a failed Responses body.
+    if isinstance(exc, AnthropicStatusError):
+        return exc.status_code == 422 or (exc.status_code == 200 and exc.type in {"api_error", "overloaded_error"})
+    # The SDK adapters raise ValueError for these failures inside HTTP 200.
     detail = exc.args[0] if exc.args else None
+    if isinstance(detail, dict):
+        return detail.get("type") == "api_error" or detail.get("code") == "server_error"
     return getattr(detail, "code", None) == "server_error"
+
+
+def _messages_web_calls(blocks):
+    calls = {
+        block.get("id"): block for block in blocks
+        if isinstance(block, dict) and block.get("type") == "server_tool_use" and block.get("name") in DEEPSEEK_WEB_TOOLS
+    }
+    for result in blocks:
+        if not isinstance(result, dict) or result.get("type") not in {"web_search_tool_result", "web_fetch_tool_result"}:
+            continue
+        call = calls.get(result.get("tool_use_id"))
+        if call is None or not isinstance(raw_action := call.get("input"), dict):
+            continue
+        action = {**raw_action, "type": raw_action.get("action")}
+        record = {"kind": call.get("kind"), "action": action}
+        content = result.get("content")
+        entries = content if isinstance(content, list) else [content]
+        entries = [item for item in entries if isinstance(item, dict)]
+        if error := next((item["error_code"] for item in entries if item.get("error_code")), None):
+            yield {**record, "status": "failed", "error": {"code": error}}
+        elif result["type"] == "web_search_tool_result":
+            action["sources"] = [
+                {**item, "published_at": item.get("published_at") or item.get("page_age")}
+                for item in entries if item.get("type") == "web_search_result"
+            ]
+            yield {**record, "status": "completed"}
+        elif isinstance(content, dict) and content.get("type") == "web_fetch_result":
+            page = {key: content[key] for key in ("url", "published_at") if key in content}
+            if isinstance(document := content.get("content"), dict):
+                page["title"] = document.get("title")
+            yield {**record, "status": "completed", "page": page}
+
+
+def deepseek_web_calls(message):
+    """Read search and page records across the DeepSeek wire protocols."""
+    content = getattr(message, "content", None)
+    if isinstance(content, list):
+        yield from (block for block in content if isinstance(block, dict) and block.get("type") == "web_search_call")
+        yield from _messages_web_calls(content)
+
+    fields = getattr(message, "additional_kwargs", {})
+    for step in fields.get("server_tool_calls") or ():
+        if not isinstance(step, dict):
+            continue
+        for call in step.get("calls") or ():
+            if not isinstance(call, dict) or not isinstance(action := call.get("action"), dict):
+                continue
+            if "sources" in call:
+                action = {**action, "sources": call["sources"]}
+            yield {**call, "action": action}
 
 
 def _deepseek_web_result_unusable(response) -> bool:
     message = response.result[-1]
+    metadata = message.response_metadata
     return (
-        message.response_metadata.get("status") == "completed"
+        (metadata.get("status") == "completed" or metadata.get("finish_reason") in {"stop", "end_turn"})
         and not (message.text.strip() or message.tool_calls)
-        and isinstance(message.content, list)
         and any(
-            isinstance(block, dict) and block.get("type") == "web_search_call" and block.get("status") == "failed"
+            block.get("status") == "failed"
             and isinstance(error := block.get("error"), dict) and error.get("code") == "unavailable"
-            for block in message.content
+            for block in deepseek_web_calls(message)
         )
     )
 
@@ -164,7 +221,7 @@ class DeepSeekWebSearchMiddleware(NativeWebSearchMiddleware):
         primary = self._request_with_web_search(request)
         try:
             response = handler(primary)
-        except (ModelAPIError, ModelInvalidRequestError, UnprocessableEntityError, ValueError) as exc:
+        except _WEB_REQUEST_ERRORS as exc:
             if not _deepseek_web_request_failed(exc):
                 raise
         else:
@@ -179,7 +236,7 @@ class DeepSeekWebSearchMiddleware(NativeWebSearchMiddleware):
         primary = self._request_with_web_search(request)
         try:
             response = await handler(primary)
-        except (ModelAPIError, ModelInvalidRequestError, UnprocessableEntityError, ValueError) as exc:
+        except _WEB_REQUEST_ERRORS as exc:
             if not _deepseek_web_request_failed(exc):
                 raise
         else:

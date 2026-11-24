@@ -1,22 +1,22 @@
 # DeepSeek 服务端搜索与网页读取
 
-官方 DeepSeek Flash Responses 路由会在主模型的请求中声明 `deepseek_web_search` 和 `deepseek_read_url`。DeepSeek 在服务端决定何时搜索及读取网页，并返回来源、引用和网页读取记录。费用按模型 Token 用量计算。 [DeepSeek 联网工具](https://api-docs.deepseek.com/zh-cn/guides/web_tools/) [官方价格](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)
+官方 DeepSeek Flash 的 Chat Completions、Responses 和 Anthropic Messages 路由都会声明 `deepseek_web_search` 和 `deepseek_read_url`。DeepSeek 在服务端决定何时搜索及读取网页，并返回来源、引用和网页读取记录。费用按模型 Token 用量计算。思考模式下，同时声明两个工具时，DeepSeek 使用深度思考搜索，其中可以打开搜索结果。 [DeepSeek 联网工具](https://api-docs.deepseek.com/zh-cn/guides/web_tools/) [官方价格](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)
 
 ## 配置
 
 ```toml
 [models]
 advanced_model = "deepseek-flash"
-advanced_model_provider = "deepseek_responses"
+advanced_model_provider = "deepseek"
 
-[providers.deepseek_responses]
-type = "openai"
-api_mode = "responses"
+[providers.deepseek]
+type = "deepseek"
+api_mode = "chat_completions"
 base_url = "https://api.deepseek.com"
 api_key = ""
 ```
 
-API Key 配在模型使用的 profile 中。`native_web_search = false` 可关闭该 profile 的服务端工具。
+使用 Responses 时将 `advanced_model_provider` 设为 `deepseek_responses`，使用 Anthropic Messages 时设为 `deepseek_anthropic`。在选中的 profile 配置 API Key。`native_web_search = false` 可关闭该 profile 的服务端工具。
 
 独立工具 `deepseek_web_search` 和 `deepseek_web_fetch` 由 HyperBot 调用 DeepSeek Search / Fetch 接口，复用 `[search].provider` 的 API Key。默认复用 `deepseek_responses`，已有 `[search]` 配置可以继续使用。`[search].enabled = false` 可关闭独立工具。
 
@@ -28,8 +28,8 @@ DeepSeek 服务端联网失败并触发回退时，当前轮会改用独立工�
 
 ## 验证
 
-真实 SDK 契约测试使用模拟 HTTP 响应验证本地函数与 DeepSeek 服务端工具共存，并检查服务端证据字段。
+真实 SDK 契约测试通过模拟 HTTP 验证三种协议都能同时使用本地函数和服务端联网，并覆盖来源证据、引用和同轮回退。
 
 ```powershell
-uv run --locked pytest test/integration/deepseek_search_runtime_test.py test/news -q
+uv run --locked pytest test/integration/deepseek_search_runtime_test.py test/integration/deepseek_messages_runtime_test.py test/news -q
 ```

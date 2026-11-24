@@ -205,7 +205,7 @@ Prompt 加载链：
 - 所有 `*_model_provider`（包括 paint/video）均指向 `[providers.<name>]`；供应商 profile 用 `type` 管理 LangChain 适配器、用 `api_mode` 管理协议，并统一保存 base URL 和 API key。Decision 的结构化策略由可选 `structured_output_method` 指定，默认 `auto`。
 - 绘图 provider 使用 `type = "openai"`。官方端点统一走 Images API 的生成和编辑接口，独立于聊天协议。兼容网关在 `chat_completions` 下使用 Images API，在 `responses` 下使用依赖网关重写顶层模型的 `image_generation` 路径。Images API 返回的 URL 经 PublicFetcher 校验公网地址后下载，请求不携带 provider 凭据。
 - 视频仅通过支持 Videos API 的兼容网关提供。配置 `video_model` 和 `video_model_provider`，将对应的 `type = "openai"` profile 指向网关。下载上限为 20 MB，结果链接经 PublicFetcher 校验公网地址后下载。
-- 主模型为官方 DeepSeek Flash Responses 时，默认启用 `deepseek_web_search` 和 `deepseek_read_url` 服务端工具。归档日报使用这一路由收集可校验证据。详见 `docs/deepseek-web-search.md`。
+- 主模型为官方 DeepSeek Flash 时，Chat Completions、Responses 和 Anthropic Messages 路由默认启用 `deepseek_web_search` 和 `deepseek_read_url`。归档日报可通过这三种协议收集可校验证据。详见 `docs/deepseek-web-search.md`。
 - 没有显式 provider 时，`llm_factory.py` 会根据模型名前缀推断：`deepseek*`、`gemini-*`、`claude-*`，其余走 OpenAI-compatible。
 
 Dashboard 配置：

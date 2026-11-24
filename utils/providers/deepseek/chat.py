@@ -7,18 +7,41 @@ Chat Completions, OpenAI Responses and Anthropic Messages from one host.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from typing import Any
 
 from langchain_deepseek import ChatDeepSeek
 
-from ..base import CHAT_COMPLETIONS, MESSAGES, RESPONSES, BaseChatAdapter, BaseVendor, Route, targets_https_api
+from ..base import (
+    CHAT_COMPLETIONS,
+    MESSAGES,
+    RESPONSES,
+    BaseChatAdapter,
+    BaseVendor,
+    Route,
+    is_https_api_base,
+    targets_https_api,
+)
 from .constants import API_HOST, DEFAULT_BASE_URL
 
 _SAFETY = {"level": "high"}
 _EFFORT_ALIASES = {"medium": "high", "xhigh": "max"}
 _WEB_MODELS = frozenset({"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp"})
 DEEPSEEK_WEB_TOOLS = ("deepseek_web_search", "deepseek_read_url")
+DEEPSEEK_CHATBOT_FIELDS = ("safety_check", "title")
+
+
+def bind_deepseek_web_tools(bind_tools, tools, **kwargs):
+    """Append DeepSeek's hosted specs after LangChain converts local functions."""
+    hosted, local = [], []
+    for tool in tools:
+        if isinstance(tool, dict) and tool.get("type") in DEEPSEEK_WEB_TOOLS:
+            hosted.append(tool)
+        else:
+            local.append(tool)
+    bound = bind_tools(local, **kwargs)
+    return bound.bind(tools=[*bound.kwargs.get("tools", []), *hosted]) if hosted else bound
 
 
 class DeepSeekAdapter(BaseChatAdapter):
@@ -59,7 +82,7 @@ class DeepSeekAdapter(BaseChatAdapter):
 class DeepSeekVendor(BaseVendor):
     name = "deepseek"
     native_search_tools = DEEPSEEK_WEB_TOOLS
-    profile_fields = ("safety_check", "title")
+    profile_fields = DEEPSEEK_CHATBOT_FIELDS
 
     def official_api_mode(self, route: Route) -> str | None:
         """Return the protocol of an official DeepSeek route, if this is one.
@@ -72,7 +95,8 @@ class DeepSeekVendor(BaseVendor):
             return None
 
         if route.adapter == "deepseek" and route.api_mode == CHAT_COMPLETIONS:
-            official = targets_https_api(route, API_HOST, allow_default=True)
+            base_url = route.base_url or os.getenv("DEEPSEEK_API_BASE") or DEFAULT_BASE_URL
+            official = is_https_api_base(base_url, API_HOST)
         elif route.adapter == "openai" and route.api_mode == RESPONSES:
             official = targets_https_api(route, API_HOST, allow_default=False)
         elif route.adapter == "anthropic" and route.api_mode == MESSAGES:
@@ -108,20 +132,30 @@ class DeepSeekVendor(BaseVendor):
         return _EFFORT_ALIASES.get(effort, effort)
 
     def native_web_search(self, route: Route) -> tuple[bool, str]:
-        if self.official_api_mode(route) != RESPONSES or route.model.lower() not in _WEB_MODELS:
-            return False, "DeepSeek search and URL reading require an official Flash Responses route"
+        mode = self.official_api_mode(route)
+        if mode is None or route.model.lower() not in _WEB_MODELS:
+            return False, "DeepSeek search and URL reading require an official Flash route"
         if route.profile.get("native_web_search") is False:
             return False, "DeepSeek web tools are disabled on this provider profile"
-        return True, "official DeepSeek Flash Responses web tools"
+        protocol = {CHAT_COMPLETIONS: "Chat Completions", RESPONSES: "Responses", MESSAGES: "Messages"}[mode]
+        return True, f"official DeepSeek Flash {protocol} web tools"
 
     def structured_output_method(self, route: Route, capabilities: Mapping[str, Any]) -> str:
         return "text_json"
 
     def prepare_chat_model(self, route: Route, model_class: Any, params: dict[str, Any]) -> Any:
-        if route.api_mode == CHAT_COMPLETIONS and params.get("reasoning_effort") not in (None, "none"):
-            from .chat_completions import DeepSeekThinkingChat
+        if route.api_mode == CHAT_COMPLETIONS:
+            from .chat_completions import DeepSeekChatCompletions
 
-            return DeepSeekThinkingChat
+            params["use_responses_api"] = False
+            return DeepSeekChatCompletions
+        if route.api_mode == MESSAGES:
+            from .messages import DeepSeekMessagesChat
+
+            # The standardized LangChain blocks omit some replay fields.
+            if route.model.lower() in _WEB_MODELS:
+                params["output_version"] = "v0"
+            return DeepSeekMessagesChat
         if not self.native_web_search(route)[0]:
             return model_class
 

@@ -32,7 +32,7 @@
 - `native_web_search(route)`：返回 `(是否支持, 原因)`；返回 `None` 表示走通用规则。
 - `structured_output_method(route, capabilities)`：返回 `None` 表示交给适配器决定。
 - `native_search_tools` 声明启用托管搜索后可注入的工具类型。
-- `prepare_chat_model(route, model_class, params)` 让官方端点按需扩展适配器。DeepSeek 在 Flash Responses 路由上用它保留原生联网工具的请求类型。
+- `prepare_chat_model(route, model_class, params)` 让官方端点按需扩展适配器。DeepSeek 在 Flash 的三种协议上用它保留原生联网工具的请求类型。Chat Completions 适配器也负责思考内容回传与工具图片的传输，Messages 适配器负责保留读链签名等原始内容块字段。
 - `web_search_middleware(...)` 可为官方路由提供专属联网中间件。DeepSeek 在这里处理同名工具、短追问和同一轮内的降级。
 - `standalone_web_search_hint(tool_names)` 根据实际暴露的独立工具提供提示。
 - `decision_backend(route, ...)` 提供已启用的官方原生决策接口。OpenAI Decisions 的 SDK 调用和负载转换位于 `openai/decisions.py`。

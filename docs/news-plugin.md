@@ -8,7 +8,7 @@ For a chat request, the main Agent loads the `daily-news` Skill on demand and re
 
 ## Configuration
 
-Copy `news.toml.example` to `news.toml` when overrides are needed. Configure the main model with the official DeepSeek Flash Responses route. The scheduler uses the main model, its profile, and its credentials. Existing news configuration files can still contain `sources` and the former dedicated-model options. [DeepSeek web tools](deepseek-web-search.md)
+Copy `news.toml.example` to `news.toml` when overrides are needed. Configure the main model with official DeepSeek Flash on Chat Completions, Responses, or Anthropic Messages, with hosted web tools enabled. The scheduler uses the main model, its profile, and its credentials. Existing news configuration files can still contain `sources` and the former dedicated-model options. [DeepSeek web tools](deepseek-web-search.md)
 
 The archives require sources with a usable date inside the edition window and a snippet that supports the quote. Unsupported main model routes fail before generating an archived edition.
 

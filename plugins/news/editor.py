@@ -9,6 +9,7 @@ from utils.agents.assistant import parse_structured_response_from_messages
 from utils.agents.runtime_gateway import AgentRuntimeRequest, FrontierAgentRuntime
 from utils.configs import EnvConfig
 from utils.llm_factory import model_supports_native_web_search, native_web_search_tools
+from utils.providers.deepseek.agent_web import deepseek_web_calls
 
 from .schemas import Article, Edition, NewsPayload, canonical_url, compact, eligible, validate_evidence
 from .sources import publication_time
@@ -16,12 +17,9 @@ from .sources import publication_time
 
 def _web_call_records(messages):
     for message in messages:
-        blocks = getattr(message, "content", None)
-        if getattr(message, "type", None) != "ai" or not isinstance(blocks, list):
+        if getattr(message, "type", None) != "ai":
             continue
-        for block in blocks:
-            if not isinstance(block, dict) or block.get("type") != "web_search_call":
-                continue
+        for block in deepseek_web_calls(message):
             action = block.get("action")
             if block.get("status") != "completed" or not isinstance(action, dict):
                 continue

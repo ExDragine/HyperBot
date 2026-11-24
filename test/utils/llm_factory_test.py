@@ -179,7 +179,7 @@ def test_claude_routes_to_anthropic(monkeypatch):
 
 def test_deepseek_routes_to_deepseek(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr("utils.providers.deepseek.chat.ChatDeepSeek", mock_cls)
+    monkeypatch.setattr("utils.providers.deepseek.chat_completions.DeepSeekChatCompletions", mock_cls)
     monkeypatch.setattr(
         factory.EnvConfig,
         "LLM_PROVIDERS",
@@ -192,7 +192,7 @@ def test_deepseek_routes_to_deepseek(monkeypatch):
     assert kw["model"] == "deepseek-v4-flash"
     assert "api_key" in kw
     assert "api_base" not in kw
-    assert "use_responses_api" not in kw
+    assert kw["use_responses_api"] is False
     assert kw["timeout"] == 30
     assert kw["max_retries"] == 2
     assert (
@@ -472,7 +472,7 @@ def test_deepseek_responses_does_not_advertise_native_web_search(monkeypatch):
     )
 
     assert supported is False
-    assert "official Flash Responses" in reason
+    assert "official Flash" in reason
     assert factory.model_supports_native_web_search(
         "deepseek-future-model",
         "official_deepseek",
@@ -500,29 +500,32 @@ def test_responses_proxy_can_explicitly_opt_in_to_native_web_search(monkeypatch)
     assert "explicitly opted in" in reason
 
 
-def test_deepseek_hosted_search_is_enabled_for_official_flash(monkeypatch):
+@pytest.mark.parametrize(("adapter", "mode", "protocol"), [
+    ("openai", "responses", "Responses"),
+    ("deepseek", "chat_completions", "Chat Completions"),
+    ("anthropic", "messages", "Messages"),
+])
+def test_deepseek_hosted_search_is_enabled_for_official_flash(monkeypatch, adapter, mode, protocol):
+    endpoint = "https://api.deepseek.com/anthropic" if mode == "messages" else "https://api.deepseek.com"
     monkeypatch.setattr(factory.EnvConfig, "LLM_PROVIDERS", {"deepseek_route": {
-        "type": "openai", "api_mode": "responses", "base_url": "https://api.deepseek.com",
+        "type": adapter, "api_mode": mode, "base_url": endpoint,
     }})
     supported, reason = factory.native_web_search_support("deepseek-flash", "deepseek_route")
-    assert supported and "Flash Responses" in reason
+    assert supported and f"Flash {protocol}" in reason
     assert factory.native_web_search_tools("deepseek-flash", "deepseek_route") == (
         "deepseek_web_search", "deepseek_read_url",
     )
 
 
-@pytest.mark.parametrize("api_mode", ["chat_completions", "messages"])
-def test_deepseek_hosted_web_requires_responses_adapter(monkeypatch, api_mode):
+def test_deepseek_hosted_web_rejects_compatible_messages_gateways(monkeypatch):
     monkeypatch.setattr(
         factory.EnvConfig,
         "LLM_PROVIDERS",
         {
             "deepseek_route": {
-                "type": "deepseek" if api_mode == "chat_completions" else "anthropic",
-                "api_mode": api_mode,
-                "base_url": "https://api.deepseek.com"
-                if api_mode == "chat_completions"
-                else "https://api.deepseek.com/anthropic",
+                "type": "anthropic",
+                "api_mode": "messages",
+                "base_url": "https://proxy.example.com/anthropic",
                 "native_web_search": True,
             }
         },
@@ -532,6 +535,12 @@ def test_deepseek_hosted_web_requires_responses_adapter(monkeypatch, api_mode):
 
     assert not supported
     assert "Responses" in reason
+
+
+def test_deepseek_hosted_web_respects_endpoint_from_sdk_environment(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_BASE", "https://proxy.example.com/v1")
+
+    assert not factory.model_supports_native_web_search("deepseek-flash", "deepseek")
 
 
 @pytest.mark.parametrize(
@@ -563,7 +572,7 @@ def test_native_web_search_rejects_non_official_deepseek_routes(monkeypatch, mod
 
 def test_deepseek_anthropic_routes_through_chat_anthropic(monkeypatch):
     anthropic_cls = MagicMock()
-    monkeypatch.setattr("utils.providers.anthropic.ChatAnthropic", anthropic_cls)
+    monkeypatch.setattr("utils.providers.deepseek.messages.DeepSeekMessagesChat", anthropic_cls)
     monkeypatch.setattr(
         factory.EnvConfig,
         "LLM_PROVIDERS",
@@ -745,7 +754,7 @@ assert "user_id" not in (model.metadata or {})
 
 def test_provider_signal_extra_body_stays_out_of_main_agent_requests(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr("utils.providers.deepseek.chat.ChatDeepSeek", mock_cls)
+    monkeypatch.setattr("utils.providers.deepseek.chat_completions.DeepSeekChatCompletions", mock_cls)
     monkeypatch.setattr(factory.EnvConfig, "LLM_PROVIDERS", {
         "configured": {
             "type": "deepseek",
@@ -822,7 +831,7 @@ def test_openai_extra_body_forwarded_as_explicit_kwarg(monkeypatch):
 
 def test_deepseek_extra_body_forwarded_as_explicit_kwarg(monkeypatch):
     mock_cls = MagicMock()
-    monkeypatch.setattr("utils.providers.deepseek.chat.ChatDeepSeek", mock_cls)
+    monkeypatch.setattr("utils.providers.deepseek.chat_completions.DeepSeekChatCompletions", mock_cls)
 
     factory.create_llm(model="deepseek-v4-flash", extra_body={"thinking": {"type": "disabled"}})
 
@@ -1038,7 +1047,7 @@ def test_google_no_base_url_field(monkeypatch):
         ("openai/gpt-5.4-nano", "utils.providers.openai.ChatOpenAI"),
         ("google/gemini-2.5-flash", "utils.providers.google.ChatGoogleGenerativeAI"),
         ("anthropic/claude-3-5-sonnet-20241022", "utils.providers.anthropic.ChatAnthropic"),
-        ("deepseek/deepseek-v4-flash", "utils.providers.deepseek.chat.ChatDeepSeek"),
+        ("deepseek/deepseek-v4-flash", "utils.providers.deepseek.chat_completions.DeepSeekChatCompletions"),
     ],
 )
 def test_vendor_prefixed_model_id_is_passed_through_unchanged(monkeypatch, model, model_class_path):
