@@ -35,7 +35,7 @@ async def get_paint(
 
     成功返回的图片工件会由系统在本轮最终回复时自动发送。
     无需再调用 send_image 或 send_file，也不要为生成结果编造路径或 URL。
-    仅在用户明确要求输出格式、复杂度或标注编辑时填写 options。SVG 和 GIF 会以文件发送。
+    仅在用户明确要求输出格式、复杂度或标注编辑时填写 options。GIF 以图片消息发送，SVG 以文件发送。
     图片尺寸和横竖比例由图片模型根据提示词及参考图自动选择。
     默认自动使用当前请求（含引用）的原图；改图必须保留原图，不要用文字描述替代。
 
@@ -84,9 +84,8 @@ async def get_paint(
         return "图片生成失败", None
 
     output_format = options.output_format if options else "png"
-    if output_format in {"svg", "gif"}:
-        mime_type = "image/svg+xml" if output_format == "svg" else "image/gif"
-        result = AgentArtifact(kind="file", data=image, mime_type=mime_type, name=f"generated.{output_format}")
+    if output_format == "svg":
+        result = AgentArtifact(kind="file", data=image, mime_type="image/svg+xml", name="generated.svg")
     else:
         result = UniMessage.image(raw=image)
     action = "编辑" if reference_images else "生成"

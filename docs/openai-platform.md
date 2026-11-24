@@ -31,7 +31,7 @@ QQ 语音的 WAV、Ogg 和 SILK 输入会在验证大小及音频时长后送往
 
 | 选项 | 用法 |
 | --- | --- |
-| `output_format` | PNG、JPEG、WebP、GIF、SVG。SVG 只支持生成。SVG 和 GIF 以 QQ 文件发送。 |
+| `output_format` | PNG、JPEG、WebP、GIF、SVG。SVG 只支持生成。GIF 通过 Milky 图片消息发送，私聊用 `send_private_message`，群聊用 `send_group_message`。SVG 以 QQ 文件发送。 |
 | `complexity` | GPT-Image-2.6 可设为 `low`、`medium` 或 `high`，与 `paint_quality` 分开控制。 |
 | `frame_count`、`frame_duration_ms` | GIF 帧数 2–16，单帧时长 20–2000 毫秒。 |
 | `use_markup` | GPT-Image-2.5/2.6 编辑时，将最后一张参考图作为标注层。标注层应与第一张原图同尺寸，并包含透明区域。 |

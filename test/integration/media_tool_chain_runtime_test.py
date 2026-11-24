@@ -9,6 +9,7 @@ from pathlib import Path
 def test_real_media_tools_preserve_artifacts_and_platform_write_boundaries(tmp_path):
     script = r'''
 import asyncio
+import base64
 import io
 import logging
 import sys
@@ -23,14 +24,23 @@ nonebot.require('nonebot_plugin_alconna')
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.tools import tool
+from nonebot.adapters.milky import Adapter, Bot
+from nonebot.adapters.milky.config import ClientInfo
 from PIL import Image
+from plugins.agent.adapters.qq import qq_artifact_messages
 from tools import adapter, milky_file, paint as paint_tool, video as video_tool
 from utils.agents import cognitive
+from utils.alconna import Target
 from utils.configs import EnvConfig
 
 buffer = io.BytesIO()
 Image.new('RGB', (4, 4), 'blue').save(buffer, format='PNG')
 png = buffer.getvalue()
+buffer = io.BytesIO()
+Image.new('RGB', (4, 4), 'blue').save(
+    buffer, format='GIF', save_all=True, append_images=[Image.new('RGB', (4, 4), 'red')], duration=200,
+)
+gif = buffer.getvalue()
 calls = []
 progress_warnings = []
 
@@ -42,9 +52,9 @@ progress_logger = logging.getLogger('utils.agents.progress')
 progress_logger.setLevel(logging.WARNING)
 progress_logger.addHandler(CaptureProgress())
 
-async def synthetic_paint(prompt, refs):
+async def synthetic_paint(prompt, refs, *, options=None):
     calls.append('paint')
-    return png
+    return gif if options and options.output_format == 'gif' else png
 paint_tool.paint = synthetic_paint
 
 async def no_capture(_text):
@@ -69,8 +79,11 @@ class Model(FakeMessagesListChatModel):
 def call(name, args, identifier):
     return AIMessage(content='', tool_calls=[{'name': name, 'args': args, 'id': identifier}])
 
-async def run(extra=None):
-    responses = [call('get_paint', {'prompt': 'synthetic'}, 'paint-1')]
+async def run(extra=None, *, output_format=None):
+    paint_args = {'prompt': 'synthetic'}
+    if output_format:
+        paint_args['options'] = {'output_format': output_format}
+    responses = [call('get_paint', paint_args, 'paint-1')]
     if extra is not None:
         responses.append(call(extra[0], extra[1], 'extra-1'))
     responses.append(AIMessage(content='image ready'))
@@ -109,6 +122,29 @@ async def main():
     assert len(result['artifacts']) == 1 and result['artifacts'][0].data == png, result
     assert calls == ['paint'], calls
     assert result['usage']['model_calls'] == 2, result
+
+    result = await run(output_format='gif')
+    assert result['status'] == 'success' and len(result['artifacts']) == 1, result
+    artifact = result['artifacts'][0]
+    assert artifact.kind == 'image' and artifact.mime_type == 'image/gif' and artifact.data == gif
+
+    requests = []
+    class RecordingAdapter(Adapter):
+        async def call_http(self, info, action, params=None):
+            requests.append((action, params))
+            return {'message_seq': 1, 'time': 1}
+
+    bot = Bot(RecordingAdapter(nonebot.get_driver()), '1', ClientInfo())
+    message, = qq_artifact_messages([artifact])
+    await message.send(target=Target('456', private=True), bot=bot)
+    await message.send(target=Target('123'), bot=bot)
+    image_segments = [{'type': 'image', 'data': {
+        'uri': 'base64://' + base64.b64encode(gif).decode(), 'sub_type': 'normal', 'summary': None,
+    }}]
+    assert requests == [
+        ('send_private_message', {'user_id': 456, 'message': image_segments}),
+        ('send_group_message', {'group_id': 123, 'message': image_segments}),
+    ], requests
 
     invalid_calls = [(name, {'source': '/missing-private-media.png'})
                      for name in ('send_image', 'send_audio', 'send_voice', 'send_video')]
